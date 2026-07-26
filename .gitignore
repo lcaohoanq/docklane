@@ -1,0 +1,20 @@
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+
+# Build outputs
+/bin/
+/.gocache/
+
+# Runtime state and backups
+/data/
+
+# JavaScript dependencies and local package cache
+/web/node_modules/
+/.pnpm-store/
+
+# Editor and operating-system files
+.DS_Store
+*.swp
+*.swo
