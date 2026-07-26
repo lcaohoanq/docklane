@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
@@ -169,9 +170,40 @@ func (r *Reconciler) Refresh(ctx context.Context) error {
 	checkedAt := time.Now().UTC()
 	observations := make(map[int64]domain.RouteObservation, len(routes))
 	for _, route := range routes {
-		observation := observe(route, containers, checkedAt)
+		observations[route.ID] = observe(route, containers, checkedAt)
+	}
+	desiredAliases := make(map[string][]string)
+	for _, route := range routes {
+		observation := observations[route.ID]
 		if observation.State == domain.RouteStateReady && r.network != "" {
-			observation = r.ensureNetwork(ctx, observation, containers, checkedAt)
+			desiredAliases[observation.ContainerID] = append(
+				desiredAliases[observation.ContainerID],
+				networkAlias(route.ID),
+			)
+		}
+	}
+	for containerID := range desiredAliases {
+		sort.Strings(desiredAliases[containerID])
+	}
+	if err := r.hydrateNetworkAliases(ctx, desiredAliases, containers); err != nil {
+		r.replace(observations, err)
+		return err
+	}
+	owned := r.ownedAttachments(ctx)
+	for _, route := range routes {
+		observation := observations[route.ID]
+		if observation.State == domain.RouteStateReady && r.network != "" {
+			observation = r.ensureNetwork(
+				ctx,
+				observation,
+				containers,
+				checkedAt,
+				networkAlias(route.ID),
+				desiredAliases[observation.ContainerID],
+				owned,
+				route.Scheme,
+				route.Port,
+			)
 		}
 		observations[route.ID] = observation
 	}
@@ -180,17 +212,130 @@ func (r *Reconciler) Refresh(ctx context.Context) error {
 	return cleanupErr
 }
 
+func (r *Reconciler) hydrateNetworkAliases(
+	ctx context.Context,
+	desiredAliases map[string][]string,
+	containers []docker.Container,
+) error {
+	discovery, ok := r.discovery.(docker.NetworkAliasDiscovery)
+	if !ok {
+		return nil
+	}
+	for index := range containers {
+		if len(desiredAliases[containers[index].ID]) == 0 ||
+			!containers[index].HasNetwork(r.network) {
+			continue
+		}
+		aliases, err := discovery.NetworkAliases(
+			ctx,
+			containers[index].ID,
+			r.network,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"inspect aliases for container %s on network %s: %w",
+				containers[index].Name,
+				r.network,
+				err,
+			)
+		}
+		if containers[index].NetworkAliases == nil {
+			containers[index].NetworkAliases = map[string][]string{}
+		}
+		containers[index].NetworkAliases[r.network] = aliases
+	}
+	return nil
+}
+
 func (r *Reconciler) ensureNetwork(
 	ctx context.Context,
 	observation domain.RouteObservation,
 	containers []docker.Container,
 	checkedAt time.Time,
+	alias string,
+	desiredAliases []string,
+	owned map[string]bool,
+	scheme string,
+	port uint16,
 ) domain.RouteObservation {
 	for index := range containers {
 		if containers[index].ID != observation.ContainerID {
 			continue
 		}
 		if containers[index].HasNetwork(r.network) {
+			if containers[index].HasNetworkAlias(r.network, alias) {
+				observation.UpstreamURL = fmt.Sprintf(
+					"%s://%s:%d",
+					scheme,
+					alias,
+					port,
+				)
+				return observation
+			}
+			if !owned[containers[index].ID] {
+				observation.Message = fmt.Sprintf(
+					"running workload resolved on pre-existing network %q; "+
+						"using container name because Docklane does not own the attachment",
+					r.network,
+				)
+				return observation
+			}
+			if r.manager == nil {
+				observation.Message = fmt.Sprintf(
+					"running workload resolved on managed network %q; "+
+						"using container name because network management is disabled",
+					r.network,
+				)
+				return observation
+			}
+			previousAliases := append(
+				[]string(nil),
+				containers[index].NetworkAliases[r.network]...,
+			)
+			if err := r.manager.DisconnectNetwork(
+				ctx,
+				r.network,
+				containers[index].ID,
+			); err != nil {
+				observation.State = domain.RouteStateError
+				observation.Message = fmt.Sprintf("repair network aliases: %v", err)
+				observation.UpstreamURL = ""
+				return observation
+			}
+			if err := r.manager.ConnectNetwork(
+				ctx,
+				r.network,
+				containers[index].ID,
+				desiredAliases,
+			); err != nil {
+				rollbackErr := r.manager.ConnectNetwork(
+					ctx,
+					r.network,
+					containers[index].ID,
+					previousAliases,
+				)
+				observation.State = domain.RouteStateError
+				observation.Message = fmt.Sprintf("repair network aliases: %v", err)
+				if rollbackErr != nil {
+					observation.Message += fmt.Sprintf("; restore previous attachment: %v", rollbackErr)
+				}
+				observation.UpstreamURL = ""
+				return observation
+			}
+			containers[index].NetworkAliases[r.network] = append(
+				[]string(nil),
+				desiredAliases...,
+			)
+			observation.UpstreamURL = fmt.Sprintf(
+				"%s://%s:%d",
+				scheme,
+				alias,
+				port,
+			)
+			observation.Message = fmt.Sprintf(
+				"running workload resolved and repaired aliases on network %q",
+				r.network,
+			)
 			return observation
 		}
 		if r.manager == nil {
@@ -202,7 +347,12 @@ func (r *Reconciler) ensureNetwork(
 			observation.UpstreamURL = ""
 			return observation
 		}
-		if err := r.manager.ConnectNetwork(ctx, r.network, containers[index].ID); err != nil {
+		if err := r.manager.ConnectNetwork(
+			ctx,
+			r.network,
+			containers[index].ID,
+			desiredAliases,
+		); err != nil {
 			observation.State = domain.RouteStateError
 			observation.Message = err.Error()
 			observation.UpstreamURL = ""
@@ -230,6 +380,20 @@ func (r *Reconciler) ensureNetwork(
 			return observation
 		}
 		containers[index].Networks = append(containers[index].Networks, r.network)
+		if containers[index].NetworkAliases == nil {
+			containers[index].NetworkAliases = map[string][]string{}
+		}
+		containers[index].NetworkAliases[r.network] = append(
+			[]string(nil),
+			desiredAliases...,
+		)
+		owned[containers[index].ID] = true
+		observation.UpstreamURL = fmt.Sprintf(
+			"%s://%s:%d",
+			scheme,
+			alias,
+			port,
+		)
 		observation.Message = fmt.Sprintf(
 			"running workload resolved and attached to network %q",
 			r.network,
@@ -241,6 +405,27 @@ func (r *Reconciler) ensureNetwork(
 	observation.Message = "resolved container disappeared before network attachment"
 	observation.UpstreamURL = ""
 	return observation
+}
+
+func (r *Reconciler) ownedAttachments(ctx context.Context) map[string]bool {
+	owned := map[string]bool{}
+	if r.attachments == nil || r.network == "" {
+		return owned
+	}
+	attachments, err := r.attachments.ListNetworkAttachments(ctx)
+	if err != nil {
+		return owned
+	}
+	for _, attachment := range attachments {
+		if attachment.Network == r.network {
+			owned[attachment.ContainerID] = true
+		}
+	}
+	return owned
+}
+
+func networkAlias(routeID int64) string {
+	return fmt.Sprintf("docklane-route-%d", routeID)
 }
 
 func (r *Reconciler) cleanupAttachments(

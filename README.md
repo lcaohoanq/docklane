@@ -26,6 +26,8 @@ The current integrated checkpoint additionally provides:
 - numbered SQLite migrations with a protected pre-migration snapshot;
 - ownership-tracked proxy-network attachment and safe detachment for enabled
   routes without host ports;
+- deterministic `docklane-route-<id>` network aliases that survive Compose
+  container recreation;
 - observed `ready`, `disabled`, `unresolved`, `ambiguous`, and `error` states;
 - immediate reconciliation after mutations, debounced Docker lifecycle events,
   and periodic recovery reconciliation;

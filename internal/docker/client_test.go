@@ -98,6 +98,33 @@ func TestNewClientLeavesStreamingRequestsContextControlled(t *testing.T) {
 	}
 }
 
+func TestNetworkAliasesInspectsContainerEndpoint(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet ||
+				request.URL.Path != "/containers/abc123/json" {
+				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			}
+			body := `{"NetworkSettings":{"Networks":{"proxy":{
+				"Aliases":["draw","docklane-route-7"]
+			}}}}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		},
+	)}}
+	aliases, err := client.NetworkAliases(context.Background(), "abc123", "proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(aliases, ",") != "draw,docklane-route-7" {
+		t.Fatalf("aliases = %#v", aliases)
+	}
+}
+
 func TestDetectActiveTraefikGateway(t *testing.T) {
 	if role := detectSystemRole(
 		"traefik:v3.7",
@@ -141,12 +168,19 @@ func TestConnectNetworkUsesDockerAPI(t *testing.T) {
 			}
 			var payload struct {
 				Container string `json:"Container"`
+				Endpoint  struct {
+					Aliases []string `json:"Aliases"`
+				} `json:"EndpointConfig"`
 			}
 			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
 			}
 			if payload.Container != "abc123" {
 				t.Fatalf("container = %q, want abc123", payload.Container)
+			}
+			if len(payload.Endpoint.Aliases) != 1 ||
+				payload.Endpoint.Aliases[0] != "docklane-route-1" {
+				t.Fatalf("aliases = %#v, want docklane-route-1", payload.Endpoint.Aliases)
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -156,8 +190,37 @@ func TestConnectNetworkUsesDockerAPI(t *testing.T) {
 			}, nil
 		},
 	)}}
-	if err := client.ConnectNetwork(context.Background(), "proxy", "abc123"); err != nil {
+	if err := client.ConnectNetwork(
+		context.Background(),
+		"proxy",
+		"abc123",
+		[]string{"docklane-route-1"},
+	); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConnectNetworkRejectsAlreadyExistingEndpoint(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Status:     "403 Forbidden",
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(
+					`{"message":"endpoint with name draw already exists"}`,
+				)),
+			}, nil
+		},
+	)}}
+	err := client.ConnectNetwork(
+		context.Background(),
+		"proxy",
+		"abc123",
+		[]string{"docklane-route-1"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("connect error = %v, want existing-endpoint error", err)
 	}
 }
 

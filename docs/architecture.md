@@ -206,11 +206,21 @@ Host(`excalidraw.docker.home.arpa`)
     -> http://docklane-route-42:80
 ```
 
-The next network milestone assigns a deterministic network alias such as
-`docklane-route-42` when attaching a container to the managed network. This is
-more durable than depending on a generated container name. The current
-implementation resolves each route to the current container name and manages
-membership without an explicit alias.
+Every route derives a deterministic network alias from its durable database
+identity, such as `docklane-route-42`. When several routes target one
+container, Docklane connects the endpoint with the complete alias set and each
+Traefik service uses its own alias.
+
+After Compose recreates a workload, its stable project/service selector
+resolves the new container and reconciliation attaches that instance with the
+same aliases. If a Docklane-owned endpoint is missing an expected alias,
+Docklane repairs it with a disconnect/reconnect operation and attempts to
+restore the previous aliases if reconnection fails.
+
+Docker cannot modify aliases on an existing endpoint in place. Docklane
+therefore never performs alias repair on a pre-existing attachment it does not
+own; those routes safely continue using the current container name until the
+network is explicitly adopted or recreated under Docklane management.
 
 ### 5.7 DNS
 
@@ -278,7 +288,7 @@ stored Compose project/service selector
 discover current running container
                     │
                     ▼
-ensure managed network + deterministic alias
+ensure owned proxy attachment + deterministic route aliases
                     │
                     ▼
 render current Traefik upstream
@@ -325,6 +335,8 @@ state from SQLite.
 | Route targets the active Traefik gateway | Reject or omit it to prevent a self-routing loop |
 | Managed network is missing | Recreate only through an explicit repair policy |
 | Workload is outside the proxy network | Attach it when enabled, record ownership, and publish after membership is observed |
+| Owned attachment lacks a route alias | Reconnect it with the complete desired alias set and roll back on failure |
+| Pre-existing attachment lacks a route alias | Preserve it and use the current container name |
 | Docklane-owned attachment is no longer needed | Disconnect it and remove the ownership record |
 | Pre-existing proxy attachment is no longer routed | Preserve it because Docklane does not own it |
 | Traefik cannot fetch configuration | Report provider failure; never emit partial JSON |

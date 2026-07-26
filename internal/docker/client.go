@@ -18,17 +18,18 @@ import (
 )
 
 type Container struct {
-	ID             string            `json:"id"`
-	Name           string            `json:"name"`
-	Image          string            `json:"image"`
-	State          string            `json:"state"`
-	Status         string            `json:"status"`
-	SystemRole     string            `json:"systemRole,omitempty"`
-	ComposeProject string            `json:"composeProject,omitempty"`
-	ComposeService string            `json:"composeService,omitempty"`
-	ExposedPorts   []uint16          `json:"exposedPorts"`
-	Labels         map[string]string `json:"-"`
-	Networks       []string          `json:"networks"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Image          string              `json:"image"`
+	State          string              `json:"state"`
+	Status         string              `json:"status"`
+	SystemRole     string              `json:"systemRole,omitempty"`
+	ComposeProject string              `json:"composeProject,omitempty"`
+	ComposeService string              `json:"composeService,omitempty"`
+	ExposedPorts   []uint16            `json:"exposedPorts"`
+	Labels         map[string]string   `json:"-"`
+	Networks       []string            `json:"networks"`
+	NetworkAliases map[string][]string `json:"networkAliases,omitempty"`
 }
 
 const SystemRoleReverseProxy = "reverse-proxy"
@@ -37,12 +38,16 @@ type Discovery interface {
 	ListContainers(context.Context) ([]Container, error)
 }
 
+type NetworkAliasDiscovery interface {
+	NetworkAliases(context.Context, string, string) ([]string, error)
+}
+
 type EventSource interface {
 	WatchContainerEvents(context.Context, func()) error
 }
 
 type NetworkManager interface {
-	ConnectNetwork(context.Context, string, string) error
+	ConnectNetwork(context.Context, string, string, []string) error
 	DisconnectNetwork(context.Context, string, string) error
 }
 
@@ -217,8 +222,73 @@ func (c Container) HasNetwork(name string) bool {
 	return false
 }
 
-func (c *Client) ConnectNetwork(ctx context.Context, network, containerID string) error {
-	payload, err := json.Marshal(map[string]any{"Container": containerID})
+func (c Container) HasNetworkAlias(network, alias string) bool {
+	for _, candidate := range c.NetworkAliases[network] {
+		if candidate == alias {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) NetworkAliases(
+	ctx context.Context,
+	containerID string,
+	network string,
+) ([]string, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodGet,
+		"http://docker/containers/"+url.PathEscape(containerID)+"/json",
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("inspect Docker container %s: %w", containerID, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		message := strings.TrimSpace(string(body))
+		if message == "" {
+			message = response.Status
+		}
+		return nil, fmt.Errorf("inspect Docker container %s: %s", containerID, message)
+	}
+	var payload struct {
+		NetworkSettings struct {
+			Networks map[string]struct {
+				Aliases []string `json:"Aliases"`
+			} `json:"Networks"`
+		} `json:"NetworkSettings"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode Docker container %s: %w", containerID, err)
+	}
+	settings, ok := payload.NetworkSettings.Networks[network]
+	if !ok {
+		return nil, nil
+	}
+	return append([]string(nil), settings.Aliases...), nil
+}
+
+func (c *Client) ConnectNetwork(
+	ctx context.Context,
+	network string,
+	containerID string,
+	aliases []string,
+) error {
+	payload, err := json.Marshal(map[string]any{
+		"Container": containerID,
+		"EndpointConfig": map[string]any{
+			"Aliases": aliases,
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -244,10 +314,6 @@ func (c *Client) ConnectNetwork(ctx context.Context, network, containerID string
 	}
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 	message := strings.TrimSpace(string(body))
-	if response.StatusCode == http.StatusForbidden &&
-		strings.Contains(strings.ToLower(message), "already exists") {
-		return nil
-	}
 	if message == "" {
 		message = response.Status
 	}

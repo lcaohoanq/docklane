@@ -196,7 +196,7 @@ without published host ports.
 - [ ] Preview network create/connect/disconnect operations.
 - [ ] Create the network idempotently.
 - [x] Attach selected containers without removing their existing networks.
-- [ ] Assign a deterministic per-route network alias.
+- [x] Assign a deterministic per-route network alias.
 - [x] Track attachments created by Docklane.
 - [x] Detach only Docklane-owned attachments when no route needs them.
 - [x] Handle stopped and recreated containers.

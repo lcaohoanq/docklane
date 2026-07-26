@@ -88,6 +88,7 @@ type eventDiscovery struct {
 type fakeNetworkManager struct {
 	calls           int
 	disconnectCalls int
+	aliases         [][]string
 	err             error
 }
 
@@ -101,11 +102,13 @@ func (manager *fakeNetworkManager) DisconnectNetwork(
 }
 
 func (manager *fakeNetworkManager) ConnectNetwork(
-	context.Context,
-	string,
-	string,
+	_ context.Context,
+	_ string,
+	_ string,
+	aliases []string,
 ) error {
 	manager.calls++
+	manager.aliases = append(manager.aliases, append([]string(nil), aliases...))
 	return manager.err
 }
 
@@ -305,6 +308,14 @@ func TestRefreshAttachesMissingProxyNetwork(t *testing.T) {
 	if manager.calls != 1 {
 		t.Fatalf("network connect calls = %d, want 1", manager.calls)
 	}
+	if len(manager.aliases) != 1 ||
+		len(manager.aliases[0]) != 1 ||
+		manager.aliases[0][0] != "docklane-route-1" {
+		t.Fatalf("network aliases = %#v, want docklane-route-1", manager.aliases)
+	}
+	if observed.UpstreamURL != "http://docklane-route-1:80" {
+		t.Fatalf("upstream = %q, want deterministic alias", observed.UpstreamURL)
+	}
 	if !strings.Contains(observed.Message, `attached to network "proxy"`) {
 		t.Fatalf("message = %q", observed.Message)
 	}
@@ -441,5 +452,183 @@ func TestRefreshPreservesUntrackedAttachment(t *testing.T) {
 	}
 	if manager.disconnectCalls != 0 {
 		t.Fatalf("disconnect calls = %d, want 0", manager.disconnectCalls)
+	}
+}
+
+func TestRefreshUsesContainerNameForUntrackedAttachment(t *testing.T) {
+	routes := []domain.Route{{
+		ID:       7,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		&trackingStore{routes: routes},
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge", "proxy"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observed := reconciler.Enrich(routes)[0].Observed
+	if observed.UpstreamURL != "http://draw:80" {
+		t.Fatalf("upstream = %q, want safe container-name fallback", observed.UpstreamURL)
+	}
+	if manager.calls != 0 || manager.disconnectCalls != 0 {
+		t.Fatalf(
+			"connect calls = %d, disconnect calls = %d; want 0, 0",
+			manager.calls,
+			manager.disconnectCalls,
+		)
+	}
+}
+
+func TestRefreshUsesExistingDeterministicAlias(t *testing.T) {
+	routes := []domain.Route{{
+		ID:       7,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		fakeStore{routes: routes},
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge", "proxy"},
+			NetworkAliases: map[string][]string{
+				"proxy": {"docklane-route-7"},
+			},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observed := reconciler.Enrich(routes)[0].Observed
+	if observed.UpstreamURL != "http://docklane-route-7:80" {
+		t.Fatalf("upstream = %q, want deterministic alias", observed.UpstreamURL)
+	}
+	if manager.calls != 0 || manager.disconnectCalls != 0 {
+		t.Fatalf(
+			"connect calls = %d, disconnect calls = %d; want 0, 0",
+			manager.calls,
+			manager.disconnectCalls,
+		)
+	}
+}
+
+func TestRefreshRepairsAliasOnlyForOwnedAttachment(t *testing.T) {
+	routes := []domain.Route{{
+		ID:       7,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}
+	store := &trackingStore{
+		routes: routes,
+		attachments: []domain.NetworkAttachment{{
+			ContainerID: "abc123",
+			Network:     "proxy",
+		}},
+	}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		store,
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge", "proxy"},
+			NetworkAliases: map[string][]string{
+				"proxy": {"draw"},
+			},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observed := reconciler.Enrich(routes)[0].Observed
+	if observed.UpstreamURL != "http://docklane-route-7:80" {
+		t.Fatalf("upstream = %q, want repaired deterministic alias", observed.UpstreamURL)
+	}
+	if manager.calls != 1 || manager.disconnectCalls != 1 {
+		t.Fatalf(
+			"connect calls = %d, disconnect calls = %d; want 1, 1",
+			manager.calls,
+			manager.disconnectCalls,
+		)
+	}
+	if len(manager.aliases[0]) != 1 || manager.aliases[0][0] != "docklane-route-7" {
+		t.Fatalf("repair aliases = %#v", manager.aliases)
+	}
+}
+
+func TestRefreshConnectsAllAliasesForSharedContainer(t *testing.T) {
+	routes := []domain.Route{
+		{
+			ID:       7,
+			Name:     "draw",
+			Port:     80,
+			Scheme:   "http",
+			Enabled:  true,
+			Selector: domain.ContainerSelector{ContainerID: "abc"},
+		},
+		{
+			ID:       9,
+			Name:     "canvas",
+			Port:     80,
+			Scheme:   "http",
+			Enabled:  true,
+			Selector: domain.ContainerSelector{ContainerID: "abc"},
+		},
+	}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		fakeStore{routes: routes},
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if manager.calls != 1 {
+		t.Fatalf("network connect calls = %d, want 1", manager.calls)
+	}
+	if got := strings.Join(manager.aliases[0], ","); got != "docklane-route-7,docklane-route-9" {
+		t.Fatalf("aliases = %q", got)
+	}
+	observed := reconciler.Enrich(routes)
+	if observed[0].Observed.UpstreamURL != "http://docklane-route-7:80" ||
+		observed[1].Observed.UpstreamURL != "http://docklane-route-9:80" {
+		t.Fatalf(
+			"upstreams = %q, %q",
+			observed[0].Observed.UpstreamURL,
+			observed[1].Observed.UpstreamURL,
+		)
 	}
 }
