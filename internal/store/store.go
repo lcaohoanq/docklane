@@ -19,8 +19,9 @@ type Store struct {
 }
 
 var (
-	ErrNotFound = errors.New("route not found")
-	ErrConflict = errors.New("route name already exists")
+	ErrNotFound         = errors.New("route not found")
+	ErrConflict         = errors.New("route name already exists")
+	ErrRevisionConflict = errors.New("route was changed by another client; refresh it and try again")
 )
 
 func Open(path string) (*Store, error) {
@@ -44,9 +45,10 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS routes (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			revision INTEGER NOT NULL DEFAULT 1,
 			name TEXT NOT NULL UNIQUE,
 			compose_project TEXT NOT NULL DEFAULT '',
 			compose_service TEXT NOT NULL DEFAULT '',
@@ -57,13 +59,54 @@ func (s *Store) migrate(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
-	`)
+	`); err != nil {
+		return err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(routes)`)
+	if err != nil {
+		return err
+	}
+	hasRevision := false
+	for rows.Next() {
+		var columnID, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(
+			&columnID,
+			&name,
+			&columnType,
+			&notNull,
+			&defaultValue,
+			&primaryKey,
+		); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "revision" {
+			hasRevision = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if hasRevision {
+		return nil
+	}
+	_, err = s.db.ExecContext(
+		ctx,
+		`ALTER TABLE routes ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`,
+	)
 	return err
 }
 
 func (s *Store) ListRoutes(ctx context.Context) ([]domain.Route, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, compose_project, compose_service, container_id,
+		SELECT id, revision, name, compose_project, compose_service, container_id,
 		       port, scheme, enabled, created_at, updated_at
 		FROM routes
 		ORDER BY name
@@ -86,7 +129,7 @@ func (s *Store) ListRoutes(ctx context.Context) ([]domain.Route, error) {
 
 func (s *Store) GetRoute(ctx context.Context, id int64) (domain.Route, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, compose_project, compose_service, container_id,
+		SELECT id, revision, name, compose_project, compose_service, container_id,
 		       port, scheme, enabled, created_at, updated_at
 		FROM routes
 		WHERE id = ?
@@ -126,6 +169,7 @@ func (s *Store) CreateRoute(ctx context.Context, route domain.Route) (domain.Rou
 		return domain.Route{}, fmt.Errorf("create route: %w", err)
 	}
 	route.ID, err = result.LastInsertId()
+	route.Revision = 1
 	route.CreatedAt = now
 	route.UpdatedAt = now
 	return route, err
@@ -142,8 +186,9 @@ func (s *Store) UpdateRoute(ctx context.Context, route domain.Route) (domain.Rou
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE routes
 		SET name = ?, compose_project = ?, compose_service = ?,
-		    container_id = ?, port = ?, scheme = ?, enabled = ?, updated_at = ?
-		WHERE id = ?
+		    container_id = ?, port = ?, scheme = ?, enabled = ?,
+		    revision = revision + 1, updated_at = ?
+		WHERE id = ? AND revision = ?
 	`,
 		route.Name,
 		route.Selector.ComposeProject,
@@ -154,6 +199,7 @@ func (s *Store) UpdateRoute(ctx context.Context, route domain.Route) (domain.Rou
 		route.Enabled,
 		now.Format(time.RFC3339Nano),
 		route.ID,
+		route.Revision,
 	)
 	if err != nil {
 		if isUniqueConstraint(err) {
@@ -166,7 +212,12 @@ func (s *Store) UpdateRoute(ctx context.Context, route domain.Route) (domain.Rou
 		return domain.Route{}, err
 	}
 	if affected == 0 {
-		return domain.Route{}, ErrNotFound
+		if _, getErr := s.GetRoute(ctx, route.ID); errors.Is(getErr, ErrNotFound) {
+			return domain.Route{}, ErrNotFound
+		} else if getErr != nil {
+			return domain.Route{}, getErr
+		}
+		return domain.Route{}, ErrRevisionConflict
 	}
 	return s.GetRoute(ctx, route.ID)
 }
@@ -197,6 +248,7 @@ func scanRoute(source scanner) (domain.Route, error) {
 	var createdAt, updatedAt string
 	if err := source.Scan(
 		&route.ID,
+		&route.Revision,
 		&route.Name,
 		&route.Selector.ComposeProject,
 		&route.Selector.ComposeService,

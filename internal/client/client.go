@@ -112,12 +112,14 @@ func (c *Client) do(ctx context.Context, method, path string, body, output any) 
 
 func writableRoute(route domain.Route) any {
 	return struct {
+		Revision uint64                   `json:"revision,omitempty"`
 		Name     string                   `json:"name"`
 		Selector domain.ContainerSelector `json:"selector"`
 		Port     uint16                   `json:"port"`
 		Scheme   string                   `json:"scheme"`
 		Enabled  bool                     `json:"enabled"`
 	}{
+		Revision: route.Revision,
 		Name:     route.Name,
 		Selector: route.Selector,
 		Port:     route.Port,

@@ -20,6 +20,7 @@ The Phase 1 prototype provides:
 The current integrated checkpoint additionally provides:
 
 - route edit, enable, disable, and delete through API, CLI, and UI;
+- revision-checked updates that reject stale browser or CLI writes;
 - observed `ready`, `disabled`, `unresolved`, `ambiguous`, and `error` states;
 - immediate reconciliation after mutations and periodic Docker reconciliation;
 - controller reconciliation health and last-error reporting;

@@ -89,6 +89,7 @@ func (a *API) routes(response http.ResponseWriter, request *http.Request) {
 }
 
 type routeInput struct {
+	Revision *uint64                  `json:"revision"`
 	Name     string                   `json:"name"`
 	Selector domain.ContainerSelector `json:"selector"`
 	Port     uint16                   `json:"port"`
@@ -100,6 +101,10 @@ func (a *API) createRoute(response http.ResponseWriter, request *http.Request) {
 	input, err := decodeRouteInput(response, request)
 	if err != nil {
 		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	if input.Revision != nil {
+		writeError(response, http.StatusBadRequest, errors.New("revision is only valid when updating a route"))
 		return
 	}
 	enabled := true
@@ -158,6 +163,11 @@ func (a *API) updateRoute(response http.ResponseWriter, request *http.Request) {
 		writeError(response, http.StatusBadRequest, err)
 		return
 	}
+	if input.Revision == nil || *input.Revision == 0 {
+		writeError(response, http.StatusBadRequest, errors.New("revision is required when updating a route"))
+		return
+	}
+	existing.Revision = *input.Revision
 	existing.Name = input.Name
 	existing.Selector = input.Selector
 	existing.Port = input.Port
@@ -239,6 +249,8 @@ func writeStoreError(response http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(response, http.StatusNotFound, err)
 	case errors.Is(err, store.ErrConflict):
+		writeError(response, http.StatusConflict, err)
+	case errors.Is(err, store.ErrRevisionConflict):
 		writeError(response, http.StatusConflict, err)
 	default:
 		writeError(response, http.StatusUnprocessableEntity, err)

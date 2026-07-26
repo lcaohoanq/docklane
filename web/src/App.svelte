@@ -27,6 +27,7 @@
 
   type Route = {
     id: number;
+    revision: number;
     name: string;
     selector: Selector;
     port: number;
@@ -144,6 +145,7 @@
 
   function writableRoute(route: Route, enabled = route.enabled) {
     return {
+      revision: route.revision,
       name: route.name,
       selector: route.selector,
       port: route.port,
@@ -168,6 +170,7 @@
           method: routeId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            ...(editing ? { revision: editing.revision } : {}),
             name: routeName,
             selector,
             port: Number(routePort),

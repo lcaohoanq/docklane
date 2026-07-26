@@ -17,6 +17,7 @@ type ContainerSelector struct {
 
 type Route struct {
 	ID        int64             `json:"id"`
+	Revision  uint64            `json:"revision"`
 	Name      string            `json:"name"`
 	Selector  ContainerSelector `json:"selector"`
 	Port      uint16            `json:"port"`

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -29,6 +30,9 @@ func TestCreateAndListRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if created.Revision != 1 {
+		t.Fatalf("created revision = %d, want 1", created.Revision)
+	}
 	routes, err := repository.ListRoutes(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +50,13 @@ func TestCreateAndListRoute(t *testing.T) {
 	}
 	if updated.Name != "canvas" || updated.Port != 8080 || updated.Enabled {
 		t.Fatalf("unexpected updated route: %#v", updated)
+	}
+	if updated.Revision != 2 {
+		t.Fatalf("updated revision = %d, want 2", updated.Revision)
+	}
+	created.Name = "stale"
+	if _, err := repository.UpdateRoute(context.Background(), created); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("stale update error = %v, want ErrRevisionConflict", err)
 	}
 
 	if err := repository.DeleteRoute(context.Background(), created.ID); err != nil {
@@ -74,5 +85,53 @@ func TestRouteNameConflict(t *testing.T) {
 	}
 	if _, err := repository.CreateRoute(context.Background(), route); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate error = %v, want ErrConflict", err)
+	}
+}
+
+func TestOpenAddsRevisionToExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "docklane.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE routes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			compose_project TEXT NOT NULL DEFAULT '',
+			compose_service TEXT NOT NULL DEFAULT '',
+			container_id TEXT NOT NULL DEFAULT '',
+			port INTEGER NOT NULL,
+			scheme TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO routes (
+			name, compose_project, compose_service, container_id,
+			port, scheme, enabled, created_at, updated_at
+		) VALUES (
+			'draw', 'draw', 'web', '', 80, 'http', 1,
+			'2026-07-26T00:00:00Z', '2026-07-26T00:00:00Z'
+		);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	repository, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	route, err := repository.GetRoute(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.Revision != 1 {
+		t.Fatalf("migrated revision = %d, want 1", route.Revision)
 	}
 }

@@ -140,7 +140,7 @@ machine-level mutations.
 - [x] Add matching CLI commands.
 - [x] Add UI edit, enable/disable, and delete flows.
 - [x] Add duplicate-name conflict errors with actionable messages.
-- [ ] Add optimistic concurrency or revision checking for updates.
+- [x] Add optimistic concurrency or revision checking for updates.
 
 ### Observed state
 
@@ -170,7 +170,8 @@ machine-level mutations.
 
 - [ ] Introduce numbered schema migrations.
 - [ ] Add database backup before migrations.
-- [ ] Add route revision and observed-status storage where appropriate.
+- [x] Add route revision storage.
+- [ ] Add observed-status storage where appropriate.
 - [ ] Define import/export schema version 1.
 - [ ] Add `docklane export` and `docklane import --dry-run`.
 

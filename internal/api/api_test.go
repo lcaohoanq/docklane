@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"docklane.local/docklane/internal/config"
 	"docklane.local/docklane/internal/docker"
+	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/reconcile"
 	"docklane.local/docklane/internal/store"
 	"docklane.local/docklane/internal/traefik"
@@ -137,6 +139,7 @@ func TestUpdateDisableAndDeleteRoute(t *testing.T) {
 	}
 
 	updateBody := bytes.NewBufferString(`{
+		"revision": 1,
 		"name": "canvas",
 		"selector": {"composeProject": "draw", "composeService": "web"},
 		"port": 8080,
@@ -181,5 +184,57 @@ func TestUpdateDisableAndDeleteRoute(t *testing.T) {
 	)
 	if getResponse.Code != http.StatusNotFound {
 		t.Fatalf("get deleted status = %d", getResponse.Code)
+	}
+}
+
+func TestUpdateRejectsStaleRevision(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := fakeDiscovery{}
+	reconciler := reconcile.New(repository, discovery, time.Second)
+	handler := New(
+		config.Config{BaseDomain: "docker.home.arpa", ReconcileEvery: time.Second},
+		repository,
+		discovery,
+		reconciler,
+	)
+
+	created, err := repository.CreateRoute(context.Background(), domain.Route{
+		Name:     "draw",
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstUpdate := fmt.Sprintf(`{
+		"revision": %d,
+		"name": "canvas",
+		"selector": {"containerId": "abc"},
+		"port": 80,
+		"scheme": "http",
+		"enabled": true
+	}`, created.Revision)
+	firstResponse := httptest.NewRecorder()
+	handler.ServeHTTP(
+		firstResponse,
+		httptest.NewRequest(http.MethodPut, "/api/v1/routes/1", bytes.NewBufferString(firstUpdate)),
+	)
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first update status = %d, body = %s", firstResponse.Code, firstResponse.Body)
+	}
+
+	staleResponse := httptest.NewRecorder()
+	handler.ServeHTTP(
+		staleResponse,
+		httptest.NewRequest(http.MethodPut, "/api/v1/routes/1", bytes.NewBufferString(firstUpdate)),
+	)
+	if staleResponse.Code != http.StatusConflict {
+		t.Fatalf("stale update status = %d, want 409; body = %s", staleResponse.Code, staleResponse.Body)
 	}
 }

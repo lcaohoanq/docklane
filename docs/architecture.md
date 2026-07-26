@@ -142,6 +142,7 @@ SQLite stores Docklane-owned desired state. The initial route model is:
 | Field | Purpose |
 | --- | --- |
 | `id` | Stable Docklane identity |
+| `revision` | Monotonic version used to reject stale updates |
 | `name` | DNS label below the configured base domain |
 | `compose_project` | Stable Compose project selector |
 | `compose_service` | Stable Compose service selector |
@@ -276,6 +277,14 @@ attachment only after confirming no other Docklane route still needs it.
 Docklane does not stop the application container, remove its Compose network,
 or edit its Compose file.
 
+### 6.4 Concurrent updates
+
+Every stored route has a revision beginning at 1. A client reads that revision
+with the route and must return it in `PUT /api/v1/routes/{id}`. SQLite updates
+the route only when the submitted revision still matches, then increments it
+atomically. A stale write receives HTTP 409 and must refresh before retrying;
+Docklane never silently overwrites the newer desired state.
+
 ## 7. Reconciliation and failure behavior
 
 The controller computes observed state from Docker and compares it with desired
@@ -306,7 +315,7 @@ Current endpoints:
 | `GET` | `/api/v1/routes` | List desired routes |
 | `POST` | `/api/v1/routes` | Create a route |
 | `GET` | `/api/v1/routes/{id}` | Read a route and its observed state |
-| `PUT` | `/api/v1/routes/{id}` | Replace writable route configuration |
+| `PUT` | `/api/v1/routes/{id}` | Revision-checked replacement of writable route configuration |
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |
 
