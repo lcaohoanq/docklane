@@ -1,11 +1,21 @@
 package docker
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"docklane.local/docklane/internal/domain"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
 
 func TestResolveContainerByComposeWorkload(t *testing.T) {
 	containers := []Container{
@@ -45,5 +55,44 @@ func TestValidateTCPPort(t *testing.T) {
 	}
 	if err := ValidateTCPPort(container, 3000); !errors.Is(err, ErrPortNotExposed) {
 		t.Fatalf("undeclared port error = %v, want ErrPortNotExposed", err)
+	}
+}
+
+func TestWatchContainerEventsFiltersRouteAffectingActions(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.URL.Query().Get("filters") != `{"type":["container"]}` {
+				t.Fatalf("filters = %q", request.URL.Query().Get("filters"))
+			}
+			body := strings.Join([]string{
+				`{"Type":"container","Action":"start"}`,
+				`{"Type":"container","Action":"exec_start: shell"}`,
+				`{"Type":"container","Action":"health_status: healthy"}`,
+			}, "\n")
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		},
+	)}}
+
+	notifications := 0
+	err := client.WatchContainerEvents(context.Background(), func() {
+		notifications++
+	})
+	if err == nil || !strings.Contains(err.Error(), "stream closed") {
+		t.Fatalf("stream error = %v, want closed stream", err)
+	}
+	if notifications != 2 {
+		t.Fatalf("notifications = %d, want 2", notifications)
+	}
+}
+
+func TestNewClientLeavesStreamingRequestsContextControlled(t *testing.T) {
+	client := NewClient("/var/run/docker.sock")
+	if client.http.Timeout != 0 {
+		t.Fatalf("HTTP client timeout = %s, want no whole-request timeout", client.http.Timeout)
 	}
 }

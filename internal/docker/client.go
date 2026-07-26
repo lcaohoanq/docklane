@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -28,6 +30,10 @@ type Container struct {
 
 type Discovery interface {
 	ListContainers(context.Context) ([]Container, error)
+}
+
+type EventSource interface {
+	WatchContainerEvents(context.Context, func()) error
 }
 
 var (
@@ -92,11 +98,18 @@ func NewClient(socketPath string) *Client {
 			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", socketPath)
 		},
 	}
-	return &Client{http: &http.Client{Transport: transport, Timeout: 10 * time.Second}}
+	return &Client{http: &http.Client{Transport: transport}}
 }
 
 func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/containers/json", nil)
+	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodGet,
+		"http://docker/containers/json",
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -153,4 +166,51 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 		})
 	}
 	return containers, nil
+}
+
+func (c *Client) WatchContainerEvents(ctx context.Context, notify func()) error {
+	filters := `{"type":["container"]}`
+	endpoint := "http://docker/events?" + url.Values{"filters": {filters}}.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("subscribe to Docker events: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("Docker event stream returned %s", response.Status)
+	}
+
+	decoder := json.NewDecoder(response.Body)
+	for {
+		var event struct {
+			Type   string `json:"Type"`
+			Action string `json:"Action"`
+		}
+		if err := decoder.Decode(&event); err != nil {
+			if errors.Is(err, io.EOF) {
+				return errors.New("Docker event stream closed")
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("decode Docker event: %w", err)
+		}
+		if event.Type == "container" && affectsRoutes(event.Action) {
+			notify()
+		}
+	}
+}
+
+func affectsRoutes(action string) bool {
+	switch action {
+	case "create", "start", "die", "destroy", "rename", "pause", "unpause",
+		"health_status: healthy", "health_status: unhealthy":
+		return true
+	default:
+		return false
+	}
 }

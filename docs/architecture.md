@@ -268,6 +268,12 @@ Container recreation changes the instance but not the stored selector or local
 hostname. Reconciliation repairs the runtime binding without requiring
 application labels or a Traefik restart.
 
+Docklane subscribes to Docker container lifecycle and health events for the
+fast path. Compose recreation emits several events, so the controller
+coalesces each burst before rediscovery. The event stream reconnects after an
+interruption, while periodic reconciliation remains the authoritative recovery
+path for missed events.
+
 ### 6.3 Delete and rollback
 
 Deleting a route removes it from desired Traefik configuration. If Docklane

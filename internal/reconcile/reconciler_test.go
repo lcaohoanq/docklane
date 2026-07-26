@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,27 @@ func (store fakeStore) ListRoutes(context.Context) ([]domain.Route, error) {
 type fakeDiscovery struct {
 	containers []docker.Container
 	err        error
+}
+
+type eventDiscovery struct {
+	listCalls atomic.Int32
+}
+
+func (discovery *eventDiscovery) ListContainers(context.Context) ([]docker.Container, error) {
+	discovery.listCalls.Add(1)
+	return []docker.Container{{
+		ID:           "abc123",
+		Name:         "web",
+		ExposedPorts: []uint16{80},
+	}}, nil
+}
+
+func (discovery *eventDiscovery) WatchContainerEvents(ctx context.Context, notify func()) error {
+	notify()
+	notify()
+	notify()
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func (discovery fakeDiscovery) ListContainers(context.Context) ([]docker.Container, error) {
@@ -116,4 +138,42 @@ func TestDiscoveryFailureMarksRoutesAsError(t *testing.T) {
 	if observed[0].Observed.State != domain.RouteStateError {
 		t.Fatalf("state = %q", observed[0].Observed.State)
 	}
+}
+
+func TestRunDebouncesDockerEventBurst(t *testing.T) {
+	discovery := &eventDiscovery{}
+	reconciler := New(
+		fakeStore{routes: []domain.Route{{
+			ID:       1,
+			Name:     "draw",
+			Port:     80,
+			Scheme:   "http",
+			Enabled:  true,
+			Selector: domain.ContainerSelector{ContainerID: "abc"},
+		}}},
+		discovery,
+		time.Hour,
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		reconciler.Run(ctx)
+		close(done)
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for discovery.listCalls.Load() < 2 {
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatalf("list calls = %d, want initial and event refresh", discovery.listCalls.Load())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	if calls := discovery.listCalls.Load(); calls != 2 {
+		t.Fatalf("list calls = %d, want one debounced event refresh", calls)
+	}
+	cancel()
+	<-done
 }

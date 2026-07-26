@@ -12,6 +12,11 @@ import (
 	"docklane.local/docklane/internal/domain"
 )
 
+const (
+	eventDebounce = 250 * time.Millisecond
+	eventRetry    = time.Second
+)
+
 type RouteStore interface {
 	ListRoutes(context.Context) ([]domain.Route, error)
 }
@@ -42,14 +47,70 @@ func (r *Reconciler) Run(ctx context.Context) {
 	}
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
+	events := make(chan struct{}, 1)
+	if source, ok := r.discovery.(docker.EventSource); ok {
+		go r.watchEvents(ctx, source, events)
+	}
+	var debounceTimer *time.Timer
+	var debounce <-chan time.Time
+	defer func() {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-events:
+			if debounceTimer == nil {
+				debounceTimer = time.NewTimer(eventDebounce)
+			} else {
+				if !debounceTimer.Stop() {
+					select {
+					case <-debounceTimer.C:
+					default:
+					}
+				}
+				debounceTimer.Reset(eventDebounce)
+			}
+			debounce = debounceTimer.C
+		case <-debounce:
+			debounce = nil
+			if err := r.Refresh(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("Docklane event reconciliation failed: %v", err)
+			}
 		case <-ticker.C:
 			if err := r.Refresh(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("Docklane reconciliation failed: %v", err)
 			}
+		}
+	}
+}
+
+func (r *Reconciler) watchEvents(
+	ctx context.Context,
+	source docker.EventSource,
+	events chan<- struct{},
+) {
+	notify := func() {
+		select {
+		case events <- struct{}{}:
+		default:
+		}
+	}
+	for {
+		err := source.WatchContainerEvents(ctx, notify)
+		if ctx.Err() != nil {
+			return
+		}
+		log.Printf("Docklane Docker event subscription failed: %v", err)
+		retry := time.NewTimer(eventRetry)
+		select {
+		case <-ctx.Done():
+			retry.Stop()
+			return
+		case <-retry.C:
 		}
 	}
 }

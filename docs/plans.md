@@ -158,9 +158,9 @@ machine-level mutations.
 ### Reconciler
 
 - [x] Add a periodic reconciliation loop.
-- [ ] Subscribe to Docker events for fast refresh.
+- [x] Subscribe to Docker events for fast refresh.
 - [x] Keep periodic reconciliation as recovery from missed events.
-- [ ] Debounce event bursts during Compose recreation.
+- [x] Debounce event bursts during Compose recreation.
 - [x] Make each reconciliation operation idempotent.
 - [x] Record the last successful reconcile time and last error.
 - [ ] Add structured controller logs.
@@ -178,7 +178,7 @@ machine-level mutations.
 Acceptance criteria:
 
 - [x] Full route CRUD works through API, CLI, and UI.
-- [ ] Container recreation repairs a route without restarting Traefik.
+- [x] Container recreation repairs a route without restarting Traefik.
 - [x] Missed or absent Docker events are repaired by periodic reconciliation.
 - [x] Ambiguous or missing workloads are visible and never published.
 - [x] All work remains isolated from the active proxy and system DNS.
@@ -207,8 +207,7 @@ without published host ports.
 - [x] Keep the provider endpoint unavailable from application and non-local
   networks using host-loopback publication plus `docklane-control`.
 - [ ] Add provider configuration validation before publish.
-- [-] Test add, update, disable, delete, and recreate behavior. Dynamic
-  add/delete is verified; container recreation remains pending.
+- [x] Test add, update, disable, delete, and recreate behavior.
 - [ ] Test controller/provider outage behavior.
 - [ ] Decide and implement last-known-good or file-provider fallback.
 - [ ] Add route status showing whether Traefik loaded the desired revision.

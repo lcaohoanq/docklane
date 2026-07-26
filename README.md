@@ -23,7 +23,8 @@ The current integrated checkpoint additionally provides:
 - revision-checked updates that reject stale browser or CLI writes;
 - declared-port validation that keeps invalid upstreams out of Traefik;
 - observed `ready`, `disabled`, `unresolved`, `ambiguous`, and `error` states;
-- immediate reconciliation after mutations and periodic Docker reconciliation;
+- immediate reconciliation after mutations, debounced Docker lifecycle events,
+  and periodic recovery reconciliation;
 - controller reconciliation health and last-error reporting;
 - a managed Docklane container on a private `docklane-control` network shared
   only with Traefik;
