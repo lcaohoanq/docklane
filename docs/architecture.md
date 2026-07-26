@@ -156,6 +156,13 @@ SQLite is not in the application request path. Database loss affects route
 management and future reconciliation, not traffic already being handled by
 Traefik.
 
+Schema changes are ordered by `PRAGMA user_version` and applied one migration
+per transaction. Before changing an existing database, Docklane creates a
+consistent SQLite snapshot under `data/backups/` with mode `0600`. Databases
+from the pre-versioning prototype are recognized from their route-table shape,
+backed up, and stamped without replaying changes they already contain.
+Docklane refuses to open a schema newer than the binary supports.
+
 ### 5.5 Docker adapter
 
 The Docker adapter discovers:

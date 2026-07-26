@@ -23,6 +23,7 @@ The current integrated checkpoint additionally provides:
 - revision-checked updates that reject stale browser or CLI writes;
 - declared-port validation that keeps invalid upstreams out of Traefik;
 - active-gateway detection that prevents reverse-proxy self-routing loops;
+- numbered SQLite migrations with a protected pre-migration snapshot;
 - observed `ready`, `disabled`, `unresolved`, `ambiguous`, and `error` states;
 - immediate reconciliation after mutations, debounced Docker lifecycle events,
   and periodic recovery reconciliation;

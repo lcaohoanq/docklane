@@ -42,6 +42,28 @@ network can be removed with:
 docker network rm docklane-control
 ```
 
+## Restore an automatic database migration backup
+
+Numbered schema migrations create snapshots such as:
+
+```text
+data/backups/docklane-v<from>-before-v<to>-<timestamp>.db
+```
+
+Stop Docklane before replacing its database. Preserve the current file as an
+additional rollback point, copy the selected snapshot, then restart:
+
+```sh
+docker compose stop docklane
+cp data/docklane.db data/docklane-before-restore.db
+cp data/backups/<selected-backup>.db data/docklane.db
+chmod 600 data/docklane.db
+docker compose up -d docklane
+```
+
+Use a backup only with a Docklane binary that supports that backup's schema
+version.
+
 ## Roll back DNS and certificate
 
 Restore the integration backup:

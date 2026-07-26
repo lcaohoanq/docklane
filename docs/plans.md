@@ -170,8 +170,8 @@ machine-level mutations.
 
 ### Persistence
 
-- [ ] Introduce numbered schema migrations.
-- [ ] Add database backup before migrations.
+- [x] Introduce numbered schema migrations.
+- [x] Add database backup before migrations.
 - [x] Add route revision storage.
 - [ ] Add observed-status storage where appropriate.
 - [ ] Define import/export schema version 1.

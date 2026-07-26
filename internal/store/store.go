@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"docklane.local/docklane/internal/domain"
@@ -18,6 +20,40 @@ type Store struct {
 	db *sql.DB
 }
 
+type migration struct {
+	version     int
+	description string
+	statements  []string
+}
+
+var migrations = []migration{
+	{
+		version:     1,
+		description: "create routes table",
+		statements: []string{`
+			CREATE TABLE routes (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL UNIQUE,
+				compose_project TEXT NOT NULL DEFAULT '',
+				compose_service TEXT NOT NULL DEFAULT '',
+				container_id TEXT NOT NULL DEFAULT '',
+				port INTEGER NOT NULL,
+				scheme TEXT NOT NULL,
+				enabled INTEGER NOT NULL DEFAULT 1,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)
+		`},
+	},
+	{
+		version:     2,
+		description: "add route revision",
+		statements: []string{
+			`ALTER TABLE routes ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`,
+		},
+	},
+}
+
 var (
 	ErrNotFound         = errors.New("route not found")
 	ErrConflict         = errors.New("route name already exists")
@@ -25,6 +61,10 @@ var (
 )
 
 func Open(path string) (*Store, error) {
+	databaseExisted, err := existingDatabase(path)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, err
 	}
@@ -33,9 +73,13 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	store := &Store{db: db}
-	if err := store.migrate(context.Background()); err != nil {
+	backupPath, err := store.migrate(context.Background(), path, databaseExisted)
+	if err != nil {
 		db.Close()
 		return nil, err
+	}
+	if backupPath != "" {
+		log.Printf("Docklane database backup created at %s", backupPath)
 	}
 	return store, nil
 }
@@ -44,30 +88,104 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS routes (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			revision INTEGER NOT NULL DEFAULT 1,
-			name TEXT NOT NULL UNIQUE,
-			compose_project TEXT NOT NULL DEFAULT '',
-			compose_service TEXT NOT NULL DEFAULT '',
-			container_id TEXT NOT NULL DEFAULT '',
-			port INTEGER NOT NULL,
-			scheme TEXT NOT NULL,
-			enabled INTEGER NOT NULL DEFAULT 1,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
-	`); err != nil {
-		return err
+func existingDatabase(path string) (bool, error) {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return info.Size() > 0, nil
+	case errors.Is(err, os.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+func (s *Store) migrate(
+	ctx context.Context,
+	path string,
+	databaseExisted bool,
+) (string, error) {
+	storedVersion, err := s.schemaVersion(ctx)
+	if err != nil {
+		return "", err
+	}
+	latestVersion := migrations[len(migrations)-1].version
+	if storedVersion > latestVersion {
+		return "", fmt.Errorf(
+			"database schema version %d is newer than supported version %d",
+			storedVersion,
+			latestVersion,
+		)
+	}
+
+	currentVersion := storedVersion
+	needsBaselineStamp := false
+	if storedVersion == 0 {
+		currentVersion, err = s.inferLegacyVersion(ctx)
+		if err != nil {
+			return "", err
+		}
+		needsBaselineStamp = currentVersion > 0
+	}
+
+	needsMigration := currentVersion < latestVersion
+	backupPath := ""
+	if databaseExisted && (needsBaselineStamp || needsMigration) {
+		backupPath, err = s.backup(ctx, path, storedVersion, latestVersion)
+		if err != nil {
+			return "", fmt.Errorf("back up database before migration: %w", err)
+		}
+	}
+
+	if needsBaselineStamp {
+		if err := s.setSchemaVersion(ctx, currentVersion); err != nil {
+			return backupPath, fmt.Errorf("record legacy schema version: %w", err)
+		}
+	}
+	for _, item := range migrations {
+		if item.version <= currentVersion {
+			continue
+		}
+		if err := s.applyMigration(ctx, item); err != nil {
+			return backupPath, fmt.Errorf(
+				"apply schema migration %d (%s): %w",
+				item.version,
+				item.description,
+				err,
+			)
+		}
+		currentVersion = item.version
+	}
+	return backupPath, nil
+}
+
+func (s *Store) schemaVersion(ctx context.Context) (int, error) {
+	var version int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("read database schema version: %w", err)
+	}
+	return version, nil
+}
+
+func (s *Store) inferLegacyVersion(ctx context.Context) (int, error) {
+	var routesTable bool
+	if err := s.db.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'routes'
+		)`,
+	).Scan(&routesTable); err != nil {
+		return 0, fmt.Errorf("inspect legacy routes table: %w", err)
+	}
+	if !routesTable {
+		return 0, nil
 	}
 
 	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(routes)`)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	hasRevision := false
+	defer rows.Close()
 	for rows.Next() {
 		var columnID, notNull, primaryKey int
 		var name, columnType string
@@ -80,28 +198,84 @@ func (s *Store) migrate(ctx context.Context) error {
 			&defaultValue,
 			&primaryKey,
 		); err != nil {
-			rows.Close()
-			return err
+			return 0, err
 		}
 		if name == "revision" {
-			hasRevision = true
+			return 2, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		return 0, err
+	}
+	return 1, nil
+}
+
+func (s *Store) applyMigration(ctx context.Context, item migration) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	if err := rows.Close(); err != nil {
-		return err
+	defer tx.Rollback()
+	for _, statement := range item.statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return err
+		}
 	}
-	if hasRevision {
-		return nil
-	}
-	_, err = s.db.ExecContext(
+	if _, err := tx.ExecContext(
 		ctx,
-		`ALTER TABLE routes ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`,
+		fmt.Sprintf("PRAGMA user_version = %d", item.version),
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) setSchemaVersion(ctx context.Context, version int) error {
+	_, err := s.db.ExecContext(
+		ctx,
+		fmt.Sprintf("PRAGMA user_version = %d", version),
 	)
 	return err
+}
+
+func (s *Store) backup(
+	ctx context.Context,
+	path string,
+	fromVersion int,
+	toVersion int,
+) (string, error) {
+	databaseInfo, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	directory := filepath.Join(filepath.Dir(path), "backups")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", err
+	}
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	timestamp := time.Now().UTC().Format("20060102T150405.000000000Z")
+	backupPath := filepath.Join(
+		directory,
+		fmt.Sprintf(
+			"%s-v%d-before-v%d-%s.db",
+			base,
+			fromVersion,
+			toVersion,
+			timestamp,
+		),
+	)
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, backupPath); err != nil {
+		return "", err
+	}
+	if ownership, ok := databaseInfo.Sys().(*syscall.Stat_t); ok {
+		if err := os.Chown(backupPath, int(ownership.Uid), int(ownership.Gid)); err != nil {
+			return "", err
+		}
+	}
+	if err := os.Chmod(backupPath, 0o600); err != nil {
+		return "", err
+	}
+	return backupPath, nil
 }
 
 func (s *Store) ListRoutes(ctx context.Context) ([]domain.Route, error) {
