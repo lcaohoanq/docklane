@@ -148,6 +148,19 @@ article p {
   font-size: 0.75rem;
 }
 
+.meta .system-badge {
+  color: #f2c879;
+  background: #342b1b;
+}
+
+.system-action {
+  max-width: 10rem;
+  color: #89958d;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
 button.secondary {
   border-color: #35423a;
   color: #dfe9e2;
@@ -401,9 +414,11 @@ form > code {
     grid-template-columns: auto 1fr;
   }
 
-  article button {
+  article button,
+  .system-action {
     grid-column: 2;
     justify-self: start;
+    text-align: left;
   }
 
   .route-row {

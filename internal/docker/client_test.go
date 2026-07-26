@@ -96,3 +96,37 @@ func TestNewClientLeavesStreamingRequestsContextControlled(t *testing.T) {
 		t.Fatalf("HTTP client timeout = %s, want no whole-request timeout", client.http.Timeout)
 	}
 }
+
+func TestDetectActiveTraefikGateway(t *testing.T) {
+	if role := detectSystemRole(
+		"traefik:v3.7",
+		map[string]string{"org.opencontainers.image.title": "Traefik"},
+		true,
+	); role != SystemRoleReverseProxy {
+		t.Fatalf("role = %q, want %q", role, SystemRoleReverseProxy)
+	}
+	if role := detectSystemRole(
+		"traefik:v3.7",
+		map[string]string{"org.opencontainers.image.title": "Traefik"},
+		false,
+	); role != "" {
+		t.Fatalf("unpublished Traefik role = %q, want empty", role)
+	}
+	if role := detectSystemRole(
+		"example/web:latest",
+		map[string]string{"traefik.enable": "true"},
+		true,
+	); role != "" {
+		t.Fatalf("ordinary application role = %q, want empty", role)
+	}
+}
+
+func TestValidateApplicationTargetRejectsReverseProxy(t *testing.T) {
+	err := ValidateApplicationTarget(Container{
+		Name:       "traefik",
+		SystemRole: SystemRoleReverseProxy,
+	})
+	if !errors.Is(err, ErrSystemTarget) {
+		t.Fatalf("target error = %v, want ErrSystemTarget", err)
+	}
+}

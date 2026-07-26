@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,6 +123,10 @@ func (a *API) createRoute(response http.ResponseWriter, request *http.Request) {
 		Scheme:   scheme,
 		Enabled:  enabled,
 	}
+	if err := a.validateApplicationTarget(request.Context(), route); err != nil {
+		writeError(response, http.StatusUnprocessableEntity, err)
+		return
+	}
 	created, err := a.store.CreateRoute(request.Context(), route)
 	if err != nil {
 		writeStoreError(response, err)
@@ -177,6 +182,10 @@ func (a *API) updateRoute(response http.ResponseWriter, request *http.Request) {
 	if input.Enabled != nil {
 		existing.Enabled = *input.Enabled
 	}
+	if err := a.validateApplicationTarget(request.Context(), existing); err != nil {
+		writeError(response, http.StatusUnprocessableEntity, err)
+		return
+	}
 	updated, err := a.store.UpdateRoute(request.Context(), existing)
 	if err != nil {
 		writeStoreError(response, err)
@@ -185,6 +194,21 @@ func (a *API) updateRoute(response http.ResponseWriter, request *http.Request) {
 	_ = a.reconciler.Refresh(request.Context())
 	updated = a.reconciler.Enrich([]domain.Route{updated})[0]
 	writeJSON(response, http.StatusOK, updated)
+}
+
+func (a *API) validateApplicationTarget(ctx context.Context, route domain.Route) error {
+	if !route.Enabled {
+		return nil
+	}
+	containers, err := a.discovery.ListContainers(ctx)
+	if err != nil {
+		return nil
+	}
+	container, err := docker.ResolveContainer(route.Selector, containers)
+	if err != nil {
+		return nil
+	}
+	return docker.ValidateApplicationTarget(container)
 }
 
 func (a *API) deleteRoute(response http.ResponseWriter, request *http.Request) {

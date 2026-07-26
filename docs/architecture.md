@@ -302,6 +302,7 @@ state from SQLite.
 | No running workload matches | Omit route and report `unresolved` |
 | Multiple workloads match unexpectedly | Omit route and report `ambiguous` |
 | Selected port is no longer declared | Omit route and report actionable `error` |
+| Route targets the active Traefik gateway | Reject or omit it to prevent a self-routing loop |
 | Managed network is missing | Recreate only through an explicit repair policy |
 | Traefik cannot fetch configuration | Report provider failure; never emit partial JSON |
 | DNS or certificate is wrong | `doctor` identifies the failed layer |
@@ -316,6 +317,14 @@ An active reachability probe remains separate from declared-port validation.
 It must run from the same network perspective as Traefik; attaching the
 controller to every application network merely to probe would weaken the
 private control-plane boundary.
+
+The active Traefik gateway is also not an application target. Docklane
+classifies the official Traefik container that publishes host port 80 or 443
+as a managed system container. The API rejects new active routes to it, legacy
+routes are excluded from provider output with an actionable error, and the UI
+does not offer the normal create-route action. Traefik's dashboard is a
+special system route backed by `api@internal`, not by proxying to the
+gateway's own port 80 or 443.
 
 The integrated implementation must test what Traefik does when the controller
 is unavailable and provide a last-known-good or file-provider fallback if

@@ -149,6 +149,8 @@ machine-level mutations.
 - [x] Return desired and observed state separately.
 - [x] Validate that the configured internal port belongs to the selected
   workload.
+- [x] Classify the active Traefik gateway as a managed system container.
+- [x] Reject and omit routes that would send the gateway back into itself.
 - [ ] Probe upstream reachability with bounded timeouts.
 - [ ] Support non-Compose containers without pretending their ID is durable.
 - [x] Define initial behavior for scaled Compose services: report ambiguous and

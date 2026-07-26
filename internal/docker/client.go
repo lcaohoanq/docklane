@@ -22,11 +22,14 @@ type Container struct {
 	Image          string            `json:"image"`
 	State          string            `json:"state"`
 	Status         string            `json:"status"`
+	SystemRole     string            `json:"systemRole,omitempty"`
 	ComposeProject string            `json:"composeProject,omitempty"`
 	ComposeService string            `json:"composeService,omitempty"`
 	ExposedPorts   []uint16          `json:"exposedPorts"`
 	Labels         map[string]string `json:"-"`
 }
+
+const SystemRoleReverseProxy = "reverse-proxy"
 
 type Discovery interface {
 	ListContainers(context.Context) ([]Container, error)
@@ -40,6 +43,7 @@ var (
 	ErrNoMatch        = errors.New("no running container matches the route selector")
 	ErrAmbiguous      = errors.New("route selector matches multiple running containers")
 	ErrPortNotExposed = errors.New("configured TCP port is not declared by the container")
+	ErrSystemTarget   = errors.New("system container cannot be used as an application route target")
 )
 
 func ResolveContainer(selector domain.ContainerSelector, containers []Container) (Container, error) {
@@ -88,6 +92,18 @@ func ValidateTCPPort(container Container, port uint16) error {
 	)
 }
 
+func ValidateApplicationTarget(container Container) error {
+	if container.SystemRole == SystemRoleReverseProxy {
+		return fmt.Errorf(
+			"%w: %s is the active reverse proxy and routing it to itself creates a loop; "+
+				"use a Traefik api@internal dashboard router instead",
+			ErrSystemTarget,
+			container.Name,
+		)
+	}
+	return nil
+}
+
 type Client struct {
 	http *http.Client
 }
@@ -131,6 +147,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 		Labels map[string]string `json:"Labels"`
 		Ports  []struct {
 			PrivatePort uint16 `json:"PrivatePort"`
+			PublicPort  uint16 `json:"PublicPort"`
 			Type        string `json:"Type"`
 		} `json:"Ports"`
 	}
@@ -146,10 +163,16 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 		}
 		ports := make([]uint16, 0, len(item.Ports))
 		seen := map[uint16]bool{}
+		publishesGatewayPort := false
 		for _, port := range item.Ports {
 			if port.Type == "tcp" && !seen[port.PrivatePort] {
 				seen[port.PrivatePort] = true
 				ports = append(ports, port.PrivatePort)
+			}
+			if port.Type == "tcp" &&
+				((port.PrivatePort == 80 && port.PublicPort == 80) ||
+					(port.PrivatePort == 443 && port.PublicPort == 443)) {
+				publishesGatewayPort = true
 			}
 		}
 		sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
@@ -159,6 +182,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			Image:          item.Image,
 			State:          item.State,
 			Status:         item.Status,
+			SystemRole:     detectSystemRole(item.Image, item.Labels, publishesGatewayPort),
 			ComposeProject: item.Labels["com.docker.compose.project"],
 			ComposeService: item.Labels["com.docker.compose.service"],
 			ExposedPorts:   ports,
@@ -166,6 +190,22 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 		})
 	}
 	return containers, nil
+}
+
+func detectSystemRole(image string, labels map[string]string, publishesGatewayPort bool) string {
+	if !publishesGatewayPort {
+		return ""
+	}
+	if strings.EqualFold(labels["org.opencontainers.image.title"], "Traefik") {
+		return SystemRoleReverseProxy
+	}
+	imageName := strings.ToLower(strings.Split(image, "@")[0])
+	imageName = strings.TrimPrefix(imageName, "docker.io/")
+	imageName = strings.TrimPrefix(imageName, "library/")
+	if imageName == "traefik" || strings.HasPrefix(imageName, "traefik:") {
+		return SystemRoleReverseProxy
+	}
+	return ""
 }
 
 func (c *Client) WatchContainerEvents(ctx context.Context, notify func()) error {

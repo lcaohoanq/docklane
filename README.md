@@ -22,6 +22,7 @@ The current integrated checkpoint additionally provides:
 - route edit, enable, disable, and delete through API, CLI, and UI;
 - revision-checked updates that reject stale browser or CLI writes;
 - declared-port validation that keeps invalid upstreams out of Traefik;
+- active-gateway detection that prevents reverse-proxy self-routing loops;
 - observed `ready`, `disabled`, `unresolved`, `ambiguous`, and `error` states;
 - immediate reconciliation after mutations, debounced Docker lifecycle events,
   and periodic recovery reconciliation;

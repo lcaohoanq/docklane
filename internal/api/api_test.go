@@ -240,3 +240,79 @@ func TestUpdateRejectsStaleRevision(t *testing.T) {
 		t.Fatalf("stale update status = %d, want 409; body = %s", staleResponse.Code, staleResponse.Body)
 	}
 }
+
+func TestCreateRejectsActiveReverseProxyTarget(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := fakeDiscovery{containers: []docker.Container{{
+		ID:             "proxy123",
+		Name:           "traefik",
+		ComposeProject: "traefik",
+		ComposeService: "traefik",
+		SystemRole:     docker.SystemRoleReverseProxy,
+		ExposedPorts:   []uint16{80, 443},
+	}}}
+	reconciler := reconcile.New(repository, discovery, time.Second)
+	handler := New(
+		config.Config{BaseDomain: "docker.home.arpa", ReconcileEvery: time.Second},
+		repository,
+		discovery,
+		reconciler,
+	)
+
+	body := bytes.NewBufferString(`{
+		"name": "traefik",
+		"selector": {"composeProject": "traefik", "composeService": "traefik"},
+		"port": 80,
+		"scheme": "http",
+		"enabled": true
+	}`)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodPost, "/api/v1/routes", body),
+	)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("create status = %d, want 422; body = %s", response.Code, response.Body)
+	}
+	routes, err := repository.ListRoutes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 0 {
+		t.Fatalf("saved routes = %#v, want none", routes)
+	}
+
+	existing, err := repository.CreateRoute(context.Background(), domain.Route{
+		Name: "traefik",
+		Selector: domain.ContainerSelector{
+			ComposeProject: "traefik",
+			ComposeService: "traefik",
+		},
+		Port:    80,
+		Scheme:  "http",
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disableBody := bytes.NewBufferString(fmt.Sprintf(`{
+		"revision": %d,
+		"name": "traefik",
+		"selector": {"composeProject": "traefik", "composeService": "traefik"},
+		"port": 80,
+		"scheme": "http",
+		"enabled": false
+	}`, existing.Revision))
+	disableResponse := httptest.NewRecorder()
+	handler.ServeHTTP(
+		disableResponse,
+		httptest.NewRequest(http.MethodPut, "/api/v1/routes/1", disableBody),
+	)
+	if disableResponse.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, want 200; body = %s", disableResponse.Code, disableResponse.Body)
+	}
+}

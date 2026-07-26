@@ -6,6 +6,7 @@
     name: string;
     image: string;
     status: string;
+    systemRole?: "reverse-proxy";
     composeProject?: string;
     composeService?: string;
     exposedPorts: number[];
@@ -380,6 +381,9 @@
               <h3>{container.composeService || container.name}</h3>
               <p>{container.image}</p>
               <div class="meta">
+                {#if container.systemRole === "reverse-proxy"}
+                  <span class="system-badge">gateway</span>
+                {/if}
                 {#each container.exposedPorts as port}
                   <span>:{port}</span>
                 {:else}
@@ -387,9 +391,18 @@
                 {/each}
               </div>
             </div>
-            <button class="secondary" onclick={() => choose(container)}>
-              Create route
-            </button>
+            {#if container.systemRole === "reverse-proxy"}
+              <span
+                class="system-action"
+                title="The active reverse proxy cannot route to itself. Its dashboard uses api@internal."
+              >
+                Managed system container
+              </span>
+            {:else}
+              <button class="secondary" onclick={() => choose(container)}>
+                Create route
+              </button>
+            {/if}
           </article>
         {/each}
       </div>

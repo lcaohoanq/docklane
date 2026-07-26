@@ -85,11 +85,22 @@ func TestRefreshObservesRouteStates(t *testing.T) {
 			Enabled:  true,
 			Selector: domain.ContainerSelector{ContainerID: "abc"},
 		},
+		{
+			ID:       5,
+			Name:     "proxy-loop",
+			Port:     80,
+			Scheme:   "http",
+			Enabled:  true,
+			Selector: domain.ContainerSelector{ContainerID: "proxy"},
+		},
 	}
 	reconciler := New(
 		fakeStore{routes: routes},
 		fakeDiscovery{containers: []docker.Container{{
 			ID: "abc123", Name: "web", ExposedPorts: []uint16{80},
+		}, {
+			ID: "proxy123", Name: "traefik", ExposedPorts: []uint16{80, 443},
+			SystemRole: docker.SystemRoleReverseProxy,
 		}}},
 		time.Second,
 	)
@@ -114,6 +125,12 @@ func TestRefreshObservesRouteStates(t *testing.T) {
 	}
 	if !strings.Contains(observed[3].Observed.Message, "available ports: [80]") {
 		t.Fatalf("wrong-port message = %q", observed[3].Observed.Message)
+	}
+	if observed[4].Observed.State != domain.RouteStateError {
+		t.Fatalf("proxy-loop state = %q", observed[4].Observed.State)
+	}
+	if !strings.Contains(observed[4].Observed.Message, "routing it to itself creates a loop") {
+		t.Fatalf("proxy-loop message = %q", observed[4].Observed.Message)
 	}
 }
 

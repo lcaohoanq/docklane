@@ -53,6 +53,25 @@ func TestBuildSkipsRouteWithUndeclaredPort(t *testing.T) {
 	}
 }
 
+func TestBuildSkipsActiveReverseProxyTarget(t *testing.T) {
+	config := Build([]domain.Route{{
+		Name:     "traefik",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "proxy"},
+	}}, []docker.Container{{
+		ID:           "proxy123",
+		Name:         "traefik",
+		SystemRole:   docker.SystemRoleReverseProxy,
+		ExposedPorts: []uint16{80, 443},
+	}}, "docker.home.arpa")
+
+	if len(config.HTTP.Routers) != 0 || len(config.HTTP.Services) != 0 {
+		t.Fatalf("expected reverse proxy route to be omitted, got %#v", config)
+	}
+}
+
 func TestBuildSkipsUnresolvedAndDisabledRoutes(t *testing.T) {
 	config := Build([]domain.Route{
 		{

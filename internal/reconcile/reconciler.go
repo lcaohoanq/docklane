@@ -207,6 +207,15 @@ func observe(route domain.Route, containers []docker.Container, checkedAt time.T
 			CheckedAt: checkedAt,
 		}
 	}
+	if err := docker.ValidateApplicationTarget(container); err != nil {
+		return domain.RouteObservation{
+			State:         domain.RouteStateError,
+			Message:       err.Error(),
+			ContainerID:   container.ID,
+			ContainerName: container.Name,
+			CheckedAt:     checkedAt,
+		}
+	}
 	if err := docker.ValidateTCPPort(container, route.Port); err != nil {
 		return domain.RouteObservation{
 			State:         domain.RouteStateError,

@@ -53,6 +53,9 @@ func Build(routes []domain.Route, containers []docker.Container, baseDomain stri
 		if err != nil {
 			continue
 		}
+		if err := docker.ValidateApplicationTarget(container); err != nil {
+			continue
+		}
 		if err := docker.ValidateTCPPort(container, route.Port); err != nil {
 			continue
 		}
