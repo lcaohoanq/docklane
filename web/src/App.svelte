@@ -340,6 +340,9 @@
                 {#if route.observed?.containerName}
                   · {route.observed.containerName}
                 {/if}
+                {#if route.observed?.state === "error" && route.observed.message}
+                  · {route.observed.message}
+                {/if}
               </small>
             </div>
             <code>{route.scheme} · :{route.port}</code>

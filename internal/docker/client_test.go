@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"errors"
 	"testing"
 
 	"docklane.local/docklane/internal/domain"
@@ -34,5 +35,15 @@ func TestResolveContainerRejectsAmbiguousWorkload(t *testing.T) {
 	}, containers)
 	if err == nil {
 		t.Fatal("expected ambiguous selector error")
+	}
+}
+
+func TestValidateTCPPort(t *testing.T) {
+	container := Container{Name: "draw-web-1", ExposedPorts: []uint16{80, 8080}}
+	if err := ValidateTCPPort(container, 8080); err != nil {
+		t.Fatalf("declared port rejected: %v", err)
+	}
+	if err := ValidateTCPPort(container, 3000); !errors.Is(err, ErrPortNotExposed) {
+		t.Fatalf("undeclared port error = %v, want ErrPortNotExposed", err)
 	}
 }

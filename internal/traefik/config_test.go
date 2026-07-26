@@ -22,6 +22,7 @@ func TestBuild(t *testing.T) {
 		Name:           "actual-container-name",
 		ComposeProject: "excalidraw",
 		ComposeService: "excalidraw",
+		ExposedPorts:   []uint16{80},
 	}}, "docker.home.arpa")
 
 	router := config.HTTP.Routers["excalidraw"]
@@ -31,6 +32,24 @@ func TestBuild(t *testing.T) {
 	server := config.HTTP.Services["excalidraw"].LoadBalancer.Servers[0]
 	if got, want := server.URL, "http://actual-container-name:80"; got != want {
 		t.Fatalf("server URL = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSkipsRouteWithUndeclaredPort(t *testing.T) {
+	config := Build([]domain.Route{{
+		Name:     "draw",
+		Port:     3000,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}, []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw-web-1",
+		ExposedPorts: []uint16{80},
+	}}, "docker.home.arpa")
+
+	if len(config.HTTP.Routers) != 0 || len(config.HTTP.Services) != 0 {
+		t.Fatalf("expected undeclared port route to be omitted, got %#v", config)
 	}
 }
 

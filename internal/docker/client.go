@@ -31,8 +31,9 @@ type Discovery interface {
 }
 
 var (
-	ErrNoMatch   = errors.New("no running container matches the route selector")
-	ErrAmbiguous = errors.New("route selector matches multiple running containers")
+	ErrNoMatch        = errors.New("no running container matches the route selector")
+	ErrAmbiguous      = errors.New("route selector matches multiple running containers")
+	ErrPortNotExposed = errors.New("configured TCP port is not declared by the container")
 )
 
 func ResolveContainer(selector domain.ContainerSelector, containers []Container) (Container, error) {
@@ -57,6 +58,28 @@ func ResolveContainer(selector domain.ContainerSelector, containers []Container)
 	default:
 		return Container{}, fmt.Errorf("%w: %d matches", ErrAmbiguous, len(matches))
 	}
+}
+
+func ValidateTCPPort(container Container, port uint16) error {
+	for _, exposed := range container.ExposedPorts {
+		if exposed == port {
+			return nil
+		}
+	}
+	if len(container.ExposedPorts) == 0 {
+		return fmt.Errorf(
+			"%w: %s declares no TCP ports; choose a declared internal port",
+			ErrPortNotExposed,
+			container.Name,
+		)
+	}
+	return fmt.Errorf(
+		"%w: %s does not declare TCP port %d; available ports: %v",
+		ErrPortNotExposed,
+		container.Name,
+		port,
+		container.ExposedPorts,
+	)
 }
 
 type Client struct {

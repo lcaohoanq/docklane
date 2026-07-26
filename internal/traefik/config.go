@@ -53,6 +53,9 @@ func Build(routes []domain.Route, containers []docker.Container, baseDomain stri
 		if err != nil {
 			continue
 		}
+		if err := docker.ValidateTCPPort(container, route.Port); err != nil {
+			continue
+		}
 		name := safeName(route.Name)
 		config.HTTP.Routers[name] = Router{
 			Rule:        fmt.Sprintf("Host(`%s`)", route.Hostname(baseDomain)),

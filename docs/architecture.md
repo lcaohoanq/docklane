@@ -295,10 +295,21 @@ state from SQLite.
 | Exactly one running workload matches | Publish the route |
 | No running workload matches | Omit route and report `unresolved` |
 | Multiple workloads match unexpectedly | Omit route and report `ambiguous` |
-| Selected port is no longer declared | Warn; verify reachability before publish |
+| Selected port is no longer declared | Omit route and report actionable `error` |
 | Managed network is missing | Recreate only through an explicit repair policy |
 | Traefik cannot fetch configuration | Report provider failure; never emit partial JSON |
 | DNS or certificate is wrong | `doctor` identifies the failed layer |
+
+Docklane treats Docker-declared private TCP ports as the safe publication
+boundary. A resolved workload with a different configured port remains saved
+as desired state, reports the ports that are available, and is excluded from
+the provider document. This lets a corrected container image recover on a
+later reconciliation without losing the user's route.
+
+An active reachability probe remains separate from declared-port validation.
+It must run from the same network perspective as Traefik; attaching the
+controller to every application network merely to probe would weaken the
+private control-plane boundary.
 
 The integrated implementation must test what Traefik does when the controller
 is unavailable and provide a last-known-good or file-provider fallback if

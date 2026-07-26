@@ -40,6 +40,7 @@ func TestCreateRouteAndRenderTraefikConfiguration(t *testing.T) {
 			Name:           "draw-web-7",
 			ComposeProject: "draw",
 			ComposeService: "web",
+			ExposedPorts:   []uint16{80},
 		}},
 	}
 	reconciler := reconcile.New(repository, discovery, time.Second)
@@ -115,6 +116,7 @@ func TestUpdateDisableAndDeleteRoute(t *testing.T) {
 		Name:           "draw-web-1",
 		ComposeProject: "draw",
 		ComposeService: "web",
+		ExposedPorts:   []uint16{80, 8080},
 	}}}
 	reconciler := reconcile.New(repository, discovery, time.Second)
 	handler := New(

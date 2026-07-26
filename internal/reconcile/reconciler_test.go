@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,10 +55,20 @@ func TestRefreshObservesRouteStates(t *testing.T) {
 			Enabled:  false,
 			Selector: domain.ContainerSelector{ContainerID: "abc"},
 		},
+		{
+			ID:       4,
+			Name:     "wrong-port",
+			Port:     3000,
+			Scheme:   "http",
+			Enabled:  true,
+			Selector: domain.ContainerSelector{ContainerID: "abc"},
+		},
 	}
 	reconciler := New(
 		fakeStore{routes: routes},
-		fakeDiscovery{containers: []docker.Container{{ID: "abc123", Name: "web"}}},
+		fakeDiscovery{containers: []docker.Container{{
+			ID: "abc123", Name: "web", ExposedPorts: []uint16{80},
+		}}},
 		time.Second,
 	)
 	if err := reconciler.Refresh(context.Background()); err != nil {
@@ -75,6 +86,12 @@ func TestRefreshObservesRouteStates(t *testing.T) {
 	}
 	if observed[2].Observed.State != domain.RouteStateDisabled {
 		t.Fatalf("disabled state = %q", observed[2].Observed.State)
+	}
+	if observed[3].Observed.State != domain.RouteStateError {
+		t.Fatalf("wrong-port state = %q", observed[3].Observed.State)
+	}
+	if !strings.Contains(observed[3].Observed.Message, "available ports: [80]") {
+		t.Fatalf("wrong-port message = %q", observed[3].Observed.Message)
 	}
 }
 

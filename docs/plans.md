@@ -147,7 +147,7 @@ machine-level mutations.
 - [ ] Define route states: `ready`, `unresolved`, `ambiguous`, `unreachable`,
   `disabled`, and `error`.
 - [x] Return desired and observed state separately.
-- [ ] Validate that the configured internal port belongs to the selected
+- [x] Validate that the configured internal port belongs to the selected
   workload.
 - [ ] Probe upstream reachability with bounded timeouts.
 - [ ] Support non-Compose containers without pretending their ID is durable.
