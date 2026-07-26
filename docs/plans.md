@@ -195,12 +195,12 @@ without published host ports.
 - [ ] Define the managed network name and labels.
 - [ ] Preview network create/connect/disconnect operations.
 - [ ] Create the network idempotently.
-- [ ] Attach selected containers without removing their existing networks.
+- [x] Attach selected containers without removing their existing networks.
 - [ ] Assign a deterministic per-route network alias.
 - [ ] Track attachments created by Docklane.
 - [ ] Detach only Docklane-owned attachments when no route needs them.
 - [ ] Handle stopped and recreated containers.
-- [ ] Add integration tests using disposable Docker resources.
+- [x] Add integration tests using disposable Docker resources.
 
 ### Traefik provider
 

@@ -236,7 +236,11 @@ func (a *API) traefik(response http.ResponseWriter, request *http.Request) {
 		writeError(response, http.StatusBadGateway, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, traefik.Build(routes, containers, a.config.BaseDomain))
+	writeJSON(
+		response,
+		http.StatusOK,
+		traefik.Build(routes, containers, a.config.BaseDomain, a.config.ProxyNetwork),
+	)
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

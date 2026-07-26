@@ -38,12 +38,21 @@ type Server struct {
 	URL string `json:"url"`
 }
 
-func Build(routes []domain.Route, containers []docker.Container, baseDomain string) Configuration {
+func Build(
+	routes []domain.Route,
+	containers []docker.Container,
+	baseDomain string,
+	targetNetworks ...string,
+) Configuration {
 	config := Configuration{
 		HTTP: HTTPConfiguration{
 			Routers:  map[string]Router{},
 			Services: map[string]Service{},
 		},
+	}
+	targetNetwork := ""
+	if len(targetNetworks) > 0 {
+		targetNetwork = targetNetworks[0]
 	}
 	for _, route := range routes {
 		if !route.Enabled {
@@ -57,6 +66,9 @@ func Build(routes []domain.Route, containers []docker.Container, baseDomain stri
 			continue
 		}
 		if err := docker.ValidateTCPPort(container, route.Port); err != nil {
+			continue
+		}
+		if targetNetwork != "" && !container.HasNetwork(targetNetwork) {
 			continue
 		}
 		name := safeName(route.Name)

@@ -173,9 +173,12 @@ The Docker adapter discovers:
 - declared private TCP ports;
 - network membership.
 
-The target implementation also performs explicit connect/disconnect operations
-for the Docklane-managed proxy network. Docker socket access is effectively
-root-level authority and is treated as the primary security boundary.
+The integrated implementation performs additive connect operations for the
+configured proxy network and leaves every existing network intact. Automatic
+disconnect remains deferred until Docklane can persist and prove ownership of
+an attachment. Docker socket access is effectively root-level authority and is
+treated as the primary security boundary; mounting the socket path read-only
+does not make Docker API operations read-only.
 
 ### 5.6 Traefik adapter
 
@@ -311,6 +314,7 @@ state from SQLite.
 | Selected port is no longer declared | Omit route and report actionable `error` |
 | Route targets the active Traefik gateway | Reject or omit it to prevent a self-routing loop |
 | Managed network is missing | Recreate only through an explicit repair policy |
+| Workload is outside the proxy network | Attach it when enabled; otherwise omit route and report `error` |
 | Traefik cannot fetch configuration | Report provider failure; never emit partial JSON |
 | DNS or certificate is wrong | `doctor` identifies the failed layer |
 

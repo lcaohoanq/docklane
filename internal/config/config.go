@@ -12,6 +12,8 @@ type Config struct {
 	DatabasePath   string
 	BaseDomain     string
 	DockerSocket   string
+	ProxyNetwork   string
+	ManageNetworks bool
 	ReconcileEvery time.Duration
 }
 
@@ -24,6 +26,9 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.DockerSocket) == "" {
 		return fmt.Errorf("Docker socket path is required")
+	}
+	if c.ManageNetworks && strings.TrimSpace(c.ProxyNetwork) == "" {
+		return fmt.Errorf("proxy network is required when network attachment is enabled")
 	}
 	if strings.TrimSpace(c.BaseDomain) == "" || strings.ContainsAny(c.BaseDomain, "/: ") {
 		return fmt.Errorf("invalid base domain %q", c.BaseDomain)

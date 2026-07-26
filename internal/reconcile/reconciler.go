@@ -25,6 +25,8 @@ type Reconciler struct {
 	store     RouteStore
 	discovery docker.Discovery
 	interval  time.Duration
+	network   string
+	manager   docker.NetworkManager
 
 	mu           sync.RWMutex
 	observations map[int64]domain.RouteObservation
@@ -32,13 +34,31 @@ type Reconciler struct {
 	lastError    error
 }
 
-func New(store RouteStore, discovery docker.Discovery, interval time.Duration) *Reconciler {
-	return &Reconciler{
+type Option func(*Reconciler)
+
+func WithNetworkAttachments(network string, manager docker.NetworkManager) Option {
+	return func(reconciler *Reconciler) {
+		reconciler.network = network
+		reconciler.manager = manager
+	}
+}
+
+func New(
+	store RouteStore,
+	discovery docker.Discovery,
+	interval time.Duration,
+	options ...Option,
+) *Reconciler {
+	reconciler := &Reconciler{
 		store:        store,
 		discovery:    discovery,
 		interval:     interval,
 		observations: map[int64]domain.RouteObservation{},
 	}
+	for _, option := range options {
+		option(reconciler)
+	}
+	return reconciler
 }
 
 func (r *Reconciler) Run(ctx context.Context) {
@@ -139,10 +159,56 @@ func (r *Reconciler) Refresh(ctx context.Context) error {
 	checkedAt := time.Now().UTC()
 	observations := make(map[int64]domain.RouteObservation, len(routes))
 	for _, route := range routes {
-		observations[route.ID] = observe(route, containers, checkedAt)
+		observation := observe(route, containers, checkedAt)
+		if observation.State == domain.RouteStateReady && r.network != "" {
+			observation = r.ensureNetwork(ctx, observation, containers, checkedAt)
+		}
+		observations[route.ID] = observation
 	}
 	r.replace(observations, nil)
 	return nil
+}
+
+func (r *Reconciler) ensureNetwork(
+	ctx context.Context,
+	observation domain.RouteObservation,
+	containers []docker.Container,
+	checkedAt time.Time,
+) domain.RouteObservation {
+	for index := range containers {
+		if containers[index].ID != observation.ContainerID {
+			continue
+		}
+		if containers[index].HasNetwork(r.network) {
+			return observation
+		}
+		if r.manager == nil {
+			observation.State = domain.RouteStateError
+			observation.Message = fmt.Sprintf(
+				"container is not connected to required network %q",
+				r.network,
+			)
+			observation.UpstreamURL = ""
+			return observation
+		}
+		if err := r.manager.ConnectNetwork(ctx, r.network, containers[index].ID); err != nil {
+			observation.State = domain.RouteStateError
+			observation.Message = err.Error()
+			observation.UpstreamURL = ""
+			return observation
+		}
+		containers[index].Networks = append(containers[index].Networks, r.network)
+		observation.Message = fmt.Sprintf(
+			"running workload resolved and attached to network %q",
+			r.network,
+		)
+		observation.CheckedAt = checkedAt
+		return observation
+	}
+	observation.State = domain.RouteStateUnresolved
+	observation.Message = "resolved container disappeared before network attachment"
+	observation.UpstreamURL = ""
+	return observation
 }
 
 func (r *Reconciler) Enrich(routes []domain.Route) []domain.Route {

@@ -72,6 +72,25 @@ func TestBuildSkipsActiveReverseProxyTarget(t *testing.T) {
 	}
 }
 
+func TestBuildSkipsContainerOutsideTargetNetwork(t *testing.T) {
+	config := Build([]domain.Route{{
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}, []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"bridge"},
+	}}, "docker.home.arpa", "proxy")
+
+	if len(config.HTTP.Routers) != 0 || len(config.HTTP.Services) != 0 {
+		t.Fatalf("expected out-of-network route to be omitted, got %#v", config)
+	}
+}
+
 func TestBuildSkipsUnresolvedAndDisabledRoutes(t *testing.T) {
 	config := Build([]domain.Route{
 		{

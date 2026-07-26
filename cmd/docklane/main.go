@@ -322,6 +322,12 @@ func serve(args []string) error {
 	database := flags.String("database", "./data/docklane.db", "state database path")
 	baseDomain := flags.String("base-domain", "docker.home.arpa", "local route base domain")
 	dockerSocket := flags.String("docker-socket", "/var/run/docker.sock", "Docker Engine Unix socket")
+	proxyNetwork := flags.String("proxy-network", "", "required shared Traefik network")
+	manageNetworks := flags.Bool(
+		"manage-network-attachments",
+		false,
+		"connect routed containers to the proxy network",
+	)
 	reconcileEvery := flags.Duration("reconcile-interval", 5*time.Second, "Docker reconciliation interval")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -332,6 +338,8 @@ func serve(args []string) error {
 		DatabasePath:   *database,
 		BaseDomain:     *baseDomain,
 		DockerSocket:   *dockerSocket,
+		ProxyNetwork:   *proxyNetwork,
+		ManageNetworks: *manageNetworks,
 		ReconcileEvery: *reconcileEvery,
 	}
 	if err := cfg.Validate(); err != nil {
@@ -345,7 +353,23 @@ func serve(args []string) error {
 	defer repository.Close()
 
 	dockerClient := docker.NewClient(cfg.DockerSocket)
-	reconciler := reconcile.New(repository, dockerClient, cfg.ReconcileEvery)
+	reconcileOptions := []reconcile.Option{}
+	if cfg.ProxyNetwork != "" {
+		var manager docker.NetworkManager
+		if cfg.ManageNetworks {
+			manager = dockerClient
+		}
+		reconcileOptions = append(
+			reconcileOptions,
+			reconcile.WithNetworkAttachments(cfg.ProxyNetwork, manager),
+		)
+	}
+	reconciler := reconcile.New(
+		repository,
+		dockerClient,
+		cfg.ReconcileEvery,
+		reconcileOptions...,
+	)
 	handler := api.New(cfg, repository, dockerClient, reconciler)
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

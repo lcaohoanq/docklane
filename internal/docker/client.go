@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ type Container struct {
 	ComposeService string            `json:"composeService,omitempty"`
 	ExposedPorts   []uint16          `json:"exposedPorts"`
 	Labels         map[string]string `json:"-"`
+	Networks       []string          `json:"networks"`
 }
 
 const SystemRoleReverseProxy = "reverse-proxy"
@@ -37,6 +39,10 @@ type Discovery interface {
 
 type EventSource interface {
 	WatchContainerEvents(context.Context, func()) error
+}
+
+type NetworkManager interface {
+	ConnectNetwork(context.Context, string, string) error
 }
 
 var (
@@ -150,6 +156,9 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			PublicPort  uint16 `json:"PublicPort"`
 			Type        string `json:"Type"`
 		} `json:"Ports"`
+		NetworkSettings struct {
+			Networks map[string]json.RawMessage `json:"Networks"`
+		} `json:"NetworkSettings"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&raw); err != nil {
 		return nil, err
@@ -176,6 +185,11 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			}
 		}
 		sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
+		networks := make([]string, 0, len(item.NetworkSettings.Networks))
+		for network := range item.NetworkSettings.Networks {
+			networks = append(networks, network)
+		}
+		sort.Strings(networks)
 		containers = append(containers, Container{
 			ID:             item.ID,
 			Name:           name,
@@ -187,9 +201,56 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			ComposeService: item.Labels["com.docker.compose.service"],
 			ExposedPorts:   ports,
 			Labels:         item.Labels,
+			Networks:       networks,
 		})
 	}
 	return containers, nil
+}
+
+func (c Container) HasNetwork(name string) bool {
+	for _, network := range c.Networks {
+		if network == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) ConnectNetwork(ctx context.Context, network, containerID string) error {
+	payload, err := json.Marshal(map[string]any{"Container": containerID})
+	if err != nil {
+		return err
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodPost,
+		"http://docker/networks/"+url.PathEscape(network)+"/connect",
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("connect %s to network %s: %w", containerID, network, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusOK {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	message := strings.TrimSpace(string(body))
+	if response.StatusCode == http.StatusForbidden &&
+		strings.Contains(strings.ToLower(message), "already exists") {
+		return nil
+	}
+	if message == "" {
+		message = response.Status
+	}
+	return fmt.Errorf("connect container to network %s: %s", network, message)
 }
 
 func detectSystemRole(image string, labels map[string]string, publishesGatewayPort bool) string {

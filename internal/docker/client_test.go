@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -128,5 +129,41 @@ func TestValidateApplicationTargetRejectsReverseProxy(t *testing.T) {
 	})
 	if !errors.Is(err, ErrSystemTarget) {
 		t.Fatalf("target error = %v, want ErrSystemTarget", err)
+	}
+}
+
+func TestConnectNetworkUsesDockerAPI(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodPost ||
+				request.URL.Path != "/networks/proxy/connect" {
+				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			}
+			var payload struct {
+				Container string `json:"Container"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Container != "abc123" {
+				t.Fatalf("container = %q, want abc123", payload.Container)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		},
+	)}}
+	if err := client.ConnectNetwork(context.Background(), "proxy", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContainerHasNetwork(t *testing.T) {
+	container := Container{Networks: []string{"bridge", "proxy"}}
+	if !container.HasNetwork("proxy") || container.HasNetwork("missing") {
+		t.Fatalf("unexpected network lookup for %#v", container.Networks)
 	}
 }

@@ -30,6 +30,20 @@ type eventDiscovery struct {
 	listCalls atomic.Int32
 }
 
+type fakeNetworkManager struct {
+	calls int
+	err   error
+}
+
+func (manager *fakeNetworkManager) ConnectNetwork(
+	context.Context,
+	string,
+	string,
+) error {
+	manager.calls++
+	return manager.err
+}
+
 func (discovery *eventDiscovery) ListContainers(context.Context) ([]docker.Container, error) {
 	discovery.listCalls.Add(1)
 	return []docker.Container{{
@@ -193,4 +207,69 @@ func TestRunDebouncesDockerEventBurst(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestRefreshAttachesMissingProxyNetwork(t *testing.T) {
+	routes := []domain.Route{{
+		ID:       1,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		fakeStore{routes: routes},
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observed := reconciler.Enrich(routes)[0].Observed
+	if observed.State != domain.RouteStateReady {
+		t.Fatalf("state = %q, message = %q", observed.State, observed.Message)
+	}
+	if manager.calls != 1 {
+		t.Fatalf("network connect calls = %d, want 1", manager.calls)
+	}
+	if !strings.Contains(observed.Message, `attached to network "proxy"`) {
+		t.Fatalf("message = %q", observed.Message)
+	}
+}
+
+func TestRefreshReportsMissingNetworkWhenManagementDisabled(t *testing.T) {
+	routes := []domain.Route{{
+		ID:       1,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}
+	reconciler := New(
+		fakeStore{routes: routes},
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", nil),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observed := reconciler.Enrich(routes)[0].Observed
+	if observed.State != domain.RouteStateError {
+		t.Fatalf("state = %q, want error", observed.State)
+	}
 }

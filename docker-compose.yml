@@ -11,6 +11,8 @@ services:
       - --database=/data/docklane.db
       - --base-domain=docker.home.arpa
       - --docker-socket=/var/run/docker.sock
+      - --proxy-network=proxy
+      - --manage-network-attachments
       - --reconcile-interval=5s
     ports:
       - "127.0.0.1:4646:4646"
