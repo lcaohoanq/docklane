@@ -137,8 +137,8 @@ func TestOpenAddsRevisionToExistingDatabase(t *testing.T) {
 	if route.Revision != 1 {
 		t.Fatalf("migrated revision = %d, want 1", route.Revision)
 	}
-	if version := databaseVersion(t, repository.db); version != 2 {
-		t.Fatalf("schema version = %d, want 2", version)
+	if version := databaseVersion(t, repository.db); version != 3 {
+		t.Fatalf("schema version = %d, want 3", version)
 	}
 
 	backups, err := filepath.Glob(filepath.Join(filepath.Dir(path), "backups", "*.db"))
@@ -219,8 +219,8 @@ func TestOpenAdoptsUnversionedCurrentSchemaWithBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version := databaseVersion(t, repository.db); version != 2 {
-		t.Fatalf("schema version = %d, want 2", version)
+	if version := databaseVersion(t, repository.db); version != 3 {
+		t.Fatalf("schema version = %d, want 3", version)
 	}
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
@@ -244,6 +244,42 @@ func TestOpenAdoptsUnversionedCurrentSchemaWithBackup(t *testing.T) {
 	}
 	if len(backupsAfterReopen) != 1 {
 		t.Fatalf("reopen created another backup: %v", backupsAfterReopen)
+	}
+}
+
+func TestNetworkAttachmentLifecycle(t *testing.T) {
+	repository, err := Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	attachment := domain.NetworkAttachment{
+		ContainerID: "abc123",
+		Network:     "proxy",
+	}
+	if err := repository.RecordNetworkAttachment(context.Background(), attachment); err != nil {
+		t.Fatal(err)
+	}
+	attachments, err := repository.ListNetworkAttachments(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attachments) != 1 || attachments[0].ContainerID != "abc123" {
+		t.Fatalf("attachments = %#v", attachments)
+	}
+	if err := repository.DeleteNetworkAttachment(
+		context.Background(),
+		"abc123",
+		"proxy",
+	); err != nil {
+		t.Fatal(err)
+	}
+	attachments, err = repository.ListNetworkAttachments(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attachments) != 0 {
+		t.Fatalf("attachments after delete = %#v", attachments)
 	}
 }
 

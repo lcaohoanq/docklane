@@ -43,6 +43,7 @@ type EventSource interface {
 
 type NetworkManager interface {
 	ConnectNetwork(context.Context, string, string) error
+	DisconnectNetwork(context.Context, string, string) error
 }
 
 var (
@@ -251,6 +252,42 @@ func (c *Client) ConnectNetwork(ctx context.Context, network, containerID string
 		message = response.Status
 	}
 	return fmt.Errorf("connect container to network %s: %s", network, message)
+}
+
+func (c *Client) DisconnectNetwork(ctx context.Context, network, containerID string) error {
+	payload, err := json.Marshal(map[string]any{
+		"Container": containerID,
+		"Force":     false,
+	})
+	if err != nil {
+		return err
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodPost,
+		"http://docker/networks/"+url.PathEscape(network)+"/disconnect",
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("disconnect %s from network %s: %w", containerID, network, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusOK || response.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	message := strings.TrimSpace(string(body))
+	if message == "" {
+		message = response.Status
+	}
+	return fmt.Errorf("disconnect container from network %s: %s", network, message)
 }
 
 func detectSystemRole(image string, labels map[string]string, publishesGatewayPort bool) string {

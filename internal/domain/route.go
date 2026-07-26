@@ -47,6 +47,12 @@ type RouteObservation struct {
 	CheckedAt     time.Time  `json:"checkedAt"`
 }
 
+type NetworkAttachment struct {
+	ContainerID string    `json:"containerId"`
+	Network     string    `json:"network"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 func (r Route) Validate() error {
 	if !routeNamePattern.MatchString(r.Name) {
 		return fmt.Errorf("name must be a lowercase DNS label")

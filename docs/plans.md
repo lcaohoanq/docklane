@@ -197,9 +197,9 @@ without published host ports.
 - [ ] Create the network idempotently.
 - [x] Attach selected containers without removing their existing networks.
 - [ ] Assign a deterministic per-route network alias.
-- [ ] Track attachments created by Docklane.
-- [ ] Detach only Docklane-owned attachments when no route needs them.
-- [ ] Handle stopped and recreated containers.
+- [x] Track attachments created by Docklane.
+- [x] Detach only Docklane-owned attachments when no route needs them.
+- [x] Handle stopped and recreated containers.
 - [x] Add integration tests using disposable Docker resources.
 
 ### Traefik provider

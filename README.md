@@ -24,7 +24,8 @@ The current integrated checkpoint additionally provides:
 - declared-port validation that keeps invalid upstreams out of Traefik;
 - active-gateway detection that prevents reverse-proxy self-routing loops;
 - numbered SQLite migrations with a protected pre-migration snapshot;
-- additive proxy-network attachment for enabled routes without host ports;
+- ownership-tracked proxy-network attachment and safe detachment for enabled
+  routes without host ports;
 - observed `ready`, `disabled`, `unresolved`, `ambiguous`, and `error` states;
 - immediate reconciliation after mutations, debounced Docker lifecycle events,
   and periodic recovery reconciliation;
@@ -103,14 +104,17 @@ Current API endpoints:
 
 ## Safety boundary
 
-The controller currently reads Docker state through `/var/run/docker.sock`.
-Route creation writes only to Docklane's own SQLite database.
+The controller reads Docker state and manages selected proxy-network
+attachments through `/var/run/docker.sock`. Route creation writes desired
+state and attachment ownership to Docklane's SQLite database.
 
 The current container bind-mounts the Docker socket with a read-only filesystem
 flag, but Docker API access through that socket still grants host-level
-container authority. The integrated deployment explicitly enables additive
-attachment to the shared `proxy` network. Docklane never disconnects an
-application network in this milestone.
+container authority. The integrated deployment attaches routed workloads to
+the shared `proxy` network without removing their existing networks. Docklane
+records each attachment it creates and disconnects only those recorded
+attachments after no enabled route needs them. Pre-existing network membership
+is never claimed or removed.
 
 Docklane administration is published only on host loopback, and Traefik
 reaches its provider through the separate private `docklane-control` network.

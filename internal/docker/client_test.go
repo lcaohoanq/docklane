@@ -161,6 +161,39 @@ func TestConnectNetworkUsesDockerAPI(t *testing.T) {
 	}
 }
 
+func TestDisconnectNetworkUsesDockerAPIWithoutForce(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodPost ||
+				request.URL.Path != "/networks/proxy/disconnect" {
+				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			}
+			var payload struct {
+				Container string `json:"Container"`
+				Force     bool   `json:"Force"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Container != "abc123" {
+				t.Fatalf("container = %q, want abc123", payload.Container)
+			}
+			if payload.Force {
+				t.Fatal("disconnect unexpectedly forced")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		},
+	)}}
+	if err := client.DisconnectNetwork(context.Background(), "proxy", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestContainerHasNetwork(t *testing.T) {
 	container := Container{Networks: []string{"bridge", "proxy"}}
 	if !container.HasNetwork("proxy") || container.HasNetwork("missing") {

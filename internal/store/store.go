@@ -52,6 +52,18 @@ var migrations = []migration{
 			`ALTER TABLE routes ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`,
 		},
 	},
+	{
+		version:     3,
+		description: "track managed network attachments",
+		statements: []string{`
+			CREATE TABLE network_attachments (
+				container_id TEXT NOT NULL,
+				network TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (container_id, network)
+			)
+		`},
+	},
 }
 
 var (
@@ -409,6 +421,74 @@ func (s *Store) DeleteRoute(ctx context.Context, id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) RecordNetworkAttachment(
+	ctx context.Context,
+	attachment domain.NetworkAttachment,
+) error {
+	if attachment.ContainerID == "" || attachment.Network == "" {
+		return fmt.Errorf("container ID and network are required")
+	}
+	if attachment.CreatedAt.IsZero() {
+		attachment.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO network_attachments (container_id, network, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT (container_id, network) DO NOTHING
+	`,
+		attachment.ContainerID,
+		attachment.Network,
+		attachment.CreatedAt.Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+func (s *Store) ListNetworkAttachments(
+	ctx context.Context,
+) ([]domain.NetworkAttachment, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT container_id, network, created_at
+		FROM network_attachments
+		ORDER BY network, container_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var attachments []domain.NetworkAttachment
+	for rows.Next() {
+		var attachment domain.NetworkAttachment
+		var createdAt string
+		if err := rows.Scan(
+			&attachment.ContainerID,
+			&attachment.Network,
+			&createdAt,
+		); err != nil {
+			return nil, err
+		}
+		attachment.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			return nil, err
+		}
+		attachments = append(attachments, attachment)
+	}
+	return attachments, rows.Err()
+}
+
+func (s *Store) DeleteNetworkAttachment(
+	ctx context.Context,
+	containerID string,
+	network string,
+) error {
+	_, err := s.db.ExecContext(
+		ctx,
+		`DELETE FROM network_attachments WHERE container_id = ? AND network = ?`,
+		containerID,
+		network,
+	)
+	return err
 }
 
 type scanner interface {

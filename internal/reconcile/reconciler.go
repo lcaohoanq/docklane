@@ -21,12 +21,19 @@ type RouteStore interface {
 	ListRoutes(context.Context) ([]domain.Route, error)
 }
 
+type AttachmentStore interface {
+	RecordNetworkAttachment(context.Context, domain.NetworkAttachment) error
+	ListNetworkAttachments(context.Context) ([]domain.NetworkAttachment, error)
+	DeleteNetworkAttachment(context.Context, string, string) error
+}
+
 type Reconciler struct {
-	store     RouteStore
-	discovery docker.Discovery
-	interval  time.Duration
-	network   string
-	manager   docker.NetworkManager
+	store       RouteStore
+	discovery   docker.Discovery
+	interval    time.Duration
+	network     string
+	manager     docker.NetworkManager
+	attachments AttachmentStore
 
 	mu           sync.RWMutex
 	observations map[int64]domain.RouteObservation
@@ -54,6 +61,9 @@ func New(
 		discovery:    discovery,
 		interval:     interval,
 		observations: map[int64]domain.RouteObservation{},
+	}
+	if attachments, ok := store.(AttachmentStore); ok {
+		reconciler.attachments = attachments
 	}
 	for _, option := range options {
 		option(reconciler)
@@ -165,8 +175,9 @@ func (r *Reconciler) Refresh(ctx context.Context) error {
 		}
 		observations[route.ID] = observation
 	}
-	r.replace(observations, nil)
-	return nil
+	cleanupErr := r.cleanupAttachments(ctx, observations, containers)
+	r.replace(observations, cleanupErr)
+	return cleanupErr
 }
 
 func (r *Reconciler) ensureNetwork(
@@ -197,6 +208,27 @@ func (r *Reconciler) ensureNetwork(
 			observation.UpstreamURL = ""
 			return observation
 		}
+		if r.attachments == nil {
+			_ = r.manager.DisconnectNetwork(ctx, r.network, containers[index].ID)
+			observation.State = domain.RouteStateError
+			observation.Message = "network attachment store is unavailable"
+			observation.UpstreamURL = ""
+			return observation
+		}
+		if err := r.attachments.RecordNetworkAttachment(
+			ctx,
+			domain.NetworkAttachment{
+				ContainerID: containers[index].ID,
+				Network:     r.network,
+				CreatedAt:   checkedAt,
+			},
+		); err != nil {
+			_ = r.manager.DisconnectNetwork(ctx, r.network, containers[index].ID)
+			observation.State = domain.RouteStateError
+			observation.Message = fmt.Sprintf("record network attachment: %v", err)
+			observation.UpstreamURL = ""
+			return observation
+		}
 		containers[index].Networks = append(containers[index].Networks, r.network)
 		observation.Message = fmt.Sprintf(
 			"running workload resolved and attached to network %q",
@@ -209,6 +241,52 @@ func (r *Reconciler) ensureNetwork(
 	observation.Message = "resolved container disappeared before network attachment"
 	observation.UpstreamURL = ""
 	return observation
+}
+
+func (r *Reconciler) cleanupAttachments(
+	ctx context.Context,
+	observations map[int64]domain.RouteObservation,
+	containers []docker.Container,
+) error {
+	if r.manager == nil || r.attachments == nil || r.network == "" {
+		return nil
+	}
+	attachments, err := r.attachments.ListNetworkAttachments(ctx)
+	if err != nil {
+		return fmt.Errorf("list managed network attachments: %w", err)
+	}
+	needed := map[string]bool{}
+	for _, observation := range observations {
+		if observation.State == domain.RouteStateReady {
+			needed[observation.ContainerID] = true
+		}
+	}
+	existing := map[string]bool{}
+	for _, container := range containers {
+		existing[container.ID] = true
+	}
+	for _, attachment := range attachments {
+		if attachment.Network != r.network || needed[attachment.ContainerID] {
+			continue
+		}
+		if existing[attachment.ContainerID] {
+			if err := r.manager.DisconnectNetwork(
+				ctx,
+				attachment.Network,
+				attachment.ContainerID,
+			); err != nil {
+				return err
+			}
+		}
+		if err := r.attachments.DeleteNetworkAttachment(
+			ctx,
+			attachment.ContainerID,
+			attachment.Network,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Reconciler) Enrich(routes []domain.Route) []domain.Route {

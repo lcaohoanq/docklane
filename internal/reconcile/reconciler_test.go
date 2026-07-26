@@ -21,9 +21,64 @@ func (store fakeStore) ListRoutes(context.Context) ([]domain.Route, error) {
 	return store.routes, store.err
 }
 
+func (store fakeStore) RecordNetworkAttachment(
+	context.Context,
+	domain.NetworkAttachment,
+) error {
+	return nil
+}
+
+func (store fakeStore) ListNetworkAttachments(
+	context.Context,
+) ([]domain.NetworkAttachment, error) {
+	return nil, nil
+}
+
+func (store fakeStore) DeleteNetworkAttachment(context.Context, string, string) error {
+	return nil
+}
+
 type fakeDiscovery struct {
 	containers []docker.Container
 	err        error
+}
+
+type trackingStore struct {
+	routes      []domain.Route
+	attachments []domain.NetworkAttachment
+}
+
+func (store *trackingStore) ListRoutes(context.Context) ([]domain.Route, error) {
+	return store.routes, nil
+}
+
+func (store *trackingStore) RecordNetworkAttachment(
+	_ context.Context,
+	attachment domain.NetworkAttachment,
+) error {
+	store.attachments = append(store.attachments, attachment)
+	return nil
+}
+
+func (store *trackingStore) ListNetworkAttachments(
+	context.Context,
+) ([]domain.NetworkAttachment, error) {
+	return append([]domain.NetworkAttachment(nil), store.attachments...), nil
+}
+
+func (store *trackingStore) DeleteNetworkAttachment(
+	_ context.Context,
+	containerID string,
+	network string,
+) error {
+	var kept []domain.NetworkAttachment
+	for _, attachment := range store.attachments {
+		if attachment.ContainerID != containerID || attachment.Network != network {
+			kept = append(kept, attachment)
+		}
+	}
+	store.attachments = kept
+	return nil
 }
 
 type eventDiscovery struct {
@@ -31,8 +86,18 @@ type eventDiscovery struct {
 }
 
 type fakeNetworkManager struct {
-	calls int
-	err   error
+	calls           int
+	disconnectCalls int
+	err             error
+}
+
+func (manager *fakeNetworkManager) DisconnectNetwork(
+	context.Context,
+	string,
+	string,
+) error {
+	manager.disconnectCalls++
+	return manager.err
 }
 
 func (manager *fakeNetworkManager) ConnectNetwork(
@@ -271,5 +336,110 @@ func TestRefreshReportsMissingNetworkWhenManagementDisabled(t *testing.T) {
 	observed := reconciler.Enrich(routes)[0].Observed
 	if observed.State != domain.RouteStateError {
 		t.Fatalf("state = %q, want error", observed.State)
+	}
+}
+
+func TestRefreshDisconnectsOnlyTrackedUnusedAttachment(t *testing.T) {
+	store := &trackingStore{
+		routes: []domain.Route{{
+			ID:       1,
+			Name:     "draw",
+			Port:     80,
+			Scheme:   "http",
+			Enabled:  false,
+			Selector: domain.ContainerSelector{ContainerID: "abc"},
+		}},
+		attachments: []domain.NetworkAttachment{{
+			ContainerID: "abc123",
+			Network:     "proxy",
+		}},
+	}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		store,
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge", "proxy"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if manager.disconnectCalls != 1 {
+		t.Fatalf("disconnect calls = %d, want 1", manager.disconnectCalls)
+	}
+	if len(store.attachments) != 0 {
+		t.Fatalf("attachments = %#v, want none", store.attachments)
+	}
+}
+
+func TestRefreshRecordsAttachmentCreatedByDocklane(t *testing.T) {
+	store := &trackingStore{routes: []domain.Route{{
+		ID:       1,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		store,
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if manager.calls != 1 || manager.disconnectCalls != 0 {
+		t.Fatalf(
+			"connect calls = %d, disconnect calls = %d; want 1, 0",
+			manager.calls,
+			manager.disconnectCalls,
+		)
+	}
+	if len(store.attachments) != 1 ||
+		store.attachments[0].ContainerID != "abc123" ||
+		store.attachments[0].Network != "proxy" {
+		t.Fatalf("attachments = %#v, want owned proxy attachment", store.attachments)
+	}
+}
+
+func TestRefreshPreservesUntrackedAttachment(t *testing.T) {
+	store := &trackingStore{routes: []domain.Route{{
+		ID:       1,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  false,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}}
+	manager := &fakeNetworkManager{}
+	reconciler := New(
+		store,
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge", "proxy"},
+		}}},
+		time.Second,
+		WithNetworkAttachments("proxy", manager),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if manager.disconnectCalls != 0 {
+		t.Fatalf("disconnect calls = %d, want 0", manager.disconnectCalls)
 	}
 }
