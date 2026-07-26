@@ -1,0 +1,6 @@
+.git
+.gocache
+.pnpm-store
+bin
+data
+web/node_modules

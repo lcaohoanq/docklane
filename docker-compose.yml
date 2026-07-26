@@ -1,0 +1,37 @@
+services:
+  docklane:
+    build:
+      context: .
+    image: docklane:local
+    container_name: docklane
+    restart: unless-stopped
+    command:
+      - serve
+      - --listen=0.0.0.0:4646
+      - --database=/data/docklane.db
+      - --base-domain=docker.home.arpa
+      - --docker-socket=/var/run/docker.sock
+      - --reconcile-interval=5s
+    ports:
+      - "127.0.0.1:4646:4646"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/data
+    networks:
+      - control
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4646/api/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  control:
+    name: docklane-control
+    external: true
