@@ -248,6 +248,15 @@ func (a *API) validateApplicationTarget(ctx context.Context, route domain.Route)
 	if err != nil {
 		return nil
 	}
+	if claim, exists := docker.FindTraefikHostnameClaim(
+		route.Hostname(a.config.BaseDomain),
+		containers,
+	); exists {
+		return docker.HostnameClaimError(
+			route.Hostname(a.config.BaseDomain),
+			claim,
+		)
+	}
 	container, err := docker.ResolveContainer(route.Selector, containers)
 	if err != nil {
 		return nil

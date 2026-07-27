@@ -23,6 +23,8 @@ The current integrated checkpoint additionally provides:
 - revision-checked updates that reject stale browser or CLI writes;
 - declared-port validation that keeps invalid upstreams out of Traefik;
 - active-gateway detection that prevents reverse-proxy self-routing loops;
+- Docker-label hostname collision detection with disabled-route shadow
+  migration support;
 - numbered SQLite migrations with a protected pre-migration snapshot;
 - ownership-tracked proxy-network attachment and safe detachment for enabled
   routes without host ports;

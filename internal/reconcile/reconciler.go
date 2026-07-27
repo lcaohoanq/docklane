@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ type Reconciler struct {
 	store       RouteStore
 	discovery   docker.Discovery
 	interval    time.Duration
+	baseDomain  string
 	network     string
 	manager     docker.NetworkManager
 	lifecycle   docker.NetworkLifecycle
@@ -52,6 +54,12 @@ func WithNetworkAttachments(network string, manager docker.NetworkManager) Optio
 		if lifecycle, ok := manager.(docker.NetworkLifecycle); ok {
 			reconciler.lifecycle = lifecycle
 		}
+	}
+}
+
+func WithBaseDomain(baseDomain string) Option {
+	return func(reconciler *Reconciler) {
+		reconciler.baseDomain = baseDomain
 	}
 }
 
@@ -175,6 +183,37 @@ func (r *Reconciler) Refresh(ctx context.Context) error {
 	observations := make(map[int64]domain.RouteObservation, len(routes))
 	for _, route := range routes {
 		observations[route.ID] = observe(route, containers, checkedAt)
+	}
+	if r.baseDomain != "" {
+		claims := map[string]docker.TraefikHostnameClaim{}
+		for _, claim := range docker.TraefikHostnameClaims(containers) {
+			if _, exists := claims[claim.Hostname]; !exists {
+				claims[claim.Hostname] = claim
+			}
+		}
+		for _, route := range routes {
+			if !route.Enabled {
+				continue
+			}
+			hostname := route.Hostname(r.baseDomain)
+			normalizedHostname := strings.TrimSuffix(
+				strings.ToLower(strings.TrimSpace(hostname)),
+				".",
+			)
+			claim, exists := claims[normalizedHostname]
+			if !exists {
+				continue
+			}
+			observation := observations[route.ID]
+			observation.State = domain.RouteStateError
+			observation.Message = docker.HostnameClaimError(
+				hostname,
+				claim,
+			).Error()
+			observation.UpstreamURL = ""
+			observation.CheckedAt = checkedAt
+			observations[route.ID] = observation
+		}
 	}
 	desiredAliases := make(map[string][]string)
 	for _, route := range routes {

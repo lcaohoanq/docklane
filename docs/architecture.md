@@ -350,6 +350,7 @@ state from SQLite.
 | Multiple workloads match unexpectedly | Omit route and report `ambiguous` |
 | Selected port is no longer declared | Omit route and report actionable `error` |
 | Route targets the active Traefik gateway | Reject or omit it to prevent a self-routing loop |
+| Enabled Docker-label router claims the same hostname | Reject enable/create, or omit an existing route and report the conflicting router and container |
 | Managed network is missing | Preview creation and create only through explicit `network apply` |
 | Existing network has compatible external ownership | Use it without adding or claiming labels |
 | Existing network has conflicting Docklane labels or driver | Refuse apply without mutation |
@@ -381,6 +382,15 @@ routes are excluded from provider output with an actionable error, and the UI
 does not offer the normal create-route action. Traefik's dashboard is a
 special system route backed by `api@internal`, not by proxying to the
 gateway's own port 80 or 443.
+
+Docklane treats an exact `Host(...)` rule on a running container with
+`traefik.enable=true` as an active hostname claim. An enabled Docklane route
+cannot claim the same hostname. Existing routes are rechecked during periodic
+and event-driven reconciliation, so a conflicting label added later changes
+the route to `error` and removes it from HTTP-provider output. Disabled routes
+may retain the hostname, which supports a migration sequence of creating a
+shadow route, removing the old Docker labels, and then enabling Docklane.
+`HostRegexp(...)` rules are not treated as exact claims.
 
 The integrated implementation uses two complementary recovery layers. Traefik
 keeps its last successful HTTP-provider configuration in memory when a poll

@@ -320,6 +320,43 @@ func TestRefreshObservesRouteStates(t *testing.T) {
 	}
 }
 
+func TestRefreshExcludesDockerLabelHostnameCollision(t *testing.T) {
+	routes := []domain.Route{{
+		ID:       1,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}
+	reconciler := New(
+		fakeStore{routes: routes},
+		fakeDiscovery{containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+		}, {
+			ID:   "legacy123",
+			Name: "legacy",
+			Labels: map[string]string{
+				"traefik.enable":                   "true",
+				"traefik.http.routers.legacy.rule": "Host(`draw.docker.home.arpa`)",
+			},
+		}}},
+		time.Second,
+		WithBaseDomain("docker.home.arpa"),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	route := reconciler.Enrich(routes)[0]
+	if route.Observed.State != domain.RouteStateError ||
+		route.Observed.UpstreamURL != "" ||
+		!strings.Contains(route.Observed.Message, "Docker-label router legacy") {
+		t.Fatalf("collision observation = %#v", route.Observed)
+	}
+}
+
 func TestDiscoveryFailureMarksRoutesAsError(t *testing.T) {
 	routes := []domain.Route{{
 		ID:       1,

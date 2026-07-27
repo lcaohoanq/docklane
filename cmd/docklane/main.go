@@ -475,7 +475,9 @@ func serve(args []string) error {
 	defer repository.Close()
 
 	dockerClient := docker.NewClient(cfg.DockerSocket)
-	reconcileOptions := []reconcile.Option{}
+	reconcileOptions := []reconcile.Option{
+		reconcile.WithBaseDomain(cfg.BaseDomain),
+	}
 	if cfg.ProxyNetwork != "" {
 		var manager docker.NetworkManager
 		if cfg.ManageNetworks {

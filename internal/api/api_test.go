@@ -170,6 +170,92 @@ func TestCreateRouteAndRenderTraefikConfiguration(t *testing.T) {
 	}
 }
 
+func TestRouteRejectsActiveDockerLabelHostnameCollision(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := fakeDiscovery{containers: []docker.Container{{
+		ID:             "abc123",
+		Name:           "draw-web-1",
+		ComposeProject: "draw",
+		ComposeService: "web",
+		ExposedPorts:   []uint16{80},
+		Labels: map[string]string{
+			"traefik.enable":                "true",
+			"traefik.http.routers.old.rule": "Host(`draw.docker.home.arpa`)",
+		},
+	}}}
+	reconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithBaseDomain("docker.home.arpa"),
+	)
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+	)
+	enabledBody := `{
+		"name": "draw",
+		"selector": {"composeProject": "draw", "composeService": "web"},
+		"port": 80,
+		"enabled": true
+	}`
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(
+		rejected,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/routes",
+			strings.NewReader(enabledBody),
+		),
+	)
+	if rejected.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(rejected.Body.String(), "Docker-label router old") {
+		t.Fatalf("collision response = %d, %s", rejected.Code, rejected.Body)
+	}
+
+	disabledBody := strings.Replace(enabledBody, `"enabled": true`, `"enabled": false`, 1)
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(
+		created,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/routes",
+			strings.NewReader(disabledBody),
+		),
+	)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("disabled create status = %d, body = %s", created.Code, created.Body)
+	}
+
+	enable := httptest.NewRecorder()
+	handler.ServeHTTP(
+		enable,
+		httptest.NewRequest(
+			http.MethodPut,
+			"/api/v1/routes/1",
+			strings.NewReader(strings.Replace(
+				enabledBody,
+				`"name": "draw",`,
+				`"revision": 1, "name": "draw",`,
+				1,
+			)),
+		),
+	)
+	if enable.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(enable.Body.String(), "disable or rename") {
+		t.Fatalf("enable collision response = %d, %s", enable.Code, enable.Body)
+	}
+}
+
 func TestTraefikProviderFallsBackToPersistedLastKnownGood(t *testing.T) {
 	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
 	if err != nil {

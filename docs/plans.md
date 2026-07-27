@@ -219,7 +219,7 @@ without published host ports.
 - [X] Snapshot the current Traefik, DNS, certificate, and Docklane database
   state.
 - [X] Inventory the test workload's current Docker-label route and networks.
-- [ ] Detect hostname collisions between labels and Docklane routes.
+- [X] Detect hostname collisions between labels and Docklane routes.
 - [X] Support shadow rendering without activating routes.
 - [X] Integrate one test workload first.
 - [X] Document and preserve rollback to the original provider configuration.
