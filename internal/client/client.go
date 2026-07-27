@@ -46,6 +46,29 @@ func (c *Client) ListRoutes(ctx context.Context) (Routes, error) {
 	return payload, err
 }
 
+func (c *Client) NetworkPlan(ctx context.Context) (domain.NetworkPlan, error) {
+	var plan domain.NetworkPlan
+	err := c.do(ctx, http.MethodGet, "/api/v1/network/plan", nil, &plan)
+	return plan, err
+}
+
+func (c *Client) ApplyNetworkPlan(
+	ctx context.Context,
+	token string,
+) (domain.NetworkApplyResult, error) {
+	var result domain.NetworkApplyResult
+	err := c.do(
+		ctx,
+		http.MethodPost,
+		"/api/v1/network/apply",
+		struct {
+			Token string `json:"token"`
+		}{Token: token},
+		&result,
+	)
+	return result, err
+}
+
 func (c *Client) GetRoute(ctx context.Context, id int64) (domain.Route, error) {
 	var route domain.Route
 	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/routes/%d", id), nil, &route)

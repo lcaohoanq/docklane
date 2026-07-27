@@ -78,6 +78,8 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 
 ```sh
 ./bin/docklane discover
+./bin/docklane network plan
+./bin/docklane network apply
 ./bin/docklane route add excalidraw \
   --project excalidraw \
   --service excalidraw \
@@ -97,6 +99,8 @@ Current API endpoints:
 
 - `GET /api/v1/health`
 - `GET /api/v1/containers`
+- `GET /api/v1/network/plan`
+- `POST /api/v1/network/apply`
 - `GET /api/v1/routes`
 - `POST /api/v1/routes`
 - `GET /api/v1/routes/{id}`
@@ -110,6 +114,12 @@ The controller reads Docker state and manages selected proxy-network
 attachments through `/var/run/docker.sock`. Route creation writes desired
 state and attachment ownership to Docklane's SQLite database.
 
+`docklane network plan` is read-only and shows network creation, application
+connects, owned disconnects, and alias repairs. Each plan has a content token;
+apply rejects the request if Docker or desired route state changed after the
+preview. The CLI requires `--yes` when the reviewed plan contains a
+destructive disconnect.
+
 The current container bind-mounts the Docker socket with a read-only filesystem
 flag, but Docker API access through that socket still grants host-level
 container authority. The integrated deployment attaches routed workloads to
@@ -117,6 +127,10 @@ the shared `proxy` network without removing their existing networks. Docklane
 records each attachment it creates and disconnects only those recorded
 attachments after no enabled route needs them. Pre-existing network membership
 is never claimed or removed.
+
+The active `proxy` network predates Docklane and remains externally owned.
+Networks created explicitly through Docklane use ownership labels and can be
+distinguished from compatible external networks without relabeling either.
 
 Docklane administration is published only on host loopback, and Traefik
 reaches its provider through the separate private `docklane-control` network.

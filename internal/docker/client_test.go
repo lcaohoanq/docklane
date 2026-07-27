@@ -263,3 +263,94 @@ func TestContainerHasNetwork(t *testing.T) {
 		t.Fatalf("unexpected network lookup for %#v", container.Networks)
 	}
 }
+
+func TestInspectNetworkReadsOwnershipMetadata(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet ||
+				request.URL.Path != "/networks/proxy" {
+				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			}
+			body := `{
+				"Id":"network123",
+				"Name":"proxy",
+				"Driver":"bridge",
+				"Scope":"local",
+				"Labels":{
+					"com.docklane.managed":"true",
+					"com.docklane.role":"proxy",
+					"com.docklane.schema":"1"
+				}
+			}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		},
+	)}}
+	network, err := client.InspectNetwork(context.Background(), "proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if network.ID != "network123" ||
+		network.Labels[NetworkRoleLabel] != NetworkRoleProxy {
+		t.Fatalf("network = %#v", network)
+	}
+}
+
+func TestCreateNetworkUsesManagedLabelsAndInspectsResult(t *testing.T) {
+	requests := 0
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			requests++
+			if request.Method == http.MethodPost {
+				var payload struct {
+					Name           string            `json:"Name"`
+					Driver         string            `json:"Driver"`
+					CheckDuplicate bool              `json:"CheckDuplicate"`
+					Labels         map[string]string `json:"Labels"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if payload.Name != "docklane-proxy" ||
+					payload.Driver != "bridge" ||
+					!payload.CheckDuplicate ||
+					payload.Labels[NetworkManagedLabel] != "true" {
+					t.Fatalf("create payload = %#v", payload)
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Status:     "201 Created",
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"Id":"network123"}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"Id":"network123",
+					"Name":"docklane-proxy",
+					"Driver":"bridge",
+					"Scope":"local",
+					"Labels":{"com.docklane.managed":"true"}
+				}`)),
+			}, nil
+		},
+	)}}
+	network, err := client.CreateNetwork(
+		context.Background(),
+		"docklane-proxy",
+		ManagedProxyNetworkLabels(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || network.ID != "network123" {
+		t.Fatalf("requests = %d, network = %#v", requests, network)
+	}
+}

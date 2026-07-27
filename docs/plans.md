@@ -24,39 +24,39 @@ A task is complete only when:
 
 ## Current summary
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| 0 | Product and architecture decisions | Complete |
-| 1 | Non-disruptive controller prototype | Complete |
-| 2 | Route lifecycle and reconciliation reliability | In progress |
-| 3 | Managed Docker network and Traefik integration | In progress |
-| 4 | Local DNS and TLS lifecycle | Integrated checkpoint complete |
-| 5 | Installer, migration, and rollback | Planned |
-| 6 | Diagnostics and observability | Planned |
-| 7 | UX/DX hardening and first release | Planned |
+| Phase | Scope                                          | Status                         |
+| ----- | ---------------------------------------------- | ------------------------------ |
+| 0     | Product and architecture decisions             | Complete                       |
+| 1     | Non-disruptive controller prototype            | Complete                       |
+| 2     | Route lifecycle and reconciliation reliability | In progress                    |
+| 3     | Managed Docker network and Traefik integration | In progress                    |
+| 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
+| 5     | Installer, migration, and rollback             | Planned                        |
+| 6     | Diagnostics and observability                  | Planned                        |
+| 7     | UX/DX hardening and first release              | Planned                        |
 
 ## Phase 0 — Product foundation
 
 Goal: establish the problem, boundaries, and durable technical direction.
 
-- [x] Choose the project name: Docklane.
-- [x] Define the local-only scope.
-- [x] Select Traefik as the global reverse proxy.
-- [x] Select Go for the controller and CLI.
-- [x] Select Svelte for the embedded web UI.
-- [x] Select SQLite for controller-owned state.
-- [x] Choose a shared controller API for CLI and web.
-- [x] Choose Traefik's HTTP provider as the target central configuration path.
-- [x] Choose stable Compose project/service selectors.
-- [x] Choose `docker.home.arpa` as the target namespace.
-- [x] Document Docker socket access as a privileged security boundary.
-- [x] Establish the rule that the active gateway is not migrated during
+- [X] Choose the project name: Docklane.
+- [X] Define the local-only scope.
+- [X] Select Traefik as the global reverse proxy.
+- [X] Select Go for the controller and CLI.
+- [X] Select Svelte for the embedded web UI.
+- [X] Select SQLite for controller-owned state.
+- [X] Choose a shared controller API for CLI and web.
+- [X] Choose Traefik's HTTP provider as the target central configuration path.
+- [X] Choose stable Compose project/service selectors.
+- [X] Choose `docker.home.arpa` as the target namespace.
+- [X] Document Docker socket access as a privileged security boundary.
+- [X] Establish the rule that the active gateway is not migrated during
   prototype development.
 
 Acceptance criteria:
 
-- [x] Architecture distinguishes control plane from request data plane.
-- [x] Project goals, non-goals, invariants, and safety boundaries are written.
+- [X] Architecture distinguishes control plane from request data plane.
+- [X] Project goals, non-goals, invariants, and safety boundaries are written.
 
 ## Phase 1 — Non-disruptive controller prototype
 
@@ -65,67 +65,67 @@ certificates, or Docker networks.
 
 ### Backend
 
-- [x] Scaffold the Go module and `docklane` command.
-- [x] Add `serve`, `version`, and help commands.
-- [x] Add validated runtime configuration.
-- [x] Discover running containers through the Docker Unix socket.
-- [x] Read Compose project/service labels and private TCP ports.
-- [x] Define and validate the route domain model.
-- [x] Persist routes in SQLite.
-- [x] Resolve Compose selectors to current running containers.
-- [x] Reject ambiguous workload resolution.
-- [x] Generate complete Traefik HTTP-provider JSON.
-- [x] Omit disabled and unresolved routes from generated configuration.
-- [x] Add graceful controller shutdown.
+- [X] Scaffold the Go module and `docklane` command.
+- [X] Add `serve`, `version`, and help commands.
+- [X] Add validated runtime configuration.
+- [X] Discover running containers through the Docker Unix socket.
+- [X] Read Compose project/service labels and private TCP ports.
+- [X] Define and validate the route domain model.
+- [X] Persist routes in SQLite.
+- [X] Resolve Compose selectors to current running containers.
+- [X] Reject ambiguous workload resolution.
+- [X] Generate complete Traefik HTTP-provider JSON.
+- [X] Omit disabled and unresolved routes from generated configuration.
+- [X] Add graceful controller shutdown.
 
 ### API and CLI
 
-- [x] Add health, container discovery, route list/create, and provider
+- [X] Add health, container discovery, route list/create, and provider
   endpoints.
-- [x] Reject unknown route-create fields.
-- [x] Default omitted route scheme to `http`.
-- [x] Default omitted route enabled state to `true`.
-- [x] Add `docklane discover`.
-- [x] Add `docklane route list`.
-- [x] Add `docklane route add`.
-- [x] Add `--dry-run` and `--json`.
-- [x] Support `DOCKLANE_URL`.
+- [X] Reject unknown route-create fields.
+- [X] Default omitted route scheme to `http`.
+- [X] Default omitted route enabled state to `true`.
+- [X] Add `docklane discover`.
+- [X] Add `docklane route list`.
+- [X] Add `docklane route add`.
+- [X] Add `--dry-run` and `--json`.
+- [X] Support `DOCKLANE_URL`.
 
 ### Web UI
 
-- [x] Scaffold Svelte and Vite.
-- [x] Display discovered containers and internal ports.
-- [x] Display saved routes.
-- [x] Create a route from a selected container.
-- [x] Show the equivalent CLI command.
-- [x] Embed production UI assets in the Go binary.
-- [x] Pin TypeScript 5.9 for current `svelte-check` compatibility.
+- [X] Scaffold Svelte and Vite.
+- [X] Display discovered containers and internal ports.
+- [X] Display saved routes.
+- [X] Create a route from a selected container.
+- [X] Show the equivalent CLI command.
+- [X] Embed production UI assets in the Go binary.
+- [X] Pin TypeScript 5.9 for current `svelte-check` compatibility.
 
 ### Quality and validation
 
-- [x] Add domain validation tests.
-- [x] Add Docker selector resolution tests.
-- [x] Add SQLite persistence tests.
-- [x] Add Traefik rendering tests.
-- [x] Add API integration tests.
-- [x] Add CLI client contract tests.
-- [x] Add repeatable `make setup`, `make test`, and `make build` workflows.
-- [x] Pass `go test ./...`.
-- [x] Pass `go vet ./...`.
-- [x] Pass `svelte-check` with zero warnings.
-- [x] Build the embedded production UI and Go binary.
-- [x] Verify live Docker discovery against the current machine.
-- [x] Verify an isolated route produces the correct Traefik upstream.
-- [x] Verify the existing `https://excalidraw.docker.lab` route remains HTTP
+- [X] Add domain validation tests.
+- [X] Add Docker selector resolution tests.
+- [X] Add SQLite persistence tests.
+- [X] Add Traefik rendering tests.
+- [X] Add API integration tests.
+- [X] Add CLI client contract tests.
+- [X] Add repeatable `make setup`, `make test`, and `make build` workflows.
+- [X] Pass `go test ./...`.
+- [X] Pass `go vet ./...`.
+- [X] Pass `svelte-check` with zero warnings.
+- [X] Build the embedded production UI and Go binary.
+- [X] Verify live Docker discovery against the current machine.
+- [X] Verify an isolated route produces the correct Traefik upstream.
+- [X] Verify the existing `https://excalidraw.docker.lab` route remains HTTP
   200.
-- [x] Stop the temporary validation controller.
+- [X] Stop the temporary validation controller.
 
 Acceptance criteria:
 
-- [x] A route can be created through CLI and observed through the UI/API.
-- [x] Recreating a container does not change the stored Compose selector.
-- [x] Traefik JSON uses the current resolved container instance.
-- [x] No active system or proxy configuration is changed.
+- [X] A route can be created through CLI and observed through the UI/API.
+- [X] Recreating a container does not change the stored Compose selector.
+- [X] Traefik JSON uses the current resolved container instance.
+- [X] No active system or proxy configuration is changed.
 
 ## Phase 2 — Route lifecycle and reconciliation reliability
 
@@ -134,56 +134,56 @@ machine-level mutations.
 
 ### Route lifecycle
 
-- [x] Add `GET /api/v1/routes/{id}`.
-- [x] Add route update/enable/disable.
-- [x] Add route deletion.
-- [x] Add matching CLI commands.
-- [x] Add UI edit, enable/disable, and delete flows.
-- [x] Add duplicate-name conflict errors with actionable messages.
-- [x] Add optimistic concurrency or revision checking for updates.
+- [X] Add `GET /api/v1/routes/{id}`.
+- [X] Add route update/enable/disable.
+- [X] Add route deletion.
+- [X] Add matching CLI commands.
+- [X] Add UI edit, enable/disable, and delete flows.
+- [X] Add duplicate-name conflict errors with actionable messages.
+- [X] Add optimistic concurrency or revision checking for updates.
 
 ### Observed state
 
 - [ ] Define route states: `ready`, `unresolved`, `ambiguous`, `unreachable`,
   `disabled`, and `error`.
-- [x] Return desired and observed state separately.
-- [x] Validate that the configured internal port belongs to the selected
+- [X] Return desired and observed state separately.
+- [X] Validate that the configured internal port belongs to the selected
   workload.
-- [x] Classify the active Traefik gateway as a managed system container.
-- [x] Reject and omit routes that would send the gateway back into itself.
+- [X] Classify the active Traefik gateway as a managed system container.
+- [X] Reject and omit routes that would send the gateway back into itself.
 - [ ] Probe upstream reachability with bounded timeouts.
 - [ ] Support non-Compose containers without pretending their ID is durable.
-- [x] Define initial behavior for scaled Compose services: report ambiguous and
+- [X] Define initial behavior for scaled Compose services: report ambiguous and
   omit the route until an explicit replica policy is implemented.
 - [ ] Prefer deterministic managed aliases over generated container names.
 
 ### Reconciler
 
-- [x] Add a periodic reconciliation loop.
-- [x] Subscribe to Docker events for fast refresh.
-- [x] Keep periodic reconciliation as recovery from missed events.
-- [x] Debounce event bursts during Compose recreation.
-- [x] Make each reconciliation operation idempotent.
-- [x] Record the last successful reconcile time and last error.
+- [X] Add a periodic reconciliation loop.
+- [X] Subscribe to Docker events for fast refresh.
+- [X] Keep periodic reconciliation as recovery from missed events.
+- [X] Debounce event bursts during Compose recreation.
+- [X] Make each reconciliation operation idempotent.
+- [X] Record the last successful reconcile time and last error.
 - [ ] Add structured controller logs.
 - [ ] Add Server-Sent Events for live UI updates.
 
 ### Persistence
 
-- [x] Introduce numbered schema migrations.
-- [x] Add database backup before migrations.
-- [x] Add route revision storage.
+- [X] Introduce numbered schema migrations.
+- [X] Add database backup before migrations.
+- [X] Add route revision storage.
 - [ ] Add observed-status storage where appropriate.
 - [ ] Define import/export schema version 1.
 - [ ] Add `docklane export` and `docklane import --dry-run`.
 
 Acceptance criteria:
 
-- [x] Full route CRUD works through API, CLI, and UI.
-- [x] Container recreation repairs a route without restarting Traefik.
-- [x] Missed or absent Docker events are repaired by periodic reconciliation.
-- [x] Ambiguous or missing workloads are visible and never published.
-- [x] All work remains isolated from the active proxy and system DNS.
+- [X] Full route CRUD works through API, CLI, and UI.
+- [X] Container recreation repairs a route without restarting Traefik.
+- [X] Missed or absent Docker events are repaired by periodic reconciliation.
+- [X] Ambiguous or missing workloads are visible and never published.
+- [X] All work remains isolated from the active proxy and system DNS.
 
 ## Phase 3 — Managed network and Traefik integration
 
@@ -195,42 +195,42 @@ without published host ports.
 - [ ] Define the managed network name and labels.
 - [ ] Preview network create/connect/disconnect operations.
 - [ ] Create the network idempotently.
-- [x] Attach selected containers without removing their existing networks.
-- [x] Assign a deterministic per-route network alias.
-- [x] Track attachments created by Docklane.
-- [x] Detach only Docklane-owned attachments when no route needs them.
-- [x] Handle stopped and recreated containers.
-- [x] Add integration tests using disposable Docker resources.
+- [X] Attach selected containers without removing their existing networks.
+- [X] Assign a deterministic per-route network alias.
+- [X] Track attachments created by Docklane.
+- [X] Detach only Docklane-owned attachments when no route needs them.
+- [X] Handle stopped and recreated containers.
+- [X] Add integration tests using disposable Docker resources.
 
 ### Traefik provider
 
-- [x] Add private controller/provider connectivity.
-- [x] Configure Traefik HTTP-provider polling.
-- [x] Keep the provider endpoint unavailable from application and non-local
+- [X] Add private controller/provider connectivity.
+- [X] Configure Traefik HTTP-provider polling.
+- [X] Keep the provider endpoint unavailable from application and non-local
   networks using host-loopback publication plus `docklane-control`.
 - [ ] Add provider configuration validation before publish.
-- [x] Test add, update, disable, delete, and recreate behavior.
+- [X] Test add, update, disable, delete, and recreate behavior.
 - [ ] Test controller/provider outage behavior.
 - [ ] Decide and implement last-known-good or file-provider fallback.
 - [ ] Add route status showing whether Traefik loaded the desired revision.
 
 ### Migration safety
 
-- [x] Snapshot the current Traefik, DNS, certificate, and Docklane database
+- [X] Snapshot the current Traefik, DNS, certificate, and Docklane database
   state.
-- [x] Inventory the test workload's current Docker-label route and networks.
+- [X] Inventory the test workload's current Docker-label route and networks.
 - [ ] Detect hostname collisions between labels and Docklane routes.
-- [x] Support shadow rendering without activating routes.
-- [x] Integrate one test workload first.
-- [x] Document and preserve rollback to the original provider configuration.
+- [X] Support shadow rendering without activating routes.
+- [X] Integrate one test workload first.
+- [X] Document and preserve rollback to the original provider configuration.
 
 Acceptance criteria:
 
-- [x] A selected container is reachable through Traefik without a published
+- [X] A selected container is reachable through Traefik without a published
   application host port.
-- [x] Route changes are observed without recreating the app or restarting
+- [X] Route changes are observed without recreating the app or restarting
   Traefik.
-- [x] Removing a route does not stop or otherwise modify the application.
+- [X] Removing a route does not stop or otherwise modify the application.
 - [ ] Provider failure has a tested and documented recovery behavior.
 
 ## Phase 4 — Local DNS and TLS lifecycle
@@ -240,34 +240,36 @@ certificate.
 
 ### DNS
 
-- [x] Detect dnsmasq and the active system resolver manager.
-- [x] Render the wildcard `docker.home.arpa` dnsmasq fragment.
-- [x] Preview exact files and service operations before apply.
-- [x] Validate configuration syntax before reload.
-- [x] Configure split DNS for `docker.home.arpa`.
-- [x] Explicitly handle systemd-resolved DNS-over-TLS on loopback.
+- [X] Detect dnsmasq and the active system resolver manager.
+- [X] Render the wildcard `docker.home.arpa` dnsmasq fragment.
+- [X] Preview exact files and service operations before apply.
+- [X] Validate configuration syntax before reload.
+- [X] Configure split DNS for `docker.home.arpa`.
+- [X] Explicitly handle systemd-resolved DNS-over-TLS on loopback.
+
 - [-] Verify A/AAAA and HTTPS/SVCB lookup behavior. A resolution is verified;
   broader browser/resolver combinations remain for automated tests.
-- [x] Add uninstall/rollback instructions for Docklane-owned DNS changes.
+
+- [X] Add uninstall/rollback instructions for Docklane-owned DNS changes.
 
 ### TLS
 
-- [x] Reuse the already trusted local root CA.
-- [x] Protect CA and leaf private keys with restrictive permissions.
-- [x] Generate a leaf certificate for `docker.home.arpa` and
+- [X] Reuse the already trusted local root CA.
+- [X] Protect CA and leaf private keys with restrictive permissions.
+- [X] Generate a leaf certificate for `docker.home.arpa` and
   `*.docker.home.arpa`.
-- [x] Preserve the existing explicitly installed system trust anchor.
-- [x] Verify Chromium trust with a fresh browser profile.
-- [x] Configure Traefik to serve the wildcard certificate.
+- [X] Preserve the existing explicitly installed system trust anchor.
+- [X] Verify Chromium trust with a fresh browser profile.
+- [X] Configure Traefik to serve the wildcard certificate.
 - [ ] Track expiry and add safe certificate rotation.
-- [x] Add certificate rollback from the timestamped backup.
+- [X] Add certificate rollback from the timestamped backup.
 
 Acceptance criteria:
 
-- [x] An arbitrary one-label hostname resolves to `127.0.0.1`.
-- [x] Browser and CLI hostname validation succeed without `-k`.
-- [x] The served certificate contains the intended explicit SANs.
-- [x] DNS and trust changes can be removed without affecting unrelated
+- [X] An arbitrary one-label hostname resolves to `127.0.0.1`.
+- [X] Browser and CLI hostname validation succeed without `-k`.
+- [X] The served certificate contains the intended explicit SANs.
+- [X] DNS and trust changes can be removed without affecting unrelated
   configuration.
 
 ## Phase 5 — Installer, migration, and rollback

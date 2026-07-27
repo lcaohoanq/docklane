@@ -34,6 +34,7 @@ type Reconciler struct {
 	interval    time.Duration
 	network     string
 	manager     docker.NetworkManager
+	lifecycle   docker.NetworkLifecycle
 	attachments AttachmentStore
 
 	mu           sync.RWMutex
@@ -48,6 +49,9 @@ func WithNetworkAttachments(network string, manager docker.NetworkManager) Optio
 	return func(reconciler *Reconciler) {
 		reconciler.network = network
 		reconciler.manager = manager
+		if lifecycle, ok := manager.(docker.NetworkLifecycle); ok {
+			reconciler.lifecycle = lifecycle
+		}
 	}
 }
 

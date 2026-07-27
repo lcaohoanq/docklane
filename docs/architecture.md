@@ -185,6 +185,22 @@ that container, reconciliation disconnects only a recorded attachment and
 removes the record. A missing container only clears its stale ownership row;
 pre-existing network membership is never disconnected.
 
+The configured network name is authoritative. Docklane classifies it as
+missing, managed, compatible external, or conflicting. It never adds ownership
+labels to an existing network. An explicitly created network uses the local
+bridge driver and these labels:
+
+```text
+com.docklane.managed=true
+com.docklane.role=proxy
+com.docklane.schema=1
+```
+
+The active machine's existing `proxy` network is intentionally classified as
+external. A missing network is created only through a reviewed
+`network plan` → `network apply` operation; periodic reconciliation never
+silently creates machine-level infrastructure.
+
 Docker socket access is effectively root-level authority and is treated as the
 primary security boundary; mounting the socket path read-only does not make
 Docker API operations read-only.
@@ -333,7 +349,9 @@ state from SQLite.
 | Multiple workloads match unexpectedly | Omit route and report `ambiguous` |
 | Selected port is no longer declared | Omit route and report actionable `error` |
 | Route targets the active Traefik gateway | Reject or omit it to prevent a self-routing loop |
-| Managed network is missing | Recreate only through an explicit repair policy |
+| Managed network is missing | Preview creation and create only through explicit `network apply` |
+| Existing network has compatible external ownership | Use it without adding or claiming labels |
+| Existing network has conflicting Docklane labels or driver | Refuse apply without mutation |
 | Workload is outside the proxy network | Attach it when enabled, record ownership, and publish after membership is observed |
 | Owned attachment lacks a route alias | Reconnect it with the complete desired alias set and roll back on failure |
 | Pre-existing attachment lacks a route alias | Preserve it and use the current container name |
@@ -373,6 +391,8 @@ Current endpoints:
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Controller health and base domain |
 | `GET` | `/api/v1/containers` | Discover running containers |
+| `GET` | `/api/v1/network/plan` | Read-only create/connect/disconnect preview with a content token |
+| `POST` | `/api/v1/network/apply` | Apply only the currently matching reviewed plan |
 | `GET` | `/api/v1/routes` | List desired routes |
 | `POST` | `/api/v1/routes` | Create a route |
 | `GET` | `/api/v1/routes/{id}` | Read a route and its observed state |
@@ -380,9 +400,14 @@ Current endpoints:
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |
 
-Planned endpoints add event streaming, preview/apply operations, and
-diagnostics. `/internal/*` endpoints are for private component integration,
-not the public administration API.
+Planned endpoints add event streaming and diagnostics. `/internal/*` endpoints
+are for private component integration, not the public administration API.
+
+Network plans include every currently expected Docker network operation and a
+deterministic token over network state, operations, and warnings. Apply
+recomputes the plan and rejects a missing or stale token. This prevents a
+reviewed non-destructive plan from turning into an unreviewed disconnect if
+Docker or route state changes between preview and apply.
 
 ## 9. Security model
 

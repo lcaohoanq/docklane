@@ -39,6 +39,8 @@ func New(
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", api.health)
 	mux.HandleFunc("GET /api/v1/containers", api.containers)
+	mux.HandleFunc("GET /api/v1/network/plan", api.networkPlan)
+	mux.HandleFunc("POST /api/v1/network/apply", api.applyNetworkPlan)
 	mux.HandleFunc("GET /api/v1/routes", api.routes)
 	mux.HandleFunc("POST /api/v1/routes", api.createRoute)
 	mux.HandleFunc("GET /api/v1/routes/{id}", api.getRoute)
@@ -47,6 +49,33 @@ func New(
 	mux.HandleFunc("GET /internal/traefik", api.traefik)
 	mux.Handle("/", webui.Handler())
 	return requestLog(mux)
+}
+
+func (a *API) networkPlan(response http.ResponseWriter, request *http.Request) {
+	plan, err := a.reconciler.NetworkPlan(request.Context())
+	if err != nil {
+		writeError(response, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, plan)
+}
+
+func (a *API) applyNetworkPlan(response http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Token string `json:"token"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	result, err := a.reconciler.ApplyNetworkPlan(request.Context(), input.Token)
+	if err != nil {
+		writeError(response, http.StatusConflict, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, result)
 }
 
 func (a *API) health(response http.ResponseWriter, _ *http.Request) {

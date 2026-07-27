@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -41,6 +42,8 @@ func run(args []string) error {
 		return serve(args[1:])
 	case "discover":
 		return discover(args[1:])
+	case "network":
+		return network(args[1:])
 	case "route":
 		return route(args[1:])
 	case "version":
@@ -52,6 +55,125 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func network(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("network requires a subcommand: plan or apply")
+	}
+	switch args[0] {
+	case "plan":
+		return networkPlan(args[1:])
+	case "apply":
+		return networkApply(args[1:])
+	default:
+		return fmt.Errorf("unknown network command %q", args[0])
+	}
+}
+
+func networkPlan(args []string) error {
+	flags := flag.NewFlagSet("network plan", flag.ContinueOnError)
+	controllerURL := flags.String("url", defaultControllerURL(), "Docklane controller URL")
+	asJSON := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	plan, err := client.New(*controllerURL).NetworkPlan(context.Background())
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(plan)
+	}
+	printNetworkPlan(plan)
+	return nil
+}
+
+func networkApply(args []string) error {
+	flags := flag.NewFlagSet("network apply", flag.ContinueOnError)
+	controllerURL := flags.String("url", defaultControllerURL(), "Docklane controller URL")
+	asJSON := flags.Bool("json", false, "print JSON")
+	yes := flags.Bool("yes", false, "confirm destructive disconnect operations")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	apiClient := client.New(*controllerURL)
+	plan, err := apiClient.NetworkPlan(context.Background())
+	if err != nil {
+		return err
+	}
+	if hasDestructiveNetworkOperation(plan) && !*yes {
+		if !*asJSON {
+			printNetworkPlan(plan)
+		}
+		return errors.New(
+			"plan contains destructive disconnect operations; review it and rerun with --yes",
+		)
+	}
+	result, err := apiClient.ApplyNetworkPlan(context.Background(), plan.Token)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(result)
+	}
+	fmt.Printf(
+		"Applied %d operation(s); %d operation(s) remain.\n",
+		len(result.Applied.Operations),
+		len(result.Remaining.Operations),
+	)
+	for _, warning := range result.Remaining.Warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+	return nil
+}
+
+func printNetworkPlan(plan domain.NetworkPlan) {
+	details := "not present"
+	if plan.Network.Driver != "" || plan.Network.Scope != "" {
+		details = plan.Network.Driver + "/" + plan.Network.Scope
+	}
+	fmt.Printf(
+		"Network %s: %s (%s), compatible=%t\n",
+		plan.Network.Name,
+		plan.Network.Ownership,
+		details,
+		plan.Network.Compatible,
+	)
+	if len(plan.Operations) == 0 {
+		fmt.Println("No network operations required.")
+	}
+	for _, operation := range plan.Operations {
+		target := operation.ContainerName
+		if target == "" {
+			target = plan.Network.Name
+		}
+		fmt.Printf(
+			"- %-10s %-24s %s",
+			operation.Action,
+			target,
+			operation.Reason,
+		)
+		if len(operation.Aliases) > 0 {
+			fmt.Printf(" (aliases: %s)", strings.Join(operation.Aliases, ", "))
+		}
+		if operation.Destructive {
+			fmt.Print(" [destructive]")
+		}
+		fmt.Println()
+	}
+	for _, warning := range plan.Warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+}
+
+func hasDestructiveNetworkOperation(plan domain.NetworkPlan) bool {
+	for _, operation := range plan.Operations {
+		if operation.Destructive {
+			return true
+		}
+	}
+	return false
 }
 
 func discover(args []string) error {
@@ -406,6 +528,8 @@ func printUsage() {
 Usage:
   docklane serve [options]   Start the controller
   docklane discover          List running Docker containers
+  docklane network plan      Preview network operations
+  docklane network apply     Apply the reviewed network plan
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route

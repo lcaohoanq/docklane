@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,94 @@ type fakeDiscovery struct {
 
 func (f fakeDiscovery) ListContainers(context.Context) ([]docker.Container, error) {
 	return f.containers, nil
+}
+
+type networkDiscovery struct {
+	fakeDiscovery
+}
+
+func (networkDiscovery) InspectNetwork(
+	context.Context,
+	string,
+) (docker.Network, error) {
+	return docker.Network{
+		ID:     "network123",
+		Name:   "proxy",
+		Driver: "bridge",
+		Scope:  "local",
+	}, nil
+}
+
+func TestNetworkPlanEndpoints(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := networkDiscovery{}
+	reconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithNetworkAttachments("proxy", nil),
+	)
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+	)
+	for _, test := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/network/plan"},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/network/apply",
+			body:   `{"token":"TOKEN"}`,
+		},
+	} {
+		body := strings.NewReader(test.body)
+		if test.method == http.MethodPost {
+			plan, err := reconciler.NetworkPlan(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			body = strings.NewReader(fmt.Sprintf(`{"token":%q}`, plan.Token))
+		}
+		request := httptest.NewRequest(test.method, test.path, body)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf(
+				"%s %s status = %d, body = %s",
+				test.method,
+				test.path,
+				response.Code,
+				response.Body,
+			)
+		}
+	}
+	stale := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/network/apply",
+		strings.NewReader(`{"token":"stale"}`),
+	)
+	staleResponse := httptest.NewRecorder()
+	handler.ServeHTTP(staleResponse, stale)
+	if staleResponse.Code != http.StatusConflict {
+		t.Fatalf(
+			"stale apply status = %d, body = %s",
+			staleResponse.Code,
+			staleResponse.Body,
+		)
+	}
 }
 
 func TestCreateRouteAndRenderTraefikConfiguration(t *testing.T) {

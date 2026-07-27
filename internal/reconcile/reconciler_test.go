@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -11,6 +12,109 @@ import (
 	"docklane.local/docklane/internal/docker"
 	"docklane.local/docklane/internal/domain"
 )
+
+type planningDocker struct {
+	containers    []docker.Container
+	network       docker.Network
+	networkExists bool
+	createCalls   int
+	connectCalls  int
+	disconnects   int
+}
+
+func (engine *planningDocker) ListContainers(context.Context) ([]docker.Container, error) {
+	return append([]docker.Container(nil), engine.containers...), nil
+}
+
+func (engine *planningDocker) InspectNetwork(
+	context.Context,
+	string,
+) (docker.Network, error) {
+	if !engine.networkExists {
+		return docker.Network{}, fmt.Errorf("%w: proxy", docker.ErrNetworkNotFound)
+	}
+	return engine.network, nil
+}
+
+func (engine *planningDocker) CreateNetwork(
+	_ context.Context,
+	name string,
+	labels map[string]string,
+) (docker.Network, error) {
+	engine.createCalls++
+	engine.networkExists = true
+	engine.network = docker.Network{
+		ID:     "network123",
+		Name:   name,
+		Driver: "bridge",
+		Scope:  "local",
+		Labels: labels,
+	}
+	return engine.network, nil
+}
+
+func (engine *planningDocker) NetworkAliases(
+	_ context.Context,
+	containerID string,
+	network string,
+) ([]string, error) {
+	for _, container := range engine.containers {
+		if container.ID == containerID {
+			return append([]string(nil), container.NetworkAliases[network]...), nil
+		}
+	}
+	return nil, nil
+}
+
+func (engine *planningDocker) ConnectNetwork(
+	_ context.Context,
+	network string,
+	containerID string,
+	aliases []string,
+) error {
+	engine.connectCalls++
+	for index := range engine.containers {
+		if engine.containers[index].ID != containerID {
+			continue
+		}
+		if !engine.containers[index].HasNetwork(network) {
+			engine.containers[index].Networks = append(
+				engine.containers[index].Networks,
+				network,
+			)
+		}
+		if engine.containers[index].NetworkAliases == nil {
+			engine.containers[index].NetworkAliases = map[string][]string{}
+		}
+		engine.containers[index].NetworkAliases[network] = append(
+			[]string(nil),
+			aliases...,
+		)
+	}
+	return nil
+}
+
+func (engine *planningDocker) DisconnectNetwork(
+	_ context.Context,
+	network string,
+	containerID string,
+) error {
+	engine.disconnects++
+	for index := range engine.containers {
+		if engine.containers[index].ID != containerID {
+			continue
+		}
+		var kept []string
+		for _, candidate := range engine.containers[index].Networks {
+			if candidate != network {
+				kept = append(kept, candidate)
+			}
+		}
+		engine.containers[index].Networks = kept
+		delete(engine.containers[index].NetworkAliases, network)
+	}
+	return nil
+}
 
 type fakeStore struct {
 	routes []domain.Route
@@ -630,5 +734,225 @@ func TestRefreshConnectsAllAliasesForSharedContainer(t *testing.T) {
 			observed[0].Observed.UpstreamURL,
 			observed[1].Observed.UpstreamURL,
 		)
+	}
+}
+
+func TestNetworkPlanCreatesMissingNetworkAndConnectsWorkload(t *testing.T) {
+	store := &trackingStore{routes: []domain.Route{{
+		ID:       7,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}}
+	engine := &planningDocker{containers: []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"bridge"},
+	}}}
+	reconciler := New(
+		store,
+		engine,
+		time.Second,
+		WithNetworkAttachments("proxy", engine),
+	)
+	plan, err := reconciler.NetworkPlan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Network.Ownership != domain.NetworkOwnershipMissing ||
+		len(plan.Operations) != 2 ||
+		plan.Operations[0].Action != domain.NetworkActionCreate ||
+		plan.Operations[1].Action != domain.NetworkActionConnect {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if strings.Join(plan.Operations[1].Aliases, ",") != "docklane-route-7" {
+		t.Fatalf("connect aliases = %#v", plan.Operations[1].Aliases)
+	}
+
+	result, err := reconciler.ApplyNetworkPlan(context.Background(), plan.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if engine.createCalls != 1 || engine.connectCalls != 1 {
+		t.Fatalf(
+			"create calls = %d, connect calls = %d; want 1, 1",
+			engine.createCalls,
+			engine.connectCalls,
+		)
+	}
+	if len(result.Remaining.Operations) != 0 {
+		t.Fatalf("remaining operations = %#v", result.Remaining.Operations)
+	}
+	if len(store.attachments) != 1 {
+		t.Fatalf("attachments = %#v, want one", store.attachments)
+	}
+}
+
+func TestNetworkPlanPreservesCompatibleExternalNetwork(t *testing.T) {
+	store := &trackingStore{routes: []domain.Route{{
+		ID:       7,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	}}}
+	engine := &planningDocker{
+		networkExists: true,
+		network: docker.Network{
+			ID:     "network123",
+			Name:   "proxy",
+			Driver: "bridge",
+			Scope:  "local",
+		},
+		containers: []docker.Container{
+			{
+				ID:           "abc123",
+				Name:         "draw",
+				ExposedPorts: []uint16{80},
+				Networks:     []string{"bridge", "proxy"},
+			},
+			{
+				ID:         "proxy123",
+				Name:       "traefik",
+				SystemRole: docker.SystemRoleReverseProxy,
+				Networks:   []string{"proxy"},
+			},
+		},
+	}
+	reconciler := New(
+		store,
+		engine,
+		time.Second,
+		WithNetworkAttachments("proxy", engine),
+	)
+	plan, err := reconciler.NetworkPlan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Network.Ownership != domain.NetworkOwnershipExternal ||
+		!plan.Network.Compatible {
+		t.Fatalf("network state = %#v", plan.Network)
+	}
+	if len(plan.Operations) != 0 {
+		t.Fatalf("operations = %#v, want none", plan.Operations)
+	}
+	if len(plan.Warnings) != 1 ||
+		!strings.Contains(plan.Warnings[0], "pre-existing") {
+		t.Fatalf("warnings = %#v", plan.Warnings)
+	}
+}
+
+func TestNetworkPlanRejectsConflictingDocklaneLabels(t *testing.T) {
+	engine := &planningDocker{
+		networkExists: true,
+		network: docker.Network{
+			ID:     "network123",
+			Name:   "proxy",
+			Driver: "bridge",
+			Scope:  "local",
+			Labels: map[string]string{
+				docker.NetworkManagedLabel: "true",
+				docker.NetworkRoleLabel:    "database",
+				docker.NetworkSchemaLabel:  docker.NetworkSchemaV1,
+			},
+		},
+	}
+	reconciler := New(
+		&trackingStore{},
+		engine,
+		time.Second,
+		WithNetworkAttachments("proxy", engine),
+	)
+	plan, err := reconciler.NetworkPlan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Network.Ownership != domain.NetworkOwnershipConflict ||
+		plan.Network.Compatible {
+		t.Fatalf("network state = %#v", plan.Network)
+	}
+	if _, err := reconciler.ApplyNetworkPlan(
+		context.Background(),
+		plan.Token,
+	); err == nil {
+		t.Fatal("expected conflicting network apply to fail")
+	}
+}
+
+func TestNetworkPlanPreviewsOwnedDisconnect(t *testing.T) {
+	store := &trackingStore{
+		routes: []domain.Route{{
+			ID:       7,
+			Name:     "draw",
+			Port:     80,
+			Scheme:   "http",
+			Enabled:  false,
+			Selector: domain.ContainerSelector{ContainerID: "abc"},
+		}},
+		attachments: []domain.NetworkAttachment{{
+			ContainerID: "abc123",
+			Network:     "proxy",
+		}},
+	}
+	engine := &planningDocker{
+		networkExists: true,
+		network: docker.Network{
+			ID:     "network123",
+			Name:   "proxy",
+			Driver: "bridge",
+			Scope:  "local",
+		},
+		containers: []docker.Container{{
+			ID:           "abc123",
+			Name:         "draw",
+			ExposedPorts: []uint16{80},
+			Networks:     []string{"bridge", "proxy"},
+		}},
+	}
+	reconciler := New(
+		store,
+		engine,
+		time.Second,
+		WithNetworkAttachments("proxy", engine),
+	)
+	plan, err := reconciler.NetworkPlan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Operations) != 1 ||
+		plan.Operations[0].Action != domain.NetworkActionDisconnect ||
+		!plan.Operations[0].Destructive {
+		t.Fatalf("operations = %#v", plan.Operations)
+	}
+}
+
+func TestApplyRejectsStaleNetworkPlan(t *testing.T) {
+	engine := &planningDocker{
+		networkExists: true,
+		network: docker.Network{
+			ID:     "network123",
+			Name:   "proxy",
+			Driver: "bridge",
+			Scope:  "local",
+		},
+	}
+	reconciler := New(
+		&trackingStore{},
+		engine,
+		time.Second,
+		WithNetworkAttachments("proxy", engine),
+	)
+	if _, err := reconciler.ApplyNetworkPlan(
+		context.Background(),
+		"stale-token",
+	); err == nil || !strings.Contains(err.Error(), "fetch and review") {
+		t.Fatalf("stale apply error = %v", err)
+	}
+	if engine.createCalls != 0 || engine.connectCalls != 0 || engine.disconnects != 0 {
+		t.Fatal("stale plan unexpectedly mutated Docker")
 	}
 }
