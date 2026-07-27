@@ -32,6 +32,8 @@ The current integrated checkpoint additionally provides:
 - immediate reconciliation after mutations, debounced Docker lifecycle events,
   and periodic recovery reconciliation;
 - controller reconciliation health and last-error reporting;
+- validated Traefik provider documents with a persisted last-known-good
+  snapshot and provider source/error reporting in controller health;
 - a managed Docklane container on a private `docklane-control` network shared
   only with Traefik;
 - Traefik HTTP-provider polling every two seconds;
@@ -107,6 +109,12 @@ Current API endpoints:
 - `PUT /api/v1/routes/{id}`
 - `DELETE /api/v1/routes/{id}`
 - `GET /internal/traefik`
+
+`GET /api/v1/health` includes a `provider` object. Its `source` is `live`,
+`last-known-good`, `awaiting-first-poll`, or `unavailable`. A
+`last-known-good` response means Docklane could not render current Docker
+state, but Traefik is still receiving the most recently validated complete
+configuration.
 
 ## Safety boundary
 

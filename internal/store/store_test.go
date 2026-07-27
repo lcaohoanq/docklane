@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"docklane.local/docklane/internal/domain"
 )
@@ -137,8 +138,8 @@ func TestOpenAddsRevisionToExistingDatabase(t *testing.T) {
 	if route.Revision != 1 {
 		t.Fatalf("migrated revision = %d, want 1", route.Revision)
 	}
-	if version := databaseVersion(t, repository.db); version != 3 {
-		t.Fatalf("schema version = %d, want 3", version)
+	if version := databaseVersion(t, repository.db); version != 4 {
+		t.Fatalf("schema version = %d, want 4", version)
 	}
 
 	backups, err := filepath.Glob(filepath.Join(filepath.Dir(path), "backups", "*.db"))
@@ -219,8 +220,8 @@ func TestOpenAdoptsUnversionedCurrentSchemaWithBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version := databaseVersion(t, repository.db); version != 3 {
-		t.Fatalf("schema version = %d, want 3", version)
+	if version := databaseVersion(t, repository.db); version != 4 {
+		t.Fatalf("schema version = %d, want 4", version)
 	}
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
@@ -280,6 +281,64 @@ func TestNetworkAttachmentLifecycle(t *testing.T) {
 	}
 	if len(attachments) != 0 {
 		t.Fatalf("attachments after delete = %#v", attachments)
+	}
+}
+
+func TestProviderSnapshotLifecycle(t *testing.T) {
+	repository, err := Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	if _, err := repository.GetProviderSnapshot(
+		context.Background(),
+	); !errors.Is(err, ErrProviderSnapshotNotFound) {
+		t.Fatalf("missing snapshot error = %v", err)
+	}
+	firstTime := time.Date(2026, 7, 28, 1, 2, 3, 0, time.UTC)
+	first, err := repository.SaveProviderSnapshot(
+		context.Background(),
+		domain.ProviderSnapshot{
+			Configuration: []byte(`{"http":{"routers":{},"services":{}}}`),
+			Fingerprint:   "first",
+			GeneratedAt:   firstTime,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := repository.SaveProviderSnapshot(
+		context.Background(),
+		domain.ProviderSnapshot{
+			Configuration: first.Configuration,
+			Fingerprint:   first.Fingerprint,
+			GeneratedAt:   firstTime.Add(time.Hour),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unchanged.GeneratedAt.Equal(firstTime) {
+		t.Fatalf(
+			"unchanged snapshot time = %s, want %s",
+			unchanged.GeneratedAt,
+			firstTime,
+		)
+	}
+	updated, err := repository.SaveProviderSnapshot(
+		context.Background(),
+		domain.ProviderSnapshot{
+			Configuration: []byte(`{"http":{"routers":{"new":{}},"services":{}}}`),
+			Fingerprint:   "second",
+			GeneratedAt:   firstTime.Add(time.Hour),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Fingerprint != "second" ||
+		!updated.GeneratedAt.Equal(firstTime.Add(time.Hour)) {
+		t.Fatalf("updated snapshot = %#v", updated)
 	}
 }
 

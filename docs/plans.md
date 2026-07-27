@@ -1,6 +1,6 @@
 # Docklane Implementation Plan
 
-Last updated: 2026-07-26
+Last updated: 2026-07-28
 
 This file is the project task tracker. Architecture and design rationale live
 in [architecture.md](./architecture.md).
@@ -208,10 +208,10 @@ without published host ports.
 - [X] Configure Traefik HTTP-provider polling.
 - [X] Keep the provider endpoint unavailable from application and non-local
   networks using host-loopback publication plus `docklane-control`.
-- [ ] Add provider configuration validation before publish.
+- [X] Add provider configuration validation before publish.
 - [X] Test add, update, disable, delete, and recreate behavior.
-- [ ] Test controller/provider outage behavior.
-- [ ] Decide and implement last-known-good or file-provider fallback.
+- [X] Test controller/provider outage behavior.
+- [X] Persist and serve a validated last-known-good provider snapshot.
 - [ ] Add route status showing whether Traefik loaded the desired revision.
 
 ### Migration safety
@@ -231,7 +231,7 @@ Acceptance criteria:
 - [X] Route changes are observed without recreating the app or restarting
   Traefik.
 - [X] Removing a route does not stop or otherwise modify the application.
-- [ ] Provider failure has a tested and documented recovery behavior.
+- [X] Provider failure has a tested and documented recovery behavior.
 
 ## Phase 4 — Local DNS and TLS lifecycle
 

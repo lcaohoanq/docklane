@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"docklane.local/docklane/internal/config"
 	"docklane.local/docklane/internal/docker"
@@ -22,6 +24,9 @@ type API struct {
 	store      *store.Store
 	discovery  docker.Discovery
 	reconciler *reconcile.Reconciler
+
+	providerMu     sync.RWMutex
+	providerStatus domain.ProviderStatus
 }
 
 func New(
@@ -35,6 +40,9 @@ func New(
 		store:      repository,
 		discovery:  discovery,
 		reconciler: reconciler,
+		providerStatus: domain.ProviderStatus{
+			Source: domain.ProviderSourceAwaiting,
+		},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", api.health)
@@ -80,11 +88,17 @@ func (a *API) applyNetworkPlan(response http.ResponseWriter, request *http.Reque
 
 func (a *API) health(response http.ResponseWriter, _ *http.Request) {
 	lastRefresh, reconcileErr := a.reconciler.LastResult()
+	providerStatus := a.getProviderStatus()
 	status := "ok"
 	lastError := ""
 	if reconcileErr != nil {
 		status = "degraded"
 		lastError = reconcileErr.Error()
+	}
+	if providerStatus.Source == domain.ProviderSourceLastKnownGood ||
+		providerStatus.Source == domain.ProviderSourceUnavailable ||
+		providerStatus.LastError != "" {
+		status = "degraded"
 	}
 	writeJSON(response, http.StatusOK, map[string]any{
 		"status":              status,
@@ -92,6 +106,7 @@ func (a *API) health(response http.ResponseWriter, _ *http.Request) {
 		"lastReconciledAt":    lastRefresh,
 		"lastReconcileError":  lastError,
 		"reconcileIntervalMs": a.config.ReconcileEvery.Milliseconds(),
+		"provider":            providerStatus,
 	})
 }
 
@@ -255,21 +270,103 @@ func (a *API) deleteRoute(response http.ResponseWriter, request *http.Request) {
 }
 
 func (a *API) traefik(response http.ResponseWriter, request *http.Request) {
-	routes, err := a.store.ListRoutes(request.Context())
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, err)
+	configuration, err := a.liveTraefikConfiguration(request.Context())
+	if err == nil {
+		writeJSON(response, http.StatusOK, configuration)
 		return
 	}
-	containers, err := a.discovery.ListContainers(request.Context())
-	if err != nil {
-		writeError(response, http.StatusBadGateway, err)
+	liveErr := err
+	snapshot, snapshotErr := a.store.GetProviderSnapshot(request.Context())
+	if snapshotErr == nil {
+		configuration, snapshotErr = traefik.DecodeValidatedSnapshot(
+			snapshot.Configuration,
+			snapshot.Fingerprint,
+		)
+	}
+	if snapshotErr == nil {
+		a.setProviderStatus(domain.ProviderStatus{
+			Source:      domain.ProviderSourceLastKnownGood,
+			Fingerprint: snapshot.Fingerprint,
+			GeneratedAt: snapshot.GeneratedAt,
+			LastError:   liveErr.Error(),
+		})
+		writeJSON(response, http.StatusOK, configuration)
 		return
 	}
-	writeJSON(
-		response,
-		http.StatusOK,
-		traefik.Build(routes, containers, a.config.BaseDomain, a.config.ProxyNetwork),
+	combined := fmt.Errorf(
+		"generate live provider configuration: %w; load last-known-good: %v",
+		liveErr,
+		snapshotErr,
 	)
+	a.setProviderStatus(domain.ProviderStatus{
+		Source:    domain.ProviderSourceUnavailable,
+		LastError: combined.Error(),
+	})
+	writeError(response, http.StatusBadGateway, combined)
+}
+
+func (a *API) liveTraefikConfiguration(
+	ctx context.Context,
+) (traefik.Configuration, error) {
+	routes, err := a.store.ListRoutes(ctx)
+	if err != nil {
+		return traefik.Configuration{}, err
+	}
+	routes = a.reconciler.Enrich(routes)
+	containers, err := a.discovery.ListContainers(ctx)
+	if err != nil {
+		return traefik.Configuration{}, err
+	}
+	configuration := traefik.Build(
+		routes,
+		containers,
+		a.config.BaseDomain,
+		a.config.ProxyNetwork,
+	)
+	encoded, fingerprint, err := traefik.EncodeValidated(configuration)
+	if err != nil {
+		return traefik.Configuration{}, fmt.Errorf(
+			"validate generated provider configuration: %w",
+			err,
+		)
+	}
+	generatedAt := time.Now().UTC()
+	snapshot, snapshotErr := a.store.SaveProviderSnapshot(
+		ctx,
+		domain.ProviderSnapshot{
+			Configuration: encoded,
+			Fingerprint:   fingerprint,
+			GeneratedAt:   generatedAt,
+		},
+	)
+	status := domain.ProviderStatus{
+		Source:      domain.ProviderSourceLive,
+		Fingerprint: fingerprint,
+		GeneratedAt: generatedAt,
+	}
+	if snapshotErr != nil {
+		status.LastError = fmt.Sprintf(
+			"persist last-known-good provider configuration: %v",
+			snapshotErr,
+		)
+	} else {
+		status.Fingerprint = snapshot.Fingerprint
+		status.GeneratedAt = snapshot.GeneratedAt
+	}
+	a.setProviderStatus(status)
+	return configuration, nil
+}
+
+func (a *API) setProviderStatus(status domain.ProviderStatus) {
+	a.providerMu.Lock()
+	defer a.providerMu.Unlock()
+	a.providerStatus = status
+}
+
+func (a *API) getProviderStatus() domain.ProviderStatus {
+	a.providerMu.RLock()
+	defer a.providerMu.RUnlock()
+	return a.providerStatus
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

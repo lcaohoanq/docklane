@@ -81,12 +81,20 @@ func Build(
 		config.HTTP.Services[name] = Service{
 			LoadBalancer: LoadBalancer{
 				Servers: []Server{{
-					URL: fmt.Sprintf("%s://%s:%d", route.Scheme, container.Name, route.Port),
+					URL: upstreamURL(route, container),
 				}},
 			},
 		}
 	}
 	return config
+}
+
+func upstreamURL(route domain.Route, container docker.Container) string {
+	if route.Observed.State == domain.RouteStateReady &&
+		route.Observed.UpstreamURL != "" {
+		return route.Observed.UpstreamURL
+	}
+	return fmt.Sprintf("%s://%s:%d", route.Scheme, container.Name, route.Port)
 }
 
 func safeName(value string) string {

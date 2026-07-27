@@ -64,12 +64,25 @@ var migrations = []migration{
 			)
 		`},
 	},
+	{
+		version:     4,
+		description: "persist last-known-good Traefik provider configuration",
+		statements: []string{`
+			CREATE TABLE provider_snapshots (
+				id INTEGER PRIMARY KEY CHECK (id = 1),
+				configuration BLOB NOT NULL,
+				fingerprint TEXT NOT NULL,
+				generated_at TEXT NOT NULL
+			)
+		`},
+	},
 }
 
 var (
-	ErrNotFound         = errors.New("route not found")
-	ErrConflict         = errors.New("route name already exists")
-	ErrRevisionConflict = errors.New("route was changed by another client; refresh it and try again")
+	ErrNotFound                 = errors.New("route not found")
+	ErrConflict                 = errors.New("route name already exists")
+	ErrRevisionConflict         = errors.New("route was changed by another client; refresh it and try again")
+	ErrProviderSnapshotNotFound = errors.New("provider snapshot not found")
 )
 
 func Open(path string) (*Store, error) {
@@ -489,6 +502,67 @@ func (s *Store) DeleteNetworkAttachment(
 		network,
 	)
 	return err
+}
+
+func (s *Store) SaveProviderSnapshot(
+	ctx context.Context,
+	snapshot domain.ProviderSnapshot,
+) (domain.ProviderSnapshot, error) {
+	if len(snapshot.Configuration) == 0 ||
+		snapshot.Fingerprint == "" ||
+		snapshot.GeneratedAt.IsZero() {
+		return domain.ProviderSnapshot{}, errors.New(
+			"provider configuration, fingerprint, and generation time are required",
+		)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO provider_snapshots (
+			id, configuration, fingerprint, generated_at
+		) VALUES (1, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			configuration = excluded.configuration,
+			fingerprint = excluded.fingerprint,
+			generated_at = excluded.generated_at
+		WHERE provider_snapshots.fingerprint <> excluded.fingerprint
+	`,
+		snapshot.Configuration,
+		snapshot.Fingerprint,
+		snapshot.GeneratedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return domain.ProviderSnapshot{}, err
+	}
+	return s.GetProviderSnapshot(ctx)
+}
+
+func (s *Store) GetProviderSnapshot(
+	ctx context.Context,
+) (domain.ProviderSnapshot, error) {
+	var snapshot domain.ProviderSnapshot
+	var generatedAt string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT configuration, fingerprint, generated_at
+		FROM provider_snapshots
+		WHERE id = 1
+	`).Scan(
+		&snapshot.Configuration,
+		&snapshot.Fingerprint,
+		&generatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ProviderSnapshot{}, ErrProviderSnapshotNotFound
+	}
+	if err != nil {
+		return domain.ProviderSnapshot{}, err
+	}
+	snapshot.GeneratedAt, err = time.Parse(time.RFC3339Nano, generatedAt)
+	if err != nil {
+		return domain.ProviderSnapshot{}, fmt.Errorf(
+			"parse provider snapshot generation time: %w",
+			err,
+		)
+	}
+	return snapshot, nil
 }
 
 type scanner interface {

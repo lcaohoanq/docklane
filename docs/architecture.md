@@ -103,7 +103,8 @@ The controller is a single Go process responsible for:
 - discovering Docker containers and Compose labels;
 - resolving stable workload selectors to current container instances;
 - reconciling managed proxy-network attachments;
-- rendering a complete Traefik HTTP-provider document;
+- rendering and validating a complete Traefik HTTP-provider document;
+- persisting the last validated provider document for restart recovery;
 - reporting route health and diagnostics.
 
 The default development listener is `127.0.0.1:4646`. The integrated
@@ -357,7 +358,9 @@ state from SQLite.
 | Pre-existing attachment lacks a route alias | Preserve it and use the current container name |
 | Docklane-owned attachment is no longer needed | Disconnect it and remove the ownership record |
 | Pre-existing proxy attachment is no longer routed | Preserve it because Docklane does not own it |
-| Traefik cannot fetch configuration | Report provider failure; never emit partial JSON |
+| Traefik cannot fetch Docklane | Traefik retains its last successful HTTP-provider configuration in memory |
+| Docklane cannot render live state | Serve the persisted, revalidated last-known-good document and report degraded health |
+| No live document or valid snapshot exists | Return HTTP 502 and report provider source `unavailable` |
 | DNS or certificate is wrong | `doctor` identifies the failed layer |
 
 Docklane treats Docker-declared private TCP ports as the safe publication
@@ -379,9 +382,23 @@ does not offer the normal create-route action. Traefik's dashboard is a
 special system route backed by `api@internal`, not by proxying to the
 gateway's own port 80 or 443.
 
-The integrated implementation must test what Traefik does when the controller
-is unavailable and provide a last-known-good or file-provider fallback if
-required. Availability behavior must not depend on an unverified assumption.
+The integrated implementation uses two complementary recovery layers. Traefik
+keeps its last successful HTTP-provider configuration in memory when a poll
+times out or the Docklane container is unavailable. Docklane also stores each
+changed, fully validated provider document and its SHA-256 fingerprint in
+SQLite. If a live desired-state read, reconciliation, Docker discovery,
+rendering, or validation fails, Docklane verifies the snapshot fingerprint,
+revalidates its structure, and serves it with HTTP 200. Health then exposes
+`provider.source=last-known-good` plus the live error. If neither source is
+valid, the provider returns HTTP 502 instead of publishing partial
+configuration.
+
+A parallel Traefik file-provider copy is intentionally not used: after HTTP
+recovery, file and HTTP providers would both define the same routers and
+services. The remaining availability boundary is a simultaneous Traefik
+restart while Docklane cannot start or serve its SQLite snapshot. Recovery in
+that case is to restore Docklane first, confirm a successful provider response,
+and then let Traefik poll it.
 
 ## 8. API boundary
 

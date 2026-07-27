@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,10 +23,11 @@ import (
 
 type fakeDiscovery struct {
 	containers []docker.Container
+	err        error
 }
 
 func (f fakeDiscovery) ListContainers(context.Context) ([]docker.Container, error) {
-	return f.containers, nil
+	return f.containers, f.err
 }
 
 type networkDiscovery struct {
@@ -165,6 +167,167 @@ func TestCreateRouteAndRenderTraefikConfiguration(t *testing.T) {
 	server := configuration.HTTP.Services["draw"].LoadBalancer.Servers[0]
 	if server.URL != "http://draw-web-7:80" {
 		t.Fatalf("server URL = %q", server.URL)
+	}
+}
+
+func TestTraefikProviderFallsBackToPersistedLastKnownGood(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	_, err = repository.CreateRoute(context.Background(), domain.Route{
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery := &fakeDiscovery{containers: []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"proxy"},
+	}}}
+	reconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithNetworkAttachments("proxy", nil),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+	)
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(
+		first,
+		httptest.NewRequest(http.MethodGet, "/internal/traefik", nil),
+	)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first provider status = %d, body = %s", first.Code, first.Body)
+	}
+	snapshot, err := repository.GetProviderSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Fingerprint == "" {
+		t.Fatal("provider snapshot has no fingerprint")
+	}
+
+	discovery.err = errors.New("Docker temporarily unavailable")
+	restartedReconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithNetworkAttachments("proxy", nil),
+	)
+	handler = New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		restartedReconciler,
+	)
+	fallback := httptest.NewRecorder()
+	handler.ServeHTTP(
+		fallback,
+		httptest.NewRequest(http.MethodGet, "/internal/traefik", nil),
+	)
+	if fallback.Code != http.StatusOK {
+		t.Fatalf(
+			"fallback provider status = %d, body = %s",
+			fallback.Code,
+			fallback.Body,
+		)
+	}
+	var configuration traefik.Configuration
+	if err := json.NewDecoder(fallback.Body).Decode(&configuration); err != nil {
+		t.Fatal(err)
+	}
+	if len(configuration.HTTP.Routers) != 1 {
+		t.Fatalf("fallback configuration = %#v", configuration)
+	}
+
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(
+		health,
+		httptest.NewRequest(http.MethodGet, "/api/v1/health", nil),
+	)
+	var healthPayload struct {
+		Status   string                `json:"status"`
+		Provider domain.ProviderStatus `json:"provider"`
+	}
+	if err := json.NewDecoder(health.Body).Decode(&healthPayload); err != nil {
+		t.Fatal(err)
+	}
+	if healthPayload.Status != "degraded" ||
+		healthPayload.Provider.Source != domain.ProviderSourceLastKnownGood ||
+		!strings.Contains(healthPayload.Provider.LastError, "temporarily unavailable") {
+		t.Fatalf("health = %#v", healthPayload)
+	}
+}
+
+func TestTraefikProviderIsUnavailableWithoutSnapshot(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := fakeDiscovery{err: errors.New("Docker unavailable")}
+	reconciler := reconcile.New(repository, discovery, time.Second)
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+	)
+
+	provider := httptest.NewRecorder()
+	handler.ServeHTTP(
+		provider,
+		httptest.NewRequest(http.MethodGet, "/internal/traefik", nil),
+	)
+	if provider.Code != http.StatusBadGateway {
+		t.Fatalf("provider status = %d, body = %s", provider.Code, provider.Body)
+	}
+
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(
+		health,
+		httptest.NewRequest(http.MethodGet, "/api/v1/health", nil),
+	)
+	var payload struct {
+		Status   string                `json:"status"`
+		Provider domain.ProviderStatus `json:"provider"`
+	}
+	if err := json.NewDecoder(health.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Status != "degraded" ||
+		payload.Provider.Source != domain.ProviderSourceUnavailable ||
+		!strings.Contains(payload.Provider.LastError, "Docker unavailable") {
+		t.Fatalf("health = %#v", payload)
 	}
 }
 

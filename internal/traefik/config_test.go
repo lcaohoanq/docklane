@@ -113,3 +113,28 @@ func TestBuildSkipsUnresolvedAndDisabledRoutes(t *testing.T) {
 		t.Fatalf("expected empty configuration, got %#v", config)
 	}
 }
+
+func TestBuildUsesReconciledDeterministicUpstream(t *testing.T) {
+	config := Build([]domain.Route{{
+		ID:       7,
+		Name:     "draw",
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+		Observed: domain.RouteObservation{
+			State:       domain.RouteStateReady,
+			UpstreamURL: "http://docklane-route-7:80",
+		},
+	}}, []docker.Container{{
+		ID:           "abc123",
+		Name:         "generated-container-name",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"proxy"},
+	}}, "docker.home.arpa", "proxy")
+
+	server := config.HTTP.Services["draw"].LoadBalancer.Servers[0]
+	if server.URL != "http://docklane-route-7:80" {
+		t.Fatalf("server URL = %q", server.URL)
+	}
+}
