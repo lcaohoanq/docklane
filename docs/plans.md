@@ -297,6 +297,11 @@ safe and repeatable.
   with content fingerprints; declare private material as apply-time-only.
 - [X] Generate and verify the managed root/leaf PKI bundle entirely in memory,
   including explicit apex and wildcard SAN coverage.
+- [X] Generate a 256-bit dashboard password and bcrypt Traefik users file
+  entirely in memory without exposing secrets in dry-run artifacts.
+- [X] Add reversible atomic file staging with mode-preserving fingerprinted
+  backups, symlink refusal, failure rollback, backup-integrity checks, and
+  target-drift refusal.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.

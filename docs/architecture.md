@@ -384,6 +384,33 @@ writer may stage these bytes, the leaf is verified against the new root for
 both the apex and a representative subdomain. This separates reproducible
 review input from intentionally random apply-time material.
 
+Materialization expands those descriptors into nine files in memory: two
+rendered configurations, five PKI/trust files, and two dashboard credential
+files. The password is a URL-safe encoding of 256 random bits. Only its bcrypt
+hash enters Traefik's users file; the raw password is confined to the
+controller's mode-`0600` secret file. Sensitive buffers have an explicit
+clearing path after staging.
+
+The managed file stager is a reversible transaction rather than a collection
+of direct writes. It validates every target before mutation, rejects symbolic
+links and non-regular replacement targets, constrains sensitive modes, and
+caps file sizes. Every replacement first receives a private, fingerprinted
+backup preserving its original mode. New content follows:
+
+```text
+temporary file → write → chmod → fsync(file) → rename → fsync(directory)
+```
+
+If a later write fails, completed writes are walked in reverse: created files
+are removed and replaced files are restored only after their backup
+fingerprint is revalidated. Rollback also requires the current target's
+fingerprint and mode to still match the staged result, preventing it from
+overwriting an external edit. Backup corruption or target drift stops that
+step, preserves the backup, and permits a retry after the conflict is repaired.
+This executor is not connected to
+`docklane install` yet; service, trust-store, resolver, and Docker operations
+must join the same recovery boundary first.
+
 `docklane install --token TOKEN` always reruns preflight and reconstructs the
 plan. A constant-time exact comparison binds apply to the machine state the
 user reviewed. The adoption executor refuses incomplete, blocked, stale, or

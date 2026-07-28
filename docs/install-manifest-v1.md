@@ -79,6 +79,14 @@ exact content and SHA-256 fingerprint. Generated PKI and secret artifacts
 contain no content or fingerprint in the plan; they declare only the target,
 mode, sensitivity, and that material is generated during apply.
 
+The apply-time materializer now exists but is not enabled by the install
+command. It generates all PKI and dashboard credentials in memory and passes
+the resulting file bundle to a reversible atomic stager. Replaced files receive
+mode-preserving backups whose SHA-256 fingerprints fit the resource backup
+contract below; newly created files require no backup. Managed apply remains
+blocked until these results are journaled into manifest generations together
+with the non-file host and Docker operations.
+
 ## Reverse planning
 
 `docklane uninstall --dry-run` accepts only an `installed` manifest and walks

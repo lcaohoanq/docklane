@@ -177,6 +177,18 @@ material. The PKI generator creates a 3072-bit local root and leaf entirely in
 memory, verifies the apex and wildcard SANs against that root, and returns the
 bundle for a future atomic writer.
 
+Apply-time materialization now produces the complete nine-file bundle in
+memory. The dashboard password uses 256 bits of entropy and URL-safe encoding;
+Traefik receives only a bcrypt users file while the controller receives the
+mode-`0600` raw password file. A reversible file stager writes each target by
+temporary file, file sync, atomic rename, and directory sync. Existing regular
+files receive fingerprinted, mode-preserving backups, and any failure restores
+earlier replacements and removes files created by that transaction. Managed
+rollback first verifies that staged content and permissions have not changed,
+so it will not overwrite a later external edit. Managed host apply remains
+disabled until service, trust-store, and Docker mutations have the same
+recovery coverage.
+
 `docklane install --token TOKEN` reruns preflight and planning, then
 applies only if the supplied token exactly matches the fresh plan. The current
 apply engine supports safe adoption: it atomically journals `planned`,
