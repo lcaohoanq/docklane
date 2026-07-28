@@ -100,13 +100,14 @@ func (a *API) health(response http.ResponseWriter, _ *http.Request) {
 		providerStatus.LastError != "" {
 		status = "degraded"
 	}
-	writeJSON(response, http.StatusOK, map[string]any{
-		"status":              status,
-		"baseDomain":          a.config.BaseDomain,
-		"lastReconciledAt":    lastRefresh,
-		"lastReconcileError":  lastError,
-		"reconcileIntervalMs": a.config.ReconcileEvery.Milliseconds(),
-		"provider":            providerStatus,
+	writeJSON(response, http.StatusOK, domain.ControllerHealth{
+		Status:              status,
+		BaseDomain:          a.config.BaseDomain,
+		ProxyNetwork:        a.config.ProxyNetwork,
+		LastReconciledAt:    lastRefresh,
+		LastReconcileError:  lastError,
+		ReconcileIntervalMS: a.config.ReconcileEvery.Milliseconds(),
+		Provider:            providerStatus,
 	})
 }
 

@@ -308,26 +308,26 @@ Acceptance criteria:
 
 Goal: explain failures by layer instead of presenting a generic browser error.
 
-- [ ] Add `docklane doctor`.
-- [ ] Add `docklane doctor <route>`.
-- [ ] Check DNS resolution.
+- [X] Add `docklane doctor`.
+- [X] Add `docklane doctor <route>`.
+- [X] Check DNS resolution.
 - [ ] Check TCP listeners on ports 80 and 443.
-- [ ] Check certificate chain, trust, expiry, and SAN match.
+- [X] Check certificate chain, trust, expiry, and SAN match.
 - [ ] Check Traefik router and provider state.
-- [ ] Check workload selector resolution.
+- [X] Check workload selector resolution.
 - [ ] Check shared-network membership and alias resolution.
 - [ ] Check upstream port reachability from Traefik's network.
-- [ ] Check final HTTPS response and redirect behavior.
-- [ ] Provide one actionable repair suggestion per failed layer.
-- [ ] Add machine-readable `--json` diagnostic output.
+- [X] Check final HTTPS response and redirect behavior.
+- [X] Provide one actionable repair suggestion per failed layer.
+- [X] Add machine-readable `--json` diagnostic output.
 - [ ] Add a UI diagnostics view.
 - [ ] Add health history with bounded retention.
 
 Acceptance criteria:
 
 - [ ] DNS, TLS, Traefik 404, network, and upstream failures are distinguishable.
-- [ ] The Excalidraw route can be diagnosed end to end with one command.
-- [ ] Diagnostics are read-only unless an explicit repair command is invoked.
+- [X] The Excalidraw route can be diagnosed end to end with one command.
+- [X] Diagnostics are read-only unless an explicit repair command is invoked.
 
 ## Phase 7 — UX/DX hardening and first release
 

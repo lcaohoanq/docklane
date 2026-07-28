@@ -82,6 +82,9 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 
 ```sh
 ./bin/docklane discover
+./bin/docklane doctor
+./bin/docklane doctor excalidraw
+./bin/docklane doctor --json excalidraw
 ./bin/docklane network plan
 ./bin/docklane network apply
 ./bin/docklane route add excalidraw \
@@ -98,6 +101,13 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 Use `--dry-run` on `route add` to validate and print the route without saving
 it. Set `DOCKLANE_URL` when the controller is not at
 `http://127.0.0.1:4646`.
+
+`docklane doctor` checks controller, reconciliation, provider, and Docker
+discovery health. Supplying a route ID, name, or full hostname also checks the
+saved route, workload selector, declared upstream port, shared network, local
+DNS, TCP 443, trusted certificate/SAN/expiry, redirects, and final HTTPS
+response. The probes are read-only and run from the CLI machine so their
+network and trust perspective matches the browser.
 
 Current API endpoints:
 

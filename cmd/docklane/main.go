@@ -18,6 +18,7 @@ import (
 	"docklane.local/docklane/internal/api"
 	"docklane.local/docklane/internal/client"
 	"docklane.local/docklane/internal/config"
+	"docklane.local/docklane/internal/diagnostics"
 	"docklane.local/docklane/internal/docker"
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/reconcile"
@@ -42,6 +43,8 @@ func run(args []string) error {
 		return serve(args[1:])
 	case "discover":
 		return discover(args[1:])
+	case "doctor":
+		return doctor(args[1:])
 	case "network":
 		return network(args[1:])
 	case "route":
@@ -54,6 +57,64 @@ func run(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func doctor(args []string) error {
+	target := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		target = args[0]
+		args = args[1:]
+	}
+	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	controllerURL := flags.String("url", defaultControllerURL(), "Docklane controller URL")
+	asJSON := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() > 1 {
+		return fmt.Errorf("usage: docklane doctor [--json] [ROUTE]")
+	}
+	if flags.NArg() == 1 {
+		if target != "" {
+			return fmt.Errorf("usage: docklane doctor [--json] [ROUTE]")
+		}
+		target = flags.Arg(0)
+	}
+	report := diagnostics.Run(
+		context.Background(),
+		client.New(*controllerURL),
+		diagnostics.SystemProber{},
+		target,
+	)
+	if *asJSON {
+		return printJSON(report)
+	}
+	printDiagnosticReport(report)
+	return nil
+}
+
+func printDiagnosticReport(report domain.DiagnosticReport) {
+	title := "Docklane"
+	if report.Hostname != "" {
+		title = report.Hostname
+	} else if report.Target != "" {
+		title = report.Target
+	}
+	fmt.Printf("Doctor %s: %s\n", title, strings.ToUpper(string(report.Status)))
+	for _, check := range report.Checks {
+		fmt.Printf(
+			"[%s] %-13s %s\n",
+			strings.ToUpper(string(check.Status)),
+			check.Layer,
+			check.Summary,
+		)
+		if check.Detail != "" {
+			fmt.Printf("       %s\n", check.Detail)
+		}
+		if check.Suggestion != "" {
+			fmt.Printf("       Repair: %s\n", check.Suggestion)
+		}
 	}
 }
 
@@ -530,6 +591,7 @@ func printUsage() {
 Usage:
   docklane serve [options]   Start the controller
   docklane discover          List running Docker containers
+  docklane doctor [ROUTE]    Diagnose controller or route layers
   docklane network plan      Preview network operations
   docklane network apply     Apply the reviewed network plan
   docklane route list        List saved local routes

@@ -46,6 +46,12 @@ func (c *Client) ListRoutes(ctx context.Context) (Routes, error) {
 	return payload, err
 }
 
+func (c *Client) Health(ctx context.Context) (domain.ControllerHealth, error) {
+	var health domain.ControllerHealth
+	err := c.do(ctx, http.MethodGet, "/api/v1/health", nil, &health)
+	return health, err
+}
+
 func (c *Client) NetworkPlan(ctx context.Context) (domain.NetworkPlan, error) {
 	var plan domain.NetworkPlan
 	err := c.do(ctx, http.MethodGet, "/api/v1/network/plan", nil, &plan)

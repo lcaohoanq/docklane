@@ -92,6 +92,12 @@ Docklane has a control plane and a request data plane:
 - The **data plane** is the browser → Traefik → application path. Application
   traffic does not pass through the Docklane controller.
 
+Diagnostics deliberately span both perspectives. The controller reports
+desired routes and observed Docker/network state. The CLI performs DNS, TCP,
+TLS, redirect, and HTTPS probes from the user's machine, matching the browser's
+resolver and trust store. Diagnostic commands use only GET APIs and network
+probes; repair remains a separate, explicitly mutating workflow.
+
 ## 5. Components
 
 ### 5.1 Controller
