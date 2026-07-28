@@ -105,9 +105,10 @@ it. Set `DOCKLANE_URL` when the controller is not at
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the
 saved route, workload selector, declared upstream port, shared network, local
-DNS, TCP 443, trusted certificate/SAN/expiry, redirects, and final HTTPS
-response. The probes are read-only and run from the CLI machine so their
-network and trust perspective matches the browser.
+network alias, local DNS, TCP 80/443, HTTP-to-HTTPS redirect, trusted
+certificate/SAN/expiry, and final HTTPS response. The probes are read-only and
+run from the CLI machine so their network and trust perspective matches the
+browser.
 
 Current API endpoints:
 
@@ -121,6 +122,10 @@ Current API endpoints:
 - `PUT /api/v1/routes/{id}`
 - `DELETE /api/v1/routes/{id}`
 - `GET /internal/traefik`
+
+Pass `networkAliases=true` to the containers endpoint when diagnostics need
+verified aliases on the configured proxy network. Ordinary UI discovery omits
+the additional Docker inspect calls.
 
 `GET /api/v1/health` includes a `provider` object. Its `source` is `live`,
 `last-known-good`, `awaiting-first-poll`, or `unavailable`. A

@@ -311,11 +311,11 @@ Goal: explain failures by layer instead of presenting a generic browser error.
 - [X] Add `docklane doctor`.
 - [X] Add `docklane doctor <route>`.
 - [X] Check DNS resolution.
-- [ ] Check TCP listeners on ports 80 and 443.
+- [X] Check TCP listeners on ports 80 and 443.
 - [X] Check certificate chain, trust, expiry, and SAN match.
 - [ ] Check Traefik router and provider state.
 - [X] Check workload selector resolution.
-- [ ] Check shared-network membership and alias resolution.
+- [X] Check shared-network membership and alias resolution.
 - [ ] Check upstream port reachability from Traefik's network.
 - [X] Check final HTTPS response and redirect behavior.
 - [X] Provide one actionable repair suggestion per failed layer.

@@ -31,10 +31,23 @@ func New(baseURL string) *Client {
 }
 
 func (c *Client) ListContainers(ctx context.Context) ([]docker.Container, error) {
+	return c.listContainers(ctx, "/api/v1/containers")
+}
+
+func (c *Client) ListContainersWithNetworkAliases(
+	ctx context.Context,
+) ([]docker.Container, error) {
+	return c.listContainers(ctx, "/api/v1/containers?networkAliases=true")
+}
+
+func (c *Client) listContainers(
+	ctx context.Context,
+	path string,
+) ([]docker.Container, error) {
 	var payload struct {
 		Containers []docker.Container `json:"containers"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v1/containers", nil, &payload); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return nil, err
 	}
 	return payload.Containers, nil

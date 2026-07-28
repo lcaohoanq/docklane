@@ -97,6 +97,8 @@ desired routes and observed Docker/network state. The CLI performs DNS, TCP,
 TLS, redirect, and HTTPS probes from the user's machine, matching the browser's
 resolver and trust store. Diagnostic commands use only GET APIs and network
 probes; repair remains a separate, explicitly mutating workflow.
+Network aliases are hydrated only when diagnostics explicitly request them;
+ordinary UI discovery does not perform per-container Docker inspect calls.
 
 ## 5. Components
 

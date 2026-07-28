@@ -117,6 +117,28 @@ func (a *API) containers(response http.ResponseWriter, request *http.Request) {
 		writeError(response, http.StatusBadGateway, err)
 		return
 	}
+	if aliases, ok := a.discovery.(docker.NetworkAliasDiscovery); ok &&
+		request.URL.Query().Get("networkAliases") == "true" &&
+		a.config.ProxyNetwork != "" {
+		for index := range containers {
+			if !containers[index].HasNetwork(a.config.ProxyNetwork) {
+				continue
+			}
+			networkAliases, err := aliases.NetworkAliases(
+				request.Context(),
+				containers[index].ID,
+				a.config.ProxyNetwork,
+			)
+			if err != nil {
+				writeError(response, http.StatusBadGateway, err)
+				return
+			}
+			if containers[index].NetworkAliases == nil {
+				containers[index].NetworkAliases = map[string][]string{}
+			}
+			containers[index].NetworkAliases[a.config.ProxyNetwork] = networkAliases
+		}
+	}
 	writeJSON(response, http.StatusOK, map[string]any{"containers": containers})
 }
 

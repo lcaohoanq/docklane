@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -20,13 +21,14 @@ const probeTimeout = 5 * time.Second
 
 type Controller interface {
 	Health(context.Context) (domain.ControllerHealth, error)
-	ListContainers(context.Context) ([]docker.Container, error)
+	ListContainersWithNetworkAliases(context.Context) ([]docker.Container, error)
 	ListRoutes(context.Context) (client.Routes, error)
 }
 
 type Prober interface {
 	LookupHost(context.Context, string) ([]string, error)
 	DialTCP(context.Context, string) error
+	ProbeHTTPRedirect(context.Context, string) (int, string, error)
 	ProbeTLS(context.Context, string) (time.Time, error)
 	GetHTTPS(context.Context, string) (int, error)
 }
@@ -49,6 +51,33 @@ func (SystemProber) DialTCP(ctx context.Context, address string) error {
 		return err
 	}
 	return connection.Close()
+}
+
+func (SystemProber) ProbeHTTPRedirect(
+	ctx context.Context,
+	hostname string,
+) (int, string, error) {
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"http://"+hostname+"/",
+		nil,
+	)
+	if err != nil {
+		return 0, "", err
+	}
+	response, err := (&http.Client{
+		Timeout:   probeTimeout,
+		Transport: directTransport(),
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}).Do(request)
+	if err != nil {
+		return 0, "", err
+	}
+	defer response.Body.Close()
+	return response.StatusCode, response.Header.Get("Location"), nil
 }
 
 func (SystemProber) ProbeTLS(ctx context.Context, hostname string) (time.Time, error) {
@@ -85,17 +114,8 @@ func (SystemProber) GetHTTPS(ctx context.Context, hostname string) (int, error) 
 		return 0, err
 	}
 	httpClient := &http.Client{
-		Timeout: probeTimeout,
-		Transport: &http.Transport{
-			Proxy: nil,
-			DialContext: (&net.Dialer{
-				Timeout: probeTimeout,
-			}).DialContext,
-			TLSHandshakeTimeout: probeTimeout,
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		},
+		Timeout:   probeTimeout,
+		Transport: directTransport(),
 		CheckRedirect: func(_ *http.Request, previous []*http.Request) error {
 			if len(previous) >= 5 {
 				return errors.New("stopped after 5 redirects")
@@ -109,6 +129,19 @@ func (SystemProber) GetHTTPS(ctx context.Context, hostname string) (int, error) 
 	}
 	defer response.Body.Close()
 	return response.StatusCode, nil
+}
+
+func directTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: nil,
+		DialContext: (&net.Dialer{
+			Timeout: probeTimeout,
+		}).DialContext,
+		TLSHandshakeTimeout: probeTimeout,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
 }
 
 func Run(
@@ -156,7 +189,7 @@ func Run(
 	}
 	report.add(providerCheck(health.Provider))
 
-	containers, discoveryErr := controller.ListContainers(ctx)
+	containers, discoveryErr := controller.ListContainersWithNetworkAliases(ctx)
 	if discoveryErr != nil {
 		report.add(fail(
 			"docker-discovery",
@@ -277,6 +310,7 @@ func (report *diagnosticReport) addWorkloadChecks(
 			"network",
 			fmt.Sprintf("Container is attached to %s", proxyNetwork),
 		))
+		report.add(aliasCheck(route, container, proxyNetwork))
 	} else {
 		report.add(fail(
 			"proxy-network",
@@ -315,6 +349,55 @@ func (report *diagnosticReport) addHostChecks(
 		"dns",
 		fmt.Sprintf("%s resolves to %s", hostname, strings.Join(addresses, ", ")),
 	))
+
+	probeCtx, cancel = context.WithTimeout(ctx, probeTimeout)
+	err = prober.DialTCP(probeCtx, net.JoinHostPort(hostname, "80"))
+	cancel()
+	if err != nil {
+		report.add(fail(
+			"tcp-80",
+			"network",
+			"TCP port 80 is unreachable",
+			err.Error(),
+			"Verify Traefik is running and publishing host port 80.",
+		))
+	} else {
+		report.add(pass("tcp-80", "network", "TCP port 80 accepts connections"))
+		probeCtx, cancel = context.WithTimeout(ctx, probeTimeout)
+		statusCode, location, redirectErr := prober.ProbeHTTPRedirect(
+			probeCtx,
+			hostname,
+		)
+		cancel()
+		expectedPrefix := "https://" + hostname
+		if redirectErr != nil {
+			report.add(fail(
+				"http-redirect",
+				"http",
+				"HTTP redirect probe failed",
+				redirectErr.Error(),
+				"Inspect the Traefik web entrypoint and redirect configuration.",
+			))
+		} else if !redirectStatus(statusCode) ||
+			!strings.HasPrefix(location, expectedPrefix) {
+			report.add(fail(
+				"http-redirect",
+				"http",
+				fmt.Sprintf(
+					"HTTP did not redirect to this route's HTTPS URL (status %d)",
+					statusCode,
+				),
+				location,
+				"Configure the Traefik web entrypoint to redirect to websecure.",
+			))
+		} else {
+			report.add(pass(
+				"http-redirect",
+				"http",
+				fmt.Sprintf("HTTP redirects to %s", location),
+			))
+		}
+	}
 
 	probeCtx, cancel = context.WithTimeout(ctx, probeTimeout)
 	err = prober.DialTCP(probeCtx, net.JoinHostPort(hostname, "443"))
@@ -393,6 +476,55 @@ func (report *diagnosticReport) addHostChecks(
 			"http",
 			fmt.Sprintf("HTTPS returned %d", statusCode),
 		))
+	}
+}
+
+func aliasCheck(
+	route domain.Route,
+	container docker.Container,
+	proxyNetwork string,
+) domain.DiagnosticCheck {
+	upstreamHost := ""
+	if parsed, err := neturl.Parse(route.Observed.UpstreamURL); err == nil {
+		upstreamHost = parsed.Hostname()
+	}
+	if upstreamHost == "" {
+		return warn(
+			"proxy-alias",
+			"network",
+			"Route has no observed proxy-network upstream name",
+			"Wait for reconciliation and run doctor again.",
+		)
+	}
+	if container.HasNetworkAlias(proxyNetwork, upstreamHost) {
+		summary := fmt.Sprintf("Proxy-network alias %s is present", upstreamHost)
+		if upstreamHost == container.Name {
+			summary = "Container-name fallback is present as proxy alias " + upstreamHost
+		}
+		return pass(
+			"proxy-alias",
+			"network",
+			summary,
+		)
+	}
+	return fail(
+		"proxy-alias",
+		"network",
+		fmt.Sprintf("Proxy-network alias %s is missing", upstreamHost),
+		"",
+		"Review `docklane network plan` and apply the alias repair.",
+	)
+}
+
+func redirectStatus(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently,
+		http.StatusFound,
+		http.StatusTemporaryRedirect,
+		http.StatusPermanentRedirect:
+		return true
+	default:
+		return false
 	}
 }
 

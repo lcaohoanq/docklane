@@ -25,7 +25,7 @@ func (controller fakeController) Health(
 	return controller.health, controller.healthErr
 }
 
-func (controller fakeController) ListContainers(
+func (controller fakeController) ListContainersWithNetworkAliases(
 	context.Context,
 ) ([]docker.Container, error) {
 	return controller.containers, nil
@@ -36,20 +36,34 @@ func (controller fakeController) ListRoutes(context.Context) (client.Routes, err
 }
 
 type fakeProber struct {
-	addresses []string
-	dnsErr    error
-	tcpErr    error
-	tlsErr    error
-	status    int
-	httpErr   error
+	addresses   []string
+	dnsErr      error
+	tcp80Err    error
+	tcp443Err   error
+	redirect    int
+	location    string
+	redirectErr error
+	tlsErr      error
+	status      int
+	httpErr     error
 }
 
 func (prober fakeProber) LookupHost(context.Context, string) ([]string, error) {
 	return prober.addresses, prober.dnsErr
 }
 
-func (prober fakeProber) DialTCP(context.Context, string) error {
-	return prober.tcpErr
+func (prober fakeProber) DialTCP(_ context.Context, address string) error {
+	if strings.HasSuffix(address, ":80") {
+		return prober.tcp80Err
+	}
+	return prober.tcp443Err
+}
+
+func (prober fakeProber) ProbeHTTPRedirect(
+	context.Context,
+	string,
+) (int, string, error) {
+	return prober.redirect, prober.location, prober.redirectErr
 }
 
 func (prober fakeProber) ProbeTLS(context.Context, string) (time.Time, error) {
@@ -69,7 +83,10 @@ func TestRunHealthyRoute(t *testing.T) {
 		Port:     80,
 		Scheme:   "http",
 		Enabled:  true,
-		Observed: domain.RouteObservation{State: domain.RouteStateReady},
+		Observed: domain.RouteObservation{
+			State:       domain.RouteStateReady,
+			UpstreamURL: "http://docklane-route-7:80",
+		},
 	}
 	report := Run(
 		context.Background(),
@@ -87,13 +104,21 @@ func TestRunHealthyRoute(t *testing.T) {
 				Name:         "draw",
 				ExposedPorts: []uint16{80},
 				Networks:     []string{"proxy"},
+				NetworkAliases: map[string][]string{
+					"proxy": {"docklane-route-7"},
+				},
 			}},
 			routes: client.Routes{
 				BaseDomain: "docker.home.arpa",
 				Routes:     []domain.Route{route},
 			},
 		},
-		fakeProber{addresses: []string{"127.0.0.1"}, status: 200},
+		fakeProber{
+			addresses: []string{"127.0.0.1"},
+			redirect:  308,
+			location:  "https://draw.docker.home.arpa/",
+			status:    200,
+		},
 		"draw.docker.home.arpa",
 	)
 	if report.Status != domain.DiagnosticPass ||
@@ -159,6 +184,20 @@ func TestRunReportsUnreachableControllerWithoutFurtherChecks(t *testing.T) {
 		t.Fatalf("report = %#v", report)
 	}
 	assertCheck(t, report, "controller", domain.DiagnosticFail, "unreachable")
+}
+
+func TestAliasCheckRejectsMissingContainerNameFallback(t *testing.T) {
+	check := aliasCheck(
+		domain.Route{Observed: domain.RouteObservation{
+			UpstreamURL: "http://draw:80",
+		}},
+		docker.Container{Name: "draw"},
+		"proxy",
+	)
+	if check.Status != domain.DiagnosticFail ||
+		!strings.Contains(check.Summary, "draw is missing") {
+		t.Fatalf("check = %#v", check)
+	}
 }
 
 func assertCheck(

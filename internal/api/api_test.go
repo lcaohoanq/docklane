@@ -34,6 +34,19 @@ type networkDiscovery struct {
 	fakeDiscovery
 }
 
+type aliasDiscovery struct {
+	fakeDiscovery
+	aliases map[string][]string
+}
+
+func (discovery aliasDiscovery) NetworkAliases(
+	_ context.Context,
+	containerID string,
+	network string,
+) ([]string, error) {
+	return discovery.aliases[containerID+"/"+network], nil
+}
+
 func (networkDiscovery) InspectNetwork(
 	context.Context,
 	string,
@@ -115,6 +128,58 @@ func TestNetworkPlanEndpoints(t *testing.T) {
 			staleResponse.Code,
 			staleResponse.Body,
 		)
+	}
+}
+
+func TestContainersIncludeConfiguredProxyNetworkAliases(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := aliasDiscovery{
+		fakeDiscovery: fakeDiscovery{containers: []docker.Container{{
+			ID:       "abc123",
+			Name:     "draw",
+			Networks: []string{"proxy"},
+		}}},
+		aliases: map[string][]string{
+			"abc123/proxy": {"draw", "docklane-route-7"},
+		},
+	}
+	reconciler := reconcile.New(repository, discovery, time.Second)
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+	)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(
+			http.MethodGet,
+			"/api/v1/containers?networkAliases=true",
+			nil,
+		),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	var payload struct {
+		Containers []docker.Container `json:"containers"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Containers) != 1 ||
+		!payload.Containers[0].HasNetworkAlias("proxy", "docklane-route-7") {
+		t.Fatalf("containers = %#v", payload.Containers)
 	}
 }
 
