@@ -53,7 +53,7 @@ func Build(
 			dnsmasq,
 		),
 		configArtifact(
-			"resolver-domain",
+			"resolver-config",
 			specification.Paths.ResolverConfig,
 			0o644,
 			resolver,

@@ -28,12 +28,14 @@ const (
 )
 
 type Step struct {
-	ID         string
-	ResourceID string
-	Target     string
-	Stage      domain.InstallationExecutionStage
-	Apply      func(context.Context) (domain.InstallationObservation, error)
-	Inspect    func(
+	ID                string
+	ResourceID        string
+	Target            string
+	Stage             domain.InstallationExecutionStage
+	IntentFingerprint string
+	IntentMode        uint32
+	Apply             func(context.Context) (domain.InstallationObservation, error)
+	Inspect           func(
 		context.Context,
 		*domain.InstallationObservation,
 	) (Disposition, domain.InstallationObservation, error)
@@ -421,6 +423,8 @@ func (runner *Runner) runRollback(
 			for index := range next.Resources {
 				if next.Resources[index].Ownership == domain.ResourceManaged {
 					next.Resources[index].State = domain.ResourceRolledBack
+					next.Resources[index].Fingerprint = ""
+					next.Resources[index].Backup = nil
 				}
 			}
 		},
@@ -505,6 +509,8 @@ func (runner *Runner) markRolledBack(
 			operation.State = domain.OperationRolledBack
 			resource := findResource(next.Resources, operation.ResourceID)
 			resource.State = domain.ResourceRolledBack
+			resource.Fingerprint = ""
+			resource.Backup = nil
 		},
 	)
 }
@@ -566,11 +572,13 @@ func newExecution(steps []Step) *domain.InstallationExecution {
 	}
 	for index, step := range steps {
 		execution.Operations[index] = domain.InstallationExecutionOperation{
-			ID:         step.ID,
-			ResourceID: step.ResourceID,
-			Target:     step.Target,
-			Stage:      step.Stage,
-			State:      domain.OperationPending,
+			ID:                step.ID,
+			ResourceID:        step.ResourceID,
+			Target:            step.Target,
+			Stage:             step.Stage,
+			IntentFingerprint: step.IntentFingerprint,
+			IntentMode:        step.IntentMode,
+			State:             domain.OperationPending,
 		}
 	}
 	return execution
@@ -649,7 +657,9 @@ func verifyTopology(
 		if operation.ID != step.ID ||
 			operation.ResourceID != step.ResourceID ||
 			operation.Target != step.Target ||
-			operation.Stage != step.Stage {
+			operation.Stage != step.Stage ||
+			operation.IntentFingerprint != step.IntentFingerprint ||
+			operation.IntentMode != step.IntentMode {
 			return fmt.Errorf(
 				"execution journal operation %d does not match workflow",
 				index,

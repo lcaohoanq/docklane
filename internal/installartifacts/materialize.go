@@ -20,29 +20,74 @@ func MaterializeFiles(
 	if err != nil {
 		return nil, err
 	}
-	pki, err := GeneratePKI(specification, now, random)
-	if err != nil {
-		return nil, err
-	}
-	credentials, err := GenerateDashboardCredentials(random)
-	if err != nil {
-		clearPKI(&pki)
-		return nil, err
-	}
-	defer clear(credentials.Password)
-	defer clear(credentials.UsersFile)
+	return MaterializeSelectedFiles(specification, artifacts, now, random)
+}
 
-	contentByID := map[string][]byte{
-		"pki-root-private-key":       pki.RootPrivateKey,
-		"pki-root-certificate":       pki.RootCertificate,
-		"pki-leaf-private-key":       pki.LeafPrivateKey,
-		"pki-leaf-certificate":       pki.LeafCertificate,
-		"pki-trust-anchor":           pki.RootCertificate,
-		"traefik-dashboard-password": credentials.PasswordFile(),
-		"traefik-dashboard-users":    credentials.UsersFile,
+func MaterializeSelectedFiles(
+	specification domain.InstallationSpecification,
+	artifacts []domain.InstallationArtifact,
+	now time.Time,
+	random io.Reader,
+) ([]installfiles.File, error) {
+	expected, err := Build(specification)
+	if err != nil {
+		return nil, err
 	}
-	defer clearPKI(&pki)
-	defer clear(contentByID["traefik-dashboard-password"])
+	if err := domain.ValidateInstallationArtifacts(artifacts); err != nil {
+		return nil, err
+	}
+	expectedByID := map[string]domain.InstallationArtifact{}
+	for _, artifact := range expected {
+		expectedByID[artifact.ID] = artifact
+	}
+	needsPKI := false
+	needsCredentials := false
+	for index, artifact := range artifacts {
+		expectedArtifact, exists := expectedByID[artifact.ID]
+		if !exists || artifact != expectedArtifact {
+			return nil, fmt.Errorf(
+				"selected artifact %d does not match the managed specification",
+				index,
+			)
+		}
+		switch artifact.ID {
+		case "pki-root-private-key",
+			"pki-root-certificate",
+			"pki-leaf-private-key",
+			"pki-leaf-certificate",
+			"pki-trust-anchor":
+			needsPKI = true
+		case "traefik-dashboard-password", "traefik-dashboard-users":
+			needsCredentials = true
+		}
+	}
+
+	contentByID := map[string][]byte{}
+	var pki PKIBundle
+	if needsPKI {
+		pki, err = GeneratePKI(specification, now, random)
+		if err != nil {
+			return nil, err
+		}
+		defer clearPKI(&pki)
+		contentByID["pki-root-private-key"] = pki.RootPrivateKey
+		contentByID["pki-root-certificate"] = pki.RootCertificate
+		contentByID["pki-leaf-private-key"] = pki.LeafPrivateKey
+		contentByID["pki-leaf-certificate"] = pki.LeafCertificate
+		contentByID["pki-trust-anchor"] = pki.RootCertificate
+	}
+	var credentials DashboardCredentials
+	if needsCredentials {
+		credentials, err = GenerateDashboardCredentials(random)
+		if err != nil {
+			return nil, err
+		}
+		defer clear(credentials.Password)
+		defer clear(credentials.UsersFile)
+		contentByID["traefik-dashboard-password"] = credentials.PasswordFile()
+		contentByID["traefik-dashboard-users"] = credentials.UsersFile
+		defer clear(contentByID["traefik-dashboard-password"])
+	}
 
 	files := make([]installfiles.File, 0, len(artifacts))
 	for _, artifact := range artifacts {

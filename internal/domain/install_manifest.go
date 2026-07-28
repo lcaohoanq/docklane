@@ -302,7 +302,8 @@ func (resource InstallationResource) Validate() error {
 		}
 	}
 	if resource.Rollback == RollbackRestore &&
-		resource.State != ResourcePlanned &&
+		(resource.State == ResourceApplied ||
+			resource.State == ResourceVerified) &&
 		resource.Backup == nil {
 		return fmt.Errorf("applied restore resource requires a backup")
 	}

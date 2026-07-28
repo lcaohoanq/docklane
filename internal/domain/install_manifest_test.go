@@ -135,6 +135,15 @@ func TestInstallationResourceAcceptsRecordedRestoreBackup(t *testing.T) {
 	}
 }
 
+func TestRolledBackRestoreResourceDoesNotRequireActiveBackup(t *testing.T) {
+	manifest := validInstallationManifest()
+	manifest.State = InstallationRolledBack
+	manifest.Resources[0].State = ResourceRolledBack
+	if err := manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInstallationExecutionValidation(t *testing.T) {
 	resources := []InstallationResource{{
 		ID:        "proxy-network",

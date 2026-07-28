@@ -112,6 +112,10 @@ covered exactly once; adopted resources never enter this mutation journal.
 Each operation binds its resource ID and target to a stage and records the
 attempt count plus a non-secret observation such as an external object ID,
 content fingerprint, backup contract, or inspected-state fingerprint.
+File operations additionally bind their intended content fingerprint and mode
+into the immutable operation list. This exposes no file content but prevents a
+restart from combining newly generated private material with files from an
+earlier generation.
 
 Before an external apply, the next manifest generation records `applying`.
 After successful inspection it records `applied`. Rollback similarly records
@@ -130,6 +134,19 @@ the action before its response was lost. Any observed success is journaled and
 then included in reverse rollback. This coordinator is currently an
 independently tested composition boundary; managed command wiring still waits
 for concrete operation adapters.
+
+The file adapter is the first concrete operation adapter. Every materialized
+file now has an explicit managed resource, including separate resolver
+configuration, PKI keys/certificates, trust anchor, Traefik configuration, and
+dashboard credentials. Deterministic backup paths let an `applying` checkpoint
+reconstruct whether the file was written or whether only backup preparation
+completed. Content-and-mode snapshots detect target and backup drift.
+
+Generated private bytes are intentionally absent from this JSON document. The
+adapter therefore refuses recovery when a caller supplies bytes whose intent
+fingerprint differs from the journal. A future private material cache must
+durably rehydrate the exact generated bundle before managed install can be
+enabled across process restarts.
 
 ## Reverse planning
 

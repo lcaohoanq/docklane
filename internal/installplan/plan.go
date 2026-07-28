@@ -73,8 +73,14 @@ func Build(
 				err,
 			)
 		}
-		plan.ManagedArtifacts = artifacts
+		plan.ManagedArtifacts = selectManagedArtifacts(&plan, artifacts)
 		if err := domain.ValidateInstallationArtifacts(plan.ManagedArtifacts); err != nil {
+			return domain.InstallationPlan{}, err
+		}
+		if err := addManagedArtifactResources(
+			&plan,
+			plan.ManagedArtifacts,
+		); err != nil {
 			return domain.InstallationPlan{}, err
 		}
 	}
@@ -100,6 +106,55 @@ func Build(
 	}
 	plan.Token = token
 	return plan, nil
+}
+
+func selectManagedArtifacts(
+	plan *domain.InstallationPlan,
+	artifacts []domain.InstallationArtifact,
+) []domain.InstallationArtifact {
+	selected := make([]domain.InstallationArtifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		resourceID := artifact.ID
+		switch artifact.ID {
+		case "resolver-config":
+			resourceID = "resolver-domain"
+		case "traefik-dynamic-config",
+			"traefik-dashboard-password",
+			"traefik-dashboard-users":
+			resourceID = "global-traefik"
+		case "pki-root-private-key",
+			"pki-root-certificate",
+			"pki-leaf-private-key",
+			"pki-leaf-certificate",
+			"pki-trust-anchor":
+			if plan.Inventory.TLS.Disposition == domain.PreflightCreate {
+				selected = append(selected, artifact)
+			}
+			continue
+		case "container-gateway":
+			resourceID = "global-traefik"
+		case "container-controller":
+			resourceID = runtimeControllerName
+		case "container-probe":
+			resourceID = runtimeProbeName
+		}
+		if resourceIsManaged(plan.Resources, resourceID) {
+			selected = append(selected, artifact)
+		}
+	}
+	return selected
+}
+
+func resourceIsManaged(
+	resources []domain.InstallationResource,
+	resourceID string,
+) bool {
+	for _, resource := range resources {
+		if resource.ID == resourceID {
+			return resource.Ownership == domain.ResourceManaged
+		}
+	}
+	return false
 }
 
 func hasManagedResources(resources []domain.InstallationResource) bool {
@@ -325,11 +380,8 @@ func addTLS(plan *domain.InstallationPlan) {
 			)
 		}
 	case domain.PreflightCreate:
-		plan.Pending = append(
-			plan.Pending,
-			"local-tls-certificate",
-			"local-trust-anchor",
-		)
+		// Generated PKI files and the trust anchor are added from the reviewed
+		// managed artifact set after the specification is rendered.
 	default:
 		plan.Pending = append(
 			plan.Pending,
@@ -338,6 +390,65 @@ func addTLS(plan *domain.InstallationPlan) {
 		)
 		plan.Blockers = append(plan.Blockers, "tls-ownership")
 	}
+}
+
+func addManagedArtifactResources(
+	plan *domain.InstallationPlan,
+	artifacts []domain.InstallationArtifact,
+) error {
+	for _, artifact := range artifacts {
+		if artifact.Kind == domain.ArtifactContainerSpec {
+			continue
+		}
+		existing := -1
+		for index, resource := range plan.Resources {
+			if resource.Target == artifact.Target &&
+				(resource.Kind == domain.ResourceFile ||
+					resource.Kind == domain.ResourceTrustAnchor) {
+				existing = index
+				break
+			}
+		}
+		if existing >= 0 {
+			resource := plan.Resources[existing]
+			if resource.ID != artifact.ID ||
+				resource.Ownership != domain.ResourceManaged {
+				return fmt.Errorf(
+					"managed artifact %s target %s conflicts with resource %s",
+					artifact.ID,
+					artifact.Target,
+					resource.ID,
+				)
+			}
+			continue
+		}
+		for _, resource := range plan.Resources {
+			if resource.ID == artifact.ID {
+				return fmt.Errorf(
+					"managed artifact %s conflicts with resource target %s",
+					artifact.ID,
+					resource.Target,
+				)
+			}
+		}
+		kind := domain.ResourceFile
+		if artifact.ID == "pki-trust-anchor" {
+			kind = domain.ResourceTrustAnchor
+		}
+		addResource(
+			plan,
+			domain.InstallationResource{
+				ID:        artifact.ID,
+				Kind:      kind,
+				Target:    artifact.Target,
+				Ownership: domain.ResourceManaged,
+				State:     domain.ResourcePlanned,
+				Rollback:  domain.RollbackRemove,
+			},
+			"Managed file artifact must be journaled before it is written.",
+		)
+	}
+	return nil
 }
 
 func addRuntime(plan *domain.InstallationPlan) {

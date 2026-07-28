@@ -48,14 +48,16 @@ type InstallationObservation struct {
 }
 
 type InstallationExecutionOperation struct {
-	ID           string                     `json:"id"`
-	ResourceID   string                     `json:"resourceId"`
-	Target       string                     `json:"target"`
-	Stage        InstallationExecutionStage `json:"stage"`
-	State        InstallationOperationState `json:"state"`
-	Attempt      uint64                     `json:"attempt"`
-	Observation  *InstallationObservation   `json:"observation,omitempty"`
-	ErrorMessage string                     `json:"error,omitempty"`
+	ID                string                     `json:"id"`
+	ResourceID        string                     `json:"resourceId"`
+	Target            string                     `json:"target"`
+	Stage             InstallationExecutionStage `json:"stage"`
+	IntentFingerprint string                     `json:"intentFingerprint,omitempty"`
+	IntentMode        uint32                     `json:"intentMode,omitempty"`
+	State             InstallationOperationState `json:"state"`
+	Attempt           uint64                     `json:"attempt"`
+	Observation       *InstallationObservation   `json:"observation,omitempty"`
+	ErrorMessage      string                     `json:"error,omitempty"`
 }
 
 type InstallationExecution struct {
@@ -225,6 +227,19 @@ func (operation InstallationExecutionOperation) validate() error {
 	}
 	if !validExecutionStage(operation.Stage) {
 		return fmt.Errorf("invalid stage %q", operation.Stage)
+	}
+	if operation.IntentFingerprint != "" &&
+		!fingerprintPattern.MatchString(operation.IntentFingerprint) {
+		return fmt.Errorf("intent fingerprint must be lowercase SHA-256")
+	}
+	if operation.IntentMode > 0o777 {
+		return fmt.Errorf("intent mode must not exceed 0777")
+	}
+	if operation.Stage == ExecutionFiles &&
+		(operation.IntentFingerprint == "" || operation.IntentMode == 0) {
+		return fmt.Errorf(
+			"file operation requires intent fingerprint and mode",
+		)
 	}
 	if !validOperationState(operation.State) {
 		return fmt.Errorf("invalid state %q", operation.State)

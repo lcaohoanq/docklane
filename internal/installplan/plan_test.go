@@ -203,11 +203,31 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	if !plan.Ready || plan.Status != domain.DiagnosticWarn {
 		t.Fatalf("plan = %#v", plan)
 	}
+	if !plan.Complete || len(plan.Pending) != 0 {
+		t.Fatalf("managed coverage = complete:%t pending:%v", plan.Complete, plan.Pending)
+	}
 	if plan.ManagedSpecification == nil {
 		t.Fatal("managed specification is missing")
 	}
 	if len(plan.ManagedArtifacts) != 13 {
 		t.Fatalf("managed artifacts = %d, want 13", len(plan.ManagedArtifacts))
+	}
+	for _, artifact := range plan.ManagedArtifacts {
+		if artifact.Kind == domain.ArtifactContainerSpec {
+			continue
+		}
+		found := false
+		for _, resource := range plan.Resources {
+			if resource.ID == artifact.ID &&
+				resource.Target == artifact.Target &&
+				resource.Ownership == domain.ResourceManaged {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("artifact %s has no managed resource", artifact.ID)
+		}
 	}
 	changedSpecification := testManagedSpecification(t)
 	changedSpecification.Images.Traefik = "traefik:v3.8"
@@ -248,6 +268,51 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 		domain.ResourceManaged,
 		domain.RollbackRestore,
 	)
+}
+
+func TestBuildHybridPlanDoesNotManageAdoptedFileArtifacts(t *testing.T) {
+	report := adoptionReport()
+	report.Status = domain.DiagnosticWarn
+	report.Inventory.Runtime = domain.PreflightRuntime{
+		Disposition: domain.PreflightCreate,
+		ControlNetwork: domain.PreflightNetwork{
+			Disposition: domain.PreflightCreate,
+			Name:        "docklane-control",
+		},
+		ProbeVolume: domain.PreflightVolume{
+			Disposition: domain.PreflightCreate,
+			Name:        "docklane-probe-run",
+		},
+		DataDisposition: domain.PreflightCreate,
+		DataPath:        "/var/lib/docklane/data",
+	}
+	plan, err := Build(report, Options{
+		DnsmasqTarget:        "/etc/dnsmasq.d/docklane.conf",
+		DnsmasqService:       "dnsmasq",
+		ManagedSpecification: testManagedSpecification(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Ready || !plan.Complete {
+		t.Fatalf("hybrid plan = %#v", plan)
+	}
+	if len(plan.ManagedArtifacts) != 2 {
+		t.Fatalf("hybrid artifacts = %#v", plan.ManagedArtifacts)
+	}
+	for _, artifact := range plan.ManagedArtifacts {
+		if artifact.ID != "container-controller" &&
+			artifact.ID != "container-probe" {
+			t.Fatalf("adopted component artifact became managed: %#v", artifact)
+		}
+	}
+	for _, resource := range plan.Resources {
+		if resource.Ownership == domain.ResourceManaged &&
+			(resource.Kind == domain.ResourceFile ||
+				resource.Kind == domain.ResourceTrustAnchor) {
+			t.Fatalf("hybrid plan manages adopted file: %#v", resource)
+		}
+	}
 }
 
 func TestBuildBlocksConflictAndExistingManifest(t *testing.T) {

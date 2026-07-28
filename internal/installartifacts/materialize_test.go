@@ -3,15 +3,24 @@ package installartifacts
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/installfiles"
 	"docklane.local/docklane/internal/installspec"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type noRandomReader struct{}
+
+func (noRandomReader) Read([]byte) (int, error) {
+	return 0, errors.New("randomness should not be used")
+}
 
 func TestMaterializeFilesStagesAndRollsBackCompleteBundle(t *testing.T) {
 	root := t.TempDir()
@@ -48,7 +57,7 @@ func TestMaterializeFilesStagesAndRollsBackCompleteBundle(t *testing.T) {
 	}
 	for _, id := range []string{
 		"dnsmasq-domain",
-		"resolver-domain",
+		"resolver-config",
 		"traefik-dynamic-config",
 		"pki-root-private-key",
 		"pki-root-certificate",
@@ -111,5 +120,41 @@ func TestMaterializeFilesStagesAndRollsBackCompleteBundle(t *testing.T) {
 		if _, err := os.Lstat(file.Target); !os.IsNotExist(err) {
 			t.Fatalf("%s remains after rollback: %v", file.ID, err)
 		}
+	}
+}
+
+func TestMaterializeSelectedContainerArtifactsDoesNotGenerateFiles(t *testing.T) {
+	specification := managedSpecification(t)
+	artifacts, err := Build(specification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := []domain.InstallationArtifact{}
+	for _, artifact := range artifacts {
+		if artifact.ID == "container-controller" ||
+			artifact.ID == "container-probe" {
+			selected = append(selected, artifact)
+		}
+	}
+	files, err := MaterializeSelectedFiles(
+		specification,
+		selected,
+		time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC),
+		noRandomReader{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("selected container artifacts produced files: %#v", files)
+	}
+	selected[0].Target = "other-controller"
+	if _, err := MaterializeSelectedFiles(
+		specification,
+		selected,
+		time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC),
+		noRandomReader{},
+	); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("changed selected artifact error = %v", err)
 	}
 }

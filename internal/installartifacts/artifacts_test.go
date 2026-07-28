@@ -76,7 +76,7 @@ func TestBuildRendersDeterministicSafeArtifacts(t *testing.T) {
 			t.Fatalf("Traefik config omits %q:\n%s", required, dynamic)
 		}
 	}
-	if got := byID["resolver-domain"].Content; got !=
+	if got := byID["resolver-config"].Content; got !=
 		"# Managed by Docklane installation manifest\n"+
 			"[Resolve]\n"+
 			"DNS=127.0.0.1\n"+

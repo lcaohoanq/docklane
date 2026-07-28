@@ -412,6 +412,36 @@ step, preserves the backup, and permits a retry after the conflict is repaired.
 This executor is not connected to `docklane install` yet; all independent
 transactions must first be composed with durable manifest journaling.
 
+The file composition adapter makes each of the ten materialized files an
+explicit managed resource. Resolver configuration has a separate
+`resolver-config` file resource from the behavioral `resolver-domain`
+resource. Root and leaf keys/certificates, the trust anchor, Traefik dynamic
+configuration, dashboard password/users file, dnsmasq mapping, and resolver
+drop-in therefore all have their own ownership and rollback records.
+
+Before a file step can mutate disk, its exact content fingerprint and mode are
+part of the immutable execution topology. Backups use a deterministic private
+directory per resource. Inspection compares both content and mode, reconstructs
+an interrupted apply from the target and backup, and distinguishes newly
+created files from replacements. A `remove` contract refuses any pre-existing
+target; a `restore` contract refuses an absent target. Retry cleans interrupted
+backup preparation only after the target is proven to still equal the original
+snapshot. Rollback refuses target, type, mode, content, or backup drift.
+
+Sensitive material is cloned into the adapter, and its caller explicitly
+clears that clone at the terminal boundary. A restarted workflow must
+rehydrate the exact same bytes:
+the journal rejects a changed fingerprint before another file is touched. A
+private durable material cache is still required before generated PKI and
+credentials can resume across a real process restart; until then the live
+managed command remains disabled rather than mixing generations.
+
+Hybrid plans select artifacts by resource ownership. An adopted DNS, resolver,
+TLS, gateway, or runtime component never receives its managed replacement
+artifact merely because some other component requires creation. Selected
+materialization also avoids generating PKI or credentials when the plan needs
+only container specifications.
+
 Managed Docker execution follows a separate reversible transaction. The
 installation specification expands into strict Engine API requests in this
 dependency order:

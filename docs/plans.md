@@ -314,9 +314,15 @@ safe and repeatable.
 - [X] Add a validated per-resource execution journal and recovery coordinator
   with write-ahead apply/rollback checkpoints, exact workflow matching,
   generation-conflict refusal, and both crash windows covered by tests.
+- [X] Journal every materialized managed file and add content/mode-bound file
+  adapters with deterministic backups, restart inspection, remove/restore
+  preconditions, sensitive-buffer clearing, and drift-safe retry/rollback.
+- [ ] Persist generated PKI and credential material in a private recoverable
+  cache so a restarted process can rehydrate the journaled file intent.
 - [ ] Add `docklane uninstall`.
-- [ ] Record every file, trust entry, Docker network, container, and service
-  created by Docklane.
+- [-] Record every file, trust entry, Docker network, container, and service
+  created by Docklane. File and trust-anchor ownership are complete; Docker,
+  directory, resolver behavior, and service observations remain.
 - [X] Add read-only preflight checks for ports 80/443, Docker access and proxy
   network compatibility, dnsmasq, resolver conflicts, manifest state, and
   existing Traefik.
