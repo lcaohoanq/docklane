@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +93,7 @@ func New(
 	mux.HandleFunc("GET /api/v1/routes/{id}", api.getRoute)
 	mux.HandleFunc("PUT /api/v1/routes/{id}", api.updateRoute)
 	mux.HandleFunc("DELETE /api/v1/routes/{id}", api.deleteRoute)
+	mux.HandleFunc("GET /api/v1/routes/{id}/readiness", api.routeReadiness)
 	mux.HandleFunc("GET /api/v1/routes/{id}/upstream-probe", api.upstreamProbe)
 	mux.HandleFunc("GET /api/v1/routes/{id}/traefik-runtime", api.traefikRuntime)
 	mux.HandleFunc("GET /api/v1/diagnostics/routes/{id}", api.routeDiagnostics)
@@ -287,6 +289,162 @@ func (a *API) traefikRuntime(response http.ResponseWriter, request *http.Request
 		return
 	}
 	writeJSON(response, http.StatusOK, result)
+}
+
+func (a *API) routeReadiness(response http.ResponseWriter, request *http.Request) {
+	id, err := routeID(request)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	route, err := a.store.GetRoute(request.Context(), id)
+	if err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	route = a.reconciler.Enrich([]domain.Route{route})[0]
+	readiness := domain.RouteReadiness{
+		RouteID:   route.ID,
+		Revision:  route.Revision,
+		CheckedAt: time.Now().UTC(),
+	}
+	if !route.Enabled {
+		readiness.State = domain.RouteReadinessDisabled
+		readiness.Message = "Route is disabled and is not published to Traefik."
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if route.Observed.CheckedAt.IsZero() ||
+		route.Observed.CheckedAt.Before(route.UpdatedAt) {
+		readiness.State = domain.RouteReadinessReconciling
+		readiness.Message = "Docklane is reconciling the saved route."
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if route.Observed.State != domain.RouteStateReady ||
+		route.Observed.UpstreamURL == "" {
+		readiness.State = domain.RouteReadinessError
+		readiness.Message = route.Observed.Message
+		if readiness.Message == "" {
+			readiness.Message = fmt.Sprintf(
+				"Route reconciliation ended in state %s.",
+				route.Observed.State,
+			)
+		}
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if a.runtime == nil {
+		readiness.State = domain.RouteReadinessError
+		readiness.Message = "Traefik runtime inspection is not configured."
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	runtime, err := a.runtime.InspectRoute(request.Context(), route.Name)
+	if err != nil {
+		readiness.State = domain.RouteReadinessPublishing
+		readiness.Message = "Waiting for Traefik runtime inspection: " + err.Error()
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	readiness.Runtime = &runtime
+	if !runtimeHasProvider(runtime, "http") {
+		readiness.State = domain.RouteReadinessPublishing
+		readiness.Message = "Waiting for Traefik to load the HTTP provider."
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if !runtime.Router.Present || !runtime.Service.Present {
+		readiness.State = domain.RouteReadinessPublishing
+		readiness.Message = "Waiting for Traefik to activate the route."
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if !runtimeComponentEnabled(runtime.Router) {
+		readiness.State = domain.RouteReadinessError
+		readiness.Message = runtimeComponentMessage("router", runtime.Router)
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if !runtimeComponentEnabled(runtime.Service) {
+		readiness.State = domain.RouteReadinessError
+		readiness.Message = runtimeComponentMessage("service", runtime.Service)
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if len(runtime.ServerStatus) == 0 {
+		readiness.State = domain.RouteReadinessVerifying
+		readiness.Message = "Traefik activated the route; waiting for an upstream backend."
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	expectedStatus, expectedPresent := runtime.ServerStatus[route.Observed.UpstreamURL]
+	if !expectedPresent {
+		readiness.State = domain.RouteReadinessPublishing
+		readiness.Message = fmt.Sprintf(
+			"Waiting for Traefik to activate the current upstream %s.",
+			route.Observed.UpstreamURL,
+		)
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	if !strings.EqualFold(expectedStatus, "up") {
+		readiness.State = domain.RouteReadinessError
+		readiness.Message = fmt.Sprintf(
+			"Traefik reports backend %s as %s.",
+			route.Observed.UpstreamURL,
+			expectedStatus,
+		)
+		writeJSON(response, http.StatusOK, readiness)
+		return
+	}
+	for server, status := range runtime.ServerStatus {
+		if !strings.EqualFold(status, "up") {
+			readiness.State = domain.RouteReadinessError
+			readiness.Message = fmt.Sprintf(
+				"Traefik reports backend %s as %s.",
+				server,
+				status,
+			)
+			writeJSON(response, http.StatusOK, readiness)
+			return
+		}
+	}
+	readiness.State = domain.RouteReadinessReady
+	readiness.Ready = true
+	readiness.Message = "Traefik router, service, and upstream backend are ready."
+	writeJSON(response, http.StatusOK, readiness)
+}
+
+func runtimeHasProvider(runtime domain.TraefikRouteRuntime, provider string) bool {
+	for _, candidate := range runtime.Providers {
+		if strings.EqualFold(candidate, provider) {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeComponentEnabled(component domain.TraefikRuntimeComponent) bool {
+	return component.Present &&
+		strings.EqualFold(component.Status, "enabled") &&
+		len(component.Errors) == 0
+}
+
+func runtimeComponentMessage(
+	kind string,
+	component domain.TraefikRuntimeComponent,
+) string {
+	message := fmt.Sprintf(
+		"Traefik %s %s is %s.",
+		kind,
+		component.Name,
+		component.Status,
+	)
+	if len(component.Errors) > 0 {
+		message += " " + strings.Join(component.Errors, "; ")
+	}
+	return message
 }
 
 func (a *API) upstreamProbe(response http.ResponseWriter, request *http.Request) {

@@ -106,6 +106,12 @@ browser `no-cors` HTTPS probe. A successful browser probe means DNS, connection,
 and certificate acceptance succeeded in that browser; it does not claim access
 to the opaque HTTP response status. The UI labels both perspectives instead of
 merging them into a misleading single probe.
+Route availability is stricter than Docker reconciliation. A saved route moves
+through `reconciling`, `publishing`, and `verifying`; it is user-clickable only
+after Traefik reports the exact router and service enabled with at least one
+`UP` backend. The UI polls this route-scoped readiness for up to 30 seconds and
+then directs the user to diagnostics instead of exposing Traefik's unmatched
+router 404 during provider propagation.
 Network aliases are hydrated only when diagnostics explicitly request them;
 ordinary UI discovery does not perform per-container Docker inspect calls.
 
@@ -448,6 +454,7 @@ Current endpoints:
 | `GET` | `/api/v1/routes` | List desired routes |
 | `POST` | `/api/v1/routes` | Create a route |
 | `GET` | `/api/v1/routes/{id}` | Read a route and its observed state |
+| `GET` | `/api/v1/routes/{id}/readiness` | Read controller-to-Traefik activation state for safe link gating |
 | `GET` | `/api/v1/routes/{id}/upstream-probe` | Probe the reconciled upstream from the proxy network |
 | `GET` | `/api/v1/routes/{id}/traefik-runtime` | Inspect summarized provider/router/service runtime state |
 | `GET` | `/api/v1/diagnostics/routes/{id}` | Run read-only controller-perspective route diagnostics |
@@ -456,7 +463,7 @@ Current endpoints:
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |
 
-Planned endpoints add event streaming and Traefik runtime inspection.
+Planned endpoints add event streaming.
 `/internal/*` endpoints are for private component integration, not the public
 administration API.
 

@@ -47,6 +47,7 @@ type fakeUpstreamProber struct {
 type fakeRuntimeInspector struct {
 	result    domain.TraefikRouteRuntime
 	routeName string
+	err       error
 }
 
 func (inspector *fakeRuntimeInspector) InspectRoute(
@@ -54,7 +55,7 @@ func (inspector *fakeRuntimeInspector) InspectRoute(
 	routeName string,
 ) (domain.TraefikRouteRuntime, error) {
 	inspector.routeName = routeName
-	return inspector.result, nil
+	return inspector.result, inspector.err
 }
 
 func (prober *fakeUpstreamProber) Probe(
@@ -475,6 +476,221 @@ func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
 		history.Retention != 3 ||
 		history.SampleIntervalMS != time.Minute.Milliseconds() {
 		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestRouteReadinessWaitsForCurrentReconciliation(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	discovery := fakeDiscovery{containers: []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"proxy"},
+	}}}
+	reconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithNetworkAttachments("proxy", nil),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	route, err := repository.CreateRoute(context.Background(), domain.Route{
+		Name:     "draw",
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(
+		config.Config{BaseDomain: "docker.home.arpa", ProxyNetwork: "proxy"},
+		repository,
+		discovery,
+		reconciler,
+		WithTraefikRuntimeInspector(&fakeRuntimeInspector{}),
+	)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf("/api/v1/routes/%d/readiness", route.ID),
+			nil,
+		),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	var readiness domain.RouteReadiness
+	if err := json.Unmarshal(response.Body.Bytes(), &readiness); err != nil {
+		t.Fatal(err)
+	}
+	if readiness.State != domain.RouteReadinessReconciling || readiness.Ready {
+		t.Fatalf("readiness = %#v", readiness)
+	}
+}
+
+func TestRouteReadinessRequiresActiveTraefikBackend(t *testing.T) {
+	tests := []struct {
+		name     string
+		runtime  domain.TraefikRouteRuntime
+		state    domain.RouteReadinessState
+		ready    bool
+		contains string
+	}{
+		{
+			name: "router is not loaded",
+			runtime: domain.TraefikRouteRuntime{
+				Providers: []string{"HTTP"},
+				Router: domain.TraefikRuntimeComponent{
+					Name: "draw@http",
+				},
+				Service: domain.TraefikRuntimeComponent{
+					Name: "draw@http",
+				},
+			},
+			state:    domain.RouteReadinessPublishing,
+			contains: "activate",
+		},
+		{
+			name: "service has no backend yet",
+			runtime: domain.TraefikRouteRuntime{
+				Providers: []string{"HTTP"},
+				Router: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				Service: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+			},
+			state:    domain.RouteReadinessVerifying,
+			contains: "upstream backend",
+		},
+		{
+			name: "previous backend is still active",
+			runtime: domain.TraefikRouteRuntime{
+				Providers: []string{"HTTP"},
+				Router: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				Service: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				ServerStatus: map[string]string{"http://draw:8080": "UP"},
+			},
+			state:    domain.RouteReadinessPublishing,
+			contains: "current upstream",
+		},
+		{
+			name: "backend is down",
+			runtime: domain.TraefikRouteRuntime{
+				Providers: []string{"HTTP"},
+				Router: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				Service: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				ServerStatus: map[string]string{"http://draw:80": "DOWN"},
+			},
+			state:    domain.RouteReadinessError,
+			contains: "DOWN",
+		},
+		{
+			name: "route is ready",
+			runtime: domain.TraefikRouteRuntime{
+				Providers: []string{"HTTP"},
+				Router: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				Service: domain.TraefikRuntimeComponent{
+					Name: "draw@http", Present: true, Status: "enabled",
+				},
+				ServerStatus: map[string]string{"http://draw:80": "UP"},
+			},
+			state:    domain.RouteReadinessReady,
+			ready:    true,
+			contains: "ready",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer repository.Close()
+			route, err := repository.CreateRoute(context.Background(), domain.Route{
+				Name:     "draw",
+				Selector: domain.ContainerSelector{ContainerID: "abc"},
+				Port:     80,
+				Scheme:   "http",
+				Enabled:  true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			discovery := fakeDiscovery{containers: []docker.Container{{
+				ID:           "abc123",
+				Name:         "draw",
+				ExposedPorts: []uint16{80},
+				Networks:     []string{"proxy"},
+			}}}
+			reconciler := reconcile.New(
+				repository,
+				discovery,
+				time.Second,
+				reconcile.WithNetworkAttachments("proxy", nil),
+			)
+			if err := reconciler.Refresh(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			handler := New(
+				config.Config{
+					BaseDomain:   "docker.home.arpa",
+					ProxyNetwork: "proxy",
+				},
+				repository,
+				discovery,
+				reconciler,
+				WithTraefikRuntimeInspector(
+					&fakeRuntimeInspector{result: test.runtime},
+				),
+			)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(
+				response,
+				httptest.NewRequest(
+					http.MethodGet,
+					fmt.Sprintf("/api/v1/routes/%d/readiness", route.ID),
+					nil,
+				),
+			)
+			if response.Code != http.StatusOK {
+				t.Fatalf(
+					"status = %d, body = %s",
+					response.Code,
+					response.Body,
+				)
+			}
+			var readiness domain.RouteReadiness
+			if err := json.Unmarshal(response.Body.Bytes(), &readiness); err != nil {
+				t.Fatal(err)
+			}
+			if readiness.State != test.state ||
+				readiness.Ready != test.ready ||
+				!strings.Contains(readiness.Message, test.contains) {
+				t.Fatalf("readiness = %#v", readiness)
+			}
+		})
 	}
 }
 

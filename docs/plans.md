@@ -212,7 +212,8 @@ without published host ports.
 - [X] Test add, update, disable, delete, and recreate behavior.
 - [X] Test controller/provider outage behavior.
 - [X] Persist and serve a validated last-known-good provider snapshot.
-- [ ] Add route status showing whether Traefik loaded the desired revision.
+- [X] Add route readiness showing whether Traefik activated the current route
+  revision, service, and an `UP` backend.
 
 ### Migration safety
 
@@ -335,6 +336,10 @@ Goal: make Docklane pleasant, predictable, and distributable.
 
 ### UX
 
+- [X] Keep new and updated route links disabled while Docklane reconciles and
+  Traefik publishes/verifies them.
+- [X] Poll route-scoped readiness and replace transient raw Traefik 404s with
+  publishing progress and a bounded diagnostic timeout.
 - [ ] Add guided onboarding with dependency and safety explanations.
 - [ ] Recommend a route name and likely HTTP port.
 - [ ] Explain conflicts and ambiguous workload matches clearly.

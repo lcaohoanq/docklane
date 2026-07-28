@@ -37,6 +37,21 @@
     observed: Observation;
   };
 
+  type RouteReadiness = {
+    routeId: number;
+    revision: number;
+    state:
+      | "reconciling"
+      | "publishing"
+      | "verifying"
+      | "ready"
+      | "disabled"
+      | "error";
+    ready: boolean;
+    message: string;
+    checkedAt: string;
+  };
+
   type DiagnosticStatus = "pass" | "warn" | "fail";
 
   type DiagnosticCheck = {
@@ -83,6 +98,9 @@
   let routePort = 80;
   let routeScheme = "http";
   let saving = false;
+  let routeReadiness: Record<number, RouteReadiness> = {};
+  const readinessPolling = new Map<number, number>();
+  let mounted = true;
   let diagnosticRoute: Route | null = null;
   let diagnosticReport: DiagnosticReport | null = null;
   let diagnosticLoading = false;
@@ -116,11 +134,100 @@
         1,
         Math.round((routesPayload.reconcileIntervalMs || 5000) / 1000),
       );
+      const routeIds = new Set(routes.map((route) => route.id));
+      routeReadiness = Object.fromEntries(
+        Object.entries(routeReadiness).filter(([id]) =>
+          routeIds.has(Number(id)),
+        ),
+      );
+      for (const route of routes) void ensureReadiness(route);
       if (!showLoading) error = "";
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Refresh failed";
     } finally {
       if (showLoading) loading = false;
+    }
+  }
+
+  function readinessFor(route: Route): RouteReadiness {
+    const readiness = routeReadiness[route.id];
+    if (readiness?.revision === route.revision) return readiness;
+    return {
+      routeId: route.id,
+      revision: route.revision,
+      state: route.enabled ? "reconciling" : "disabled",
+      ready: false,
+      message: route.enabled
+        ? "Checking whether Traefik has activated this route."
+        : "Route is disabled and is not published to Traefik.",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  function wait(milliseconds: number) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
+  async function ensureReadiness(route: Route) {
+    if (readinessPolling.get(route.id) === route.revision) return;
+    readinessPolling.set(route.id, route.revision);
+    const deadline = Date.now() + 30_000;
+    try {
+      while (mounted) {
+        const current = routes.find((candidate) => candidate.id === route.id);
+        if (!current || current.revision !== route.revision) return;
+        try {
+          const response = await fetch(`/api/v1/routes/${route.id}/readiness`);
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(
+              payload.error || `Readiness check failed (${response.status})`,
+            );
+          }
+          routeReadiness = { ...routeReadiness, [route.id]: payload };
+          if (
+            payload.ready ||
+            payload.state === "disabled" ||
+            payload.state === "error"
+          ) {
+            return;
+          }
+        } catch (cause) {
+          routeReadiness = {
+            ...routeReadiness,
+            [route.id]: {
+              routeId: route.id,
+              revision: route.revision,
+              state: "publishing",
+              ready: false,
+              message:
+                cause instanceof Error
+                  ? cause.message
+                  : "Readiness check is temporarily unavailable.",
+              checkedAt: new Date().toISOString(),
+            },
+          };
+        }
+        if (Date.now() >= deadline) {
+          routeReadiness = {
+            ...routeReadiness,
+            [route.id]: {
+              ...readinessFor(route),
+              state: "error",
+              ready: false,
+              message:
+                "Route activation is taking longer than 30 seconds. Open Diagnose for the failing layer.",
+              checkedAt: new Date().toISOString(),
+            },
+          };
+          return;
+        }
+        await wait(600);
+      }
+    } finally {
+      if (readinessPolling.get(route.id) === route.revision) {
+        readinessPolling.delete(route.id);
+      }
     }
   }
 
@@ -228,7 +335,7 @@
       const payload = await response.json();
       if (!response.ok)
         throw new Error(payload.error || `Save failed (${response.status})`);
-      notice = `${routeId ? "Updated" : "Created"} https://${routeName}.${baseDomain}`;
+      notice = `${routeId ? "Updated" : "Created"} ${routeName}.${baseDomain} · publishing route…`;
       closeEditor();
       await refresh(false);
     } catch (cause) {
@@ -411,9 +518,13 @@
   }
 
   onMount(() => {
+    mounted = true;
     refresh();
     const timer = window.setInterval(() => refresh(false), 5000);
-    return () => window.clearInterval(timer);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
   });
 </script>
 
@@ -512,22 +623,32 @@
     {:else}
       <div class="route-list">
         {#each routes as route}
+          {@const availability = readinessFor(route)}
           <div class="route-row">
             <span
-              class={`route-state ${route.observed?.state || "error"}`}
-              title={route.observed?.message || "Waiting for reconciliation"}
+              class={`route-state ${availability.state}`}
+              title={availability.message}
             ></span>
             <div class="route-name">
-              <a href={`https://${route.name}.${baseDomain}`} target="_blank">
-                {route.name}.{baseDomain}
-              </a>
+              {#if availability.ready}
+                <a href={`https://${route.name}.${baseDomain}`} target="_blank">
+                  {route.name}.{baseDomain}
+                </a>
+              {:else}
+                <span
+                  class="route-link-pending"
+                  title="The link unlocks after Traefik confirms the route."
+                >
+                  {route.name}.{baseDomain}
+                </span>
+              {/if}
               <small>
-                {route.observed?.state || "pending"}
+                {availability.state}
                 {#if route.observed?.containerName}
                   · {route.observed.containerName}
                 {/if}
-                {#if route.observed?.state === "error" && route.observed.message}
-                  · {route.observed.message}
+                {#if !availability.ready}
+                  · {availability.message}
                 {/if}
               </small>
             </div>

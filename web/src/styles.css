@@ -337,6 +337,14 @@ form > code {
   box-shadow: none;
 }
 
+.route-state.reconciling,
+.route-state.publishing,
+.route-state.verifying {
+  background: #f2c66d;
+  box-shadow: 0 0 1rem rgba(242, 198, 109, 0.4);
+  animation: readiness-pulse 1.2s ease-in-out infinite;
+}
+
 .route-state.unresolved,
 .route-state.ambiguous,
 .route-state.error {
@@ -363,10 +371,23 @@ form > code {
   color: #72e3a6;
 }
 
+.route-link-pending {
+  color: #89958d;
+  cursor: wait;
+  font-weight: 700;
+}
+
 .route-name small {
   color: #758179;
   font-family: ui-monospace, monospace;
   font-size: 0.68rem;
+}
+
+@keyframes readiness-pulse {
+  50% {
+    opacity: 0.38;
+    transform: scale(0.82);
+  }
 }
 
 .route-row code {

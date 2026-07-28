@@ -127,6 +127,10 @@ use the relevant perspective: browser-facing checks run from the CLI machine,
 while direct upstream checks run from the shared proxy network.
 Traefik runtime checks use its authenticated API to verify that the HTTP
 provider has produced the expected router, service, and `UP` backend.
+The web UI uses the route readiness endpoint to keep a hostname non-clickable
+while Docklane reconciles and Traefik activates it. The link unlocks only after
+the router, service, and an `UP` backend are confirmed; a 30-second wait turns
+into a diagnostic prompt instead of sending the browser to a transient 404.
 
 Current API endpoints:
 
@@ -137,6 +141,7 @@ Current API endpoints:
 - `GET /api/v1/routes`
 - `POST /api/v1/routes`
 - `GET /api/v1/routes/{id}`
+- `GET /api/v1/routes/{id}/readiness`
 - `GET /api/v1/routes/{id}/upstream-probe`
 - `GET /api/v1/routes/{id}/traefik-runtime`
 - `GET /api/v1/diagnostics/routes/{id}`
