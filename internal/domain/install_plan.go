@@ -9,6 +9,9 @@ const (
 	InstallationCreate         InstallationAction = "create"
 	InstallationConfigure      InstallationAction = "configure"
 	InstallationCreateManifest InstallationAction = "create_manifest"
+	InstallationPreserve       InstallationAction = "preserve"
+	InstallationRemove         InstallationAction = "remove"
+	InstallationRestore        InstallationAction = "restore"
 )
 
 type InstallationOperation struct {
@@ -19,6 +22,19 @@ type InstallationOperation struct {
 	Target     string             `json:"target"`
 	Reason     string             `json:"reason"`
 	Mutating   bool               `json:"mutating"`
+	Backup     *ResourceBackup    `json:"backup,omitempty"`
+}
+
+type UninstallationPlan struct {
+	SchemaVersion  int                     `json:"schemaVersion"`
+	Token          string                  `json:"token"`
+	Ready          bool                    `json:"ready"`
+	Status         DiagnosticStatus        `json:"status"`
+	ManifestPath   string                  `json:"manifestPath"`
+	InstallationID string                  `json:"installationId"`
+	Generation     uint64                  `json:"generation"`
+	Operations     []InstallationOperation `json:"operations"`
+	Blockers       []string                `json:"blockers"`
 }
 
 type InstallationPlan struct {

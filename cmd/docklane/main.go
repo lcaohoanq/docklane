@@ -59,6 +59,8 @@ func run(args []string) error {
 		return preflight(args[1:])
 	case "install":
 		return install(args[1:])
+	case "uninstall":
+		return uninstall(args[1:])
 	case "route":
 		return route(args[1:])
 	case "version":
@@ -714,6 +716,7 @@ Usage:
   docklane preflight         Inspect host installation compatibility
   docklane install --dry-run Render a reviewed installation plan
   docklane install --token T  Apply the exact reviewed adoption plan
+  docklane uninstall --dry-run Preview manifest-driven rollback
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route

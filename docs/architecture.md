@@ -377,6 +377,15 @@ roll back. A finalization error is journaled as `failed`. Managed operations
 remain unsupported until each create/configure handler has a corresponding
 remove/restore implementation.
 
+`docklane uninstall --dry-run` is generated only from a valid installed
+manifest, never from live-state guesses. Resources are traversed in reverse
+installation order so consumers precede their networks, volumes, directories,
+and gateway dependencies. Adopted resources emit non-mutating `preserve`
+operations. Managed `remove` resources emit removal operations, while managed
+`restore` resources require the exact backup path and fingerprint already
+validated by manifest schema v1. The uninstall token covers the installation
+identity, manifest generation, path, operations, and blockers.
+
 ## 6. Route lifecycle
 
 ### 6.1 Create

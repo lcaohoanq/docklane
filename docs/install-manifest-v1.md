@@ -71,6 +71,20 @@ creates generation 1 as `planned`, generation 2 as `applying`, and generation
 Plans containing a managed resource are rejected before manifest creation
 until the corresponding create/configure and remove/restore executors exist.
 
+## Reverse planning
+
+`docklane uninstall --dry-run` accepts only an `installed` manifest and walks
+its resources in reverse order:
+
+- `adopted` + `preserve` becomes a non-mutating `preserve` operation;
+- `managed` + `remove` becomes a mutating `remove` operation;
+- `managed` + `restore` becomes a mutating `restore` operation and requires
+  the recorded backup path and SHA-256 fingerprint.
+
+The resulting token changes with the installation ID, manifest generation,
+manifest path, rollback operations, or blockers. Uninstall apply remains
+disabled until the mutation executors verify those contracts.
+
 ## Example
 
 ```json

@@ -289,7 +289,8 @@ safe and repeatable.
 - [-] Add `docklane install`. Token-gated adoption is implemented with durable
   planned/applying/installed state transitions; managed create/configure
   executors and rollback remain.
-- [ ] Add `docklane uninstall --dry-run`.
+- [X] Add `docklane uninstall --dry-run` with reverse dependency ordering,
+  adopted-resource preservation, and managed remove/restore contracts.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.

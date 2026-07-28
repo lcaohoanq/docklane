@@ -111,6 +111,8 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 # Apply only if the freshly generated token exactly matches the reviewed plan:
 PLAN_TOKEN=copy-the-token-from-the-reviewed-output
 ./bin/docklane install --token "$PLAN_TOKEN"
+./bin/docklane uninstall --dry-run
+./bin/docklane uninstall --dry-run --json
 ./bin/docklane manifest init --path /absolute/path/install-manifest.json
 ./bin/docklane manifest validate --path /absolute/path/install-manifest.json
 ./bin/docklane manifest show --path /absolute/path/install-manifest.json
@@ -165,6 +167,13 @@ apply engine supports safe adoption: it atomically journals `planned`,
 verified/preserved without restarting or changing them. Plans containing
 managed create/configure operations are rejected before the manifest is
 written until their rollback executors are implemented.
+
+`docklane uninstall --dry-run` reads the installed ownership manifest and
+renders its exact inverse in reverse dependency order. Adopted resources are
+shown as non-mutating `preserve`; Docklane-managed resources become `remove`
+or fingerprint-backed `restore` operations according to their recorded
+rollback contract. A deterministic token binds the preview to the manifest
+installation ID and generation. Uninstall apply is not enabled yet.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the
