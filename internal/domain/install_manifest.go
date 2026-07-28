@@ -61,6 +61,22 @@ type InstallationSettings struct {
 	ProxyNetwork string `json:"proxyNetwork"`
 }
 
+func (settings InstallationSettings) Validate() error {
+	if !domainPattern.MatchString(settings.BaseDomain) {
+		return fmt.Errorf(
+			"invalid installation base domain %q",
+			settings.BaseDomain,
+		)
+	}
+	if !dockerNamePattern.MatchString(settings.ProxyNetwork) {
+		return fmt.Errorf(
+			"invalid installation proxy network %q",
+			settings.ProxyNetwork,
+		)
+	}
+	return nil
+}
+
 type ResourceBackup struct {
 	Path        string `json:"path"`
 	Fingerprint string `json:"fingerprint"`
@@ -127,17 +143,8 @@ func (manifest InstallationManifest) Validate() error {
 	if manifest.UpdatedAt.Before(manifest.CreatedAt) {
 		return fmt.Errorf("manifest updatedAt cannot precede createdAt")
 	}
-	if !domainPattern.MatchString(manifest.Settings.BaseDomain) {
-		return fmt.Errorf(
-			"invalid installation base domain %q",
-			manifest.Settings.BaseDomain,
-		)
-	}
-	if !dockerNamePattern.MatchString(manifest.Settings.ProxyNetwork) {
-		return fmt.Errorf(
-			"invalid installation proxy network %q",
-			manifest.Settings.ProxyNetwork,
-		)
+	if err := manifest.Settings.Validate(); err != nil {
+		return err
 	}
 	if manifest.Resources == nil {
 		return fmt.Errorf("installation resources must be an array")

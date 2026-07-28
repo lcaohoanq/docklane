@@ -286,8 +286,9 @@ safe and repeatable.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.
-- [ ] Add preflight checks for ports 80/443, Docker access, dnsmasq, resolver
-  conflicts, and existing Traefik.
+- [X] Add read-only preflight checks for ports 80/443, Docker access and proxy
+  network compatibility, dnsmasq, resolver conflicts, manifest state, and
+  existing Traefik.
 - [ ] Support adopting a compatible existing global Traefik deployment.
 - [ ] Refuse unsafe adoption with a precise explanation.
 - [ ] Add `docklane app enable` for opt-in network attachment and routing.

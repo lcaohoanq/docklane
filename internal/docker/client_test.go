@@ -98,6 +98,45 @@ func TestNewClientLeavesStreamingRequestsContextControlled(t *testing.T) {
 	}
 }
 
+func TestListContainersRecordsPublishedHostPorts(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`[
+					{
+						"Id":"abcdef1234567890",
+						"Names":["/traefik"],
+						"Image":"traefik:v3.7",
+						"State":"running",
+						"Status":"Up",
+						"Labels":{},
+						"Ports":[
+							{"PrivatePort":80,"PublicPort":80,"Type":"tcp"},
+							{"PrivatePort":443,"PublicPort":443,"Type":"tcp"},
+							{"PrivatePort":8080,"PublicPort":0,"Type":"tcp"}
+						],
+						"NetworkSettings":{"Networks":{"proxy":{}}}
+					}
+				]`)),
+			}, nil
+		},
+	)}}
+	containers, err := client.ListContainers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(containers) != 1 ||
+		len(containers[0].PublishedPorts) != 2 ||
+		containers[0].PublishedPorts[0] != 80 ||
+		containers[0].PublishedPorts[1] != 443 ||
+		containers[0].SystemRole != SystemRoleReverseProxy {
+		t.Fatalf("containers = %#v", containers)
+	}
+}
+
 func TestNetworkAliasesInspectsContainerEndpoint(t *testing.T) {
 	client := &Client{http: &http.Client{Transport: roundTripFunc(
 		func(request *http.Request) (*http.Response, error) {

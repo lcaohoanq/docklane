@@ -312,6 +312,23 @@ The private CA key and leaf key require restrictive host permissions. Trust
 installation must be explicit and have a recorded rollback action. Browser
 trust stores that do not use the system trust store must be handled separately.
 
+### 5.9 Installation preflight
+
+`docklane preflight` is a read-only compatibility inspection. It binds and
+immediately releases ports 80 and 443 to distinguish free gateway ports from
+active listeners, then correlates occupied ports with the exact published
+ports of one detected Traefik container. It never assumes that an unrelated
+listener belongs to Traefik merely because a Traefik container also exists.
+
+Preflight also verifies Docker socket access, proxy-network compatibility,
+dnsmasq installation/service/include configuration, every readable wildcard
+mapping for the base domain, the system resolver's actual wildcard answer, and
+the installation manifest. Existing compatible infrastructure is reported as
+an adoption candidate; missing state is a warning for the future install plan;
+ambiguous ownership or conflicting DNS/network state blocks installation.
+Checks have stable IDs and support JSON output for the upcoming deterministic
+`install --dry-run` planner.
+
 ## 6. Route lifecycle
 
 ### 6.1 Create

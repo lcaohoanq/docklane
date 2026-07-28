@@ -27,6 +27,7 @@ type Container struct {
 	ComposeProject string              `json:"composeProject,omitempty"`
 	ComposeService string              `json:"composeService,omitempty"`
 	ExposedPorts   []uint16            `json:"exposedPorts"`
+	PublishedPorts []uint16            `json:"publishedPorts,omitempty"`
 	Labels         map[string]string   `json:"-"`
 	Networks       []string            `json:"networks"`
 	NetworkAliases map[string][]string `json:"networkAliases,omitempty"`
@@ -177,7 +178,9 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			name = strings.TrimPrefix(item.Names[0], "/")
 		}
 		ports := make([]uint16, 0, len(item.Ports))
+		publishedPorts := make([]uint16, 0, len(item.Ports))
 		seen := map[uint16]bool{}
+		seenPublished := map[uint16]bool{}
 		publishesGatewayPort := false
 		for _, port := range item.Ports {
 			if port.Type == "tcp" && !seen[port.PrivatePort] {
@@ -189,8 +192,18 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 					(port.PrivatePort == 443 && port.PublicPort == 443)) {
 				publishesGatewayPort = true
 			}
+			if port.Type == "tcp" &&
+				port.PublicPort != 0 &&
+				!seenPublished[port.PublicPort] {
+				seenPublished[port.PublicPort] = true
+				publishedPorts = append(publishedPorts, port.PublicPort)
+			}
 		}
 		sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
+		sort.Slice(
+			publishedPorts,
+			func(i, j int) bool { return publishedPorts[i] < publishedPorts[j] },
+		)
 		networks := make([]string, 0, len(item.NetworkSettings.Networks))
 		for network := range item.NetworkSettings.Networks {
 			networks = append(networks, network)
@@ -206,6 +219,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			ComposeProject: item.Labels["com.docker.compose.project"],
 			ComposeService: item.Labels["com.docker.compose.service"],
 			ExposedPorts:   ports,
+			PublishedPorts: publishedPorts,
 			Labels:         item.Labels,
 			Networks:       networks,
 		})

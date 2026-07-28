@@ -55,6 +55,8 @@ func run(args []string) error {
 		return network(args[1:])
 	case "manifest":
 		return manifest(args[1:])
+	case "preflight":
+		return preflight(args[1:])
 	case "route":
 		return route(args[1:])
 	case "version":
@@ -707,6 +709,7 @@ Usage:
   docklane manifest init     Create an empty ownership manifest
   docklane manifest show     Inspect the ownership manifest
   docklane manifest validate Validate the ownership manifest
+  docklane preflight         Inspect host installation compatibility
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route

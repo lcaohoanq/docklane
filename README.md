@@ -104,6 +104,8 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 ./bin/docklane doctor --json excalidraw
 ./bin/docklane network plan
 ./bin/docklane network apply
+./bin/docklane preflight
+./bin/docklane preflight --json
 ./bin/docklane manifest init --path /absolute/path/install-manifest.json
 ./bin/docklane manifest validate --path /absolute/path/install-manifest.json
 ./bin/docklane manifest show --path /absolute/path/install-manifest.json
@@ -127,6 +129,12 @@ The installation manifest defaults to
 `DOCKLANE_MANIFEST` or `--path`. `manifest init` creates only the ownership
 record and never changes DNS, certificates, trust, Docker, Traefik, or system
 services. It refuses to overwrite an existing manifest.
+
+`docklane preflight` is read-only. It checks gateway ports, Docker access,
+proxy-network compatibility, dnsmasq configuration and service state, the
+system resolver's real wildcard answer, existing Traefik candidates, and
+manifest state. Warnings describe work for a future reviewed install plan;
+blocking conflicts return a non-zero exit status.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the
