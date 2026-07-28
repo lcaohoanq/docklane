@@ -26,3 +26,11 @@ type DiagnosticReport struct {
 	GeneratedAt time.Time         `json:"generatedAt"`
 	Checks      []DiagnosticCheck `json:"checks"`
 }
+
+type HealthSnapshot struct {
+	ID         int64            `json:"id"`
+	RouteID    int64            `json:"routeId"`
+	Status     DiagnosticStatus `json:"status"`
+	RecordedAt time.Time        `json:"recordedAt"`
+	Report     DiagnosticReport `json:"report"`
+}

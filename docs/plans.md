@@ -32,7 +32,7 @@ A task is complete only when:
 | 3     | Managed Docker network and Traefik integration | In progress                    |
 | 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
 | 5     | Installer, migration, and rollback             | Planned                        |
-| 6     | Diagnostics and observability                  | In progress                    |
+| 6     | Diagnostics and observability                  | Complete                       |
 | 7     | UX/DX hardening and first release              | Planned                        |
 
 ## Phase 0 — Product foundation
@@ -321,7 +321,7 @@ Goal: explain failures by layer instead of presenting a generic browser error.
 - [X] Provide one actionable repair suggestion per failed layer.
 - [X] Add machine-readable `--json` diagnostic output.
 - [X] Add a UI diagnostics view.
-- [ ] Add health history with bounded retention.
+- [X] Add health history with bounded retention.
 
 Acceptance criteria:
 

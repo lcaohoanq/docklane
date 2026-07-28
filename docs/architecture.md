@@ -175,6 +175,14 @@ and network name. A row means Docklane performed that exact connection and may
 later undo it. Absence of a row means the attachment is external state and
 must be preserved.
 
+The `health_snapshots` table stores controller-perspective diagnostic reports,
+keyed by route and timestamp. Manual diagnoses create a snapshot immediately;
+the controller also samples enabled routes every five minutes. Each insert
+prunes older rows beyond the configured per-route cap, which defaults to 288
+(approximately 24 hours at the periodic cadence). Deleting a route deletes its
+history in the same transaction. Browser probe results are intentionally not
+persisted.
+
 SQLite is not in the application request path. Database loss affects route
 management and future reconciliation, not traffic already being handled by
 Traefik.
@@ -443,6 +451,7 @@ Current endpoints:
 | `GET` | `/api/v1/routes/{id}/upstream-probe` | Probe the reconciled upstream from the proxy network |
 | `GET` | `/api/v1/routes/{id}/traefik-runtime` | Inspect summarized provider/router/service runtime state |
 | `GET` | `/api/v1/diagnostics/routes/{id}` | Run read-only controller-perspective route diagnostics |
+| `GET` | `/api/v1/diagnostics/routes/{id}/history` | Read bounded controller health snapshots |
 | `PUT` | `/api/v1/routes/{id}` | Revision-checked replacement of writable route configuration |
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |

@@ -92,6 +92,73 @@ func TestRouteNameConflict(t *testing.T) {
 	}
 }
 
+func TestHealthSnapshotRetentionAndRouteDeletion(t *testing.T) {
+	repository, err := Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	route, err := repository.CreateRoute(context.Background(), domain.Route{
+		Name:     "draw",
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
+	for index := 0; index < 5; index++ {
+		status := domain.DiagnosticPass
+		if index == 3 {
+			status = domain.DiagnosticFail
+		}
+		if _, err := repository.SaveHealthSnapshot(
+			context.Background(),
+			domain.HealthSnapshot{
+				RouteID:    route.ID,
+				RecordedAt: started.Add(time.Duration(index) * time.Minute),
+				Report: domain.DiagnosticReport{
+					Status:      status,
+					Target:      route.Name,
+					GeneratedAt: started.Add(time.Duration(index) * time.Minute),
+				},
+			},
+			3,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshots, err := repository.ListHealthSnapshots(
+		context.Background(),
+		route.ID,
+		10,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 3 ||
+		snapshots[0].RecordedAt != started.Add(4*time.Minute) ||
+		snapshots[1].Status != domain.DiagnosticFail {
+		t.Fatalf("snapshots = %#v", snapshots)
+	}
+	if err := repository.DeleteRoute(context.Background(), route.ID); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err = repository.ListHealthSnapshots(
+		context.Background(),
+		route.ID,
+		10,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 0 {
+		t.Fatalf("deleted route snapshots = %#v", snapshots)
+	}
+}
+
 func TestOpenAddsRevisionToExistingDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "docklane.db")
 	db, err := sql.Open("sqlite", path)
@@ -138,8 +205,8 @@ func TestOpenAddsRevisionToExistingDatabase(t *testing.T) {
 	if route.Revision != 1 {
 		t.Fatalf("migrated revision = %d, want 1", route.Revision)
 	}
-	if version := databaseVersion(t, repository.db); version != 4 {
-		t.Fatalf("schema version = %d, want 4", version)
+	if version := databaseVersion(t, repository.db); version != 5 {
+		t.Fatalf("schema version = %d, want 5", version)
 	}
 
 	backups, err := filepath.Glob(filepath.Join(filepath.Dir(path), "backups", "*.db"))
@@ -220,8 +287,8 @@ func TestOpenAdoptsUnversionedCurrentSchemaWithBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version := databaseVersion(t, repository.db); version != 4 {
-		t.Fatalf("schema version = %d, want 4", version)
+	if version := databaseVersion(t, repository.db); version != 5 {
+		t.Fatalf("schema version = %d, want 5", version)
 	}
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)

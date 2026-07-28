@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -28,6 +29,7 @@ type API struct {
 	reconciler *reconcile.Reconciler
 	upstream   UpstreamProber
 	runtime    TraefikRuntimeInspector
+	handler    http.Handler
 
 	providerMu     sync.RWMutex
 	providerStatus domain.ProviderStatus
@@ -61,7 +63,13 @@ func New(
 	discovery docker.Discovery,
 	reconciler *reconcile.Reconciler,
 	options ...Option,
-) http.Handler {
+) *API {
+	if cfg.HistoryEvery <= 0 {
+		cfg.HistoryEvery = 5 * time.Minute
+	}
+	if cfg.HistoryLimit <= 0 {
+		cfg.HistoryLimit = 288
+	}
 	api := &API{
 		config:     cfg,
 		store:      repository,
@@ -87,9 +95,18 @@ func New(
 	mux.HandleFunc("GET /api/v1/routes/{id}/upstream-probe", api.upstreamProbe)
 	mux.HandleFunc("GET /api/v1/routes/{id}/traefik-runtime", api.traefikRuntime)
 	mux.HandleFunc("GET /api/v1/diagnostics/routes/{id}", api.routeDiagnostics)
+	mux.HandleFunc(
+		"GET /api/v1/diagnostics/routes/{id}/history",
+		api.routeHealthHistory,
+	)
 	mux.HandleFunc("GET /internal/traefik", api.traefik)
 	mux.Handle("/", webui.Handler())
-	return requestLog(mux)
+	api.handler = requestLog(mux)
+	return api
+}
+
+func (a *API) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	a.handler.ServeHTTP(response, request)
 }
 
 type localDiagnosticsController struct {
@@ -171,7 +188,53 @@ func (a *API) routeDiagnostics(
 		localDiagnosticsController{api: a},
 		strconv.FormatInt(id, 10),
 	)
+	if _, err := a.store.SaveHealthSnapshot(
+		request.Context(),
+		domain.HealthSnapshot{
+			RouteID: id,
+			Report:  report,
+		},
+		a.config.HistoryLimit,
+	); err != nil {
+		log.Printf("Persist route %d health snapshot: %v", id, err)
+	}
 	writeJSON(response, http.StatusOK, report)
+}
+
+func (a *API) routeHealthHistory(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	id, err := routeID(request)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	if _, err := a.store.GetRoute(request.Context(), id); err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	limit := 50
+	if raw := request.URL.Query().Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit <= 0 {
+			writeError(response, http.StatusBadRequest, errors.New("history limit must be positive"))
+			return
+		}
+	}
+	if limit > a.config.HistoryLimit {
+		limit = a.config.HistoryLimit
+	}
+	snapshots, err := a.store.ListHealthSnapshots(request.Context(), id, limit)
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{
+		"snapshots":        snapshots,
+		"retention":        a.config.HistoryLimit,
+		"sampleIntervalMs": a.config.HistoryEvery.Milliseconds(),
+	})
 }
 
 func (a *API) readyRoute(

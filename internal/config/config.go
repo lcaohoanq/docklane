@@ -19,6 +19,8 @@ type Config struct {
 	TraefikAPIUser string
 	TraefikAPIPass string
 	TraefikAPICA   string
+	HistoryEvery   time.Duration
+	HistoryLimit   int
 	ManageNetworks bool
 	ReconcileEvery time.Duration
 }
@@ -57,6 +59,12 @@ func (c Config) Validate() error {
 	}
 	if c.ReconcileEvery <= 0 {
 		return fmt.Errorf("reconcile interval must be greater than zero")
+	}
+	if c.HistoryEvery <= 0 {
+		return fmt.Errorf("health history interval must be greater than zero")
+	}
+	if c.HistoryLimit <= 0 || c.HistoryLimit > 10000 {
+		return fmt.Errorf("health history limit must be between 1 and 10000")
 	}
 	return nil
 }

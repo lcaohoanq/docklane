@@ -42,6 +42,8 @@ The current integrated checkpoint additionally provides:
   service, and backend status;
 - an in-browser diagnostics view with grouped controller checks, repair
   guidance, copyable JSON, and a separately labeled browser HTTPS probe;
+- bounded controller-health history sampled every five minutes and retained
+  for 288 snapshots per route;
 - a managed Docklane container on a private `docklane-control` network shared
   only with Traefik;
 - Traefik HTTP-provider polling every two seconds;
@@ -138,6 +140,7 @@ Current API endpoints:
 - `GET /api/v1/routes/{id}/upstream-probe`
 - `GET /api/v1/routes/{id}/traefik-runtime`
 - `GET /api/v1/diagnostics/routes/{id}`
+- `GET /api/v1/diagnostics/routes/{id}/history`
 - `PUT /api/v1/routes/{id}`
 - `DELETE /api/v1/routes/{id}`
 - `GET /internal/traefik`
@@ -145,6 +148,10 @@ Current API endpoints:
 Pass `networkAliases=true` to the containers endpoint when diagnostics need
 verified aliases on the configured proxy network. Ordinary UI discovery omits
 the additional Docker inspect calls.
+
+Manual diagnoses and periodic controller samples are stored in SQLite.
+`--health-history-interval` and `--health-history-limit` control cadence and
+the hard per-route retention cap.
 
 `GET /api/v1/health` includes a `provider` object. Its `source` is `live`,
 `last-known-good`, `awaiting-first-poll`, or `unavailable`. A

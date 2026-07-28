@@ -62,6 +62,14 @@
     detail?: string;
   };
 
+  type HealthSnapshot = {
+    id: number;
+    routeId: number;
+    status: DiagnosticStatus;
+    recordedAt: string;
+    report: DiagnosticReport;
+  };
+
   let containers: Container[] = [];
   let routes: Route[] = [];
   let baseDomain = "docker.home.arpa";
@@ -79,6 +87,10 @@
   let diagnosticReport: DiagnosticReport | null = null;
   let diagnosticLoading = false;
   let diagnosticError = "";
+  let diagnosticHistory: HealthSnapshot[] = [];
+  let historyRetention = 288;
+  let historyIntervalMs = 300000;
+  let historyError = "";
   let browserProbe: BrowserProbe = {
     status: "idle",
     summary: "Browser probe has not run",
@@ -263,13 +275,15 @@
     diagnosticRoute = route;
     diagnosticReport = null;
     diagnosticError = "";
+    diagnosticHistory = [];
+    historyError = "";
     diagnosticLoading = true;
     browserProbe = {
       status: "pending",
       summary: "Connecting from this browser…",
     };
     await Promise.allSettled([
-      loadControllerDiagnostics(route),
+      loadControllerDiagnostics(route).then(() => loadDiagnosticHistory(route)),
       probeFromBrowser(route),
     ]);
     diagnosticLoading = false;
@@ -323,6 +337,26 @@
     }
   }
 
+  async function loadDiagnosticHistory(route: Route) {
+    try {
+      const response = await fetch(
+        `/api/v1/diagnostics/routes/${route.id}/history?limit=50`,
+        { cache: "no-store" },
+      );
+      const payload = await response.json();
+      if (!response.ok)
+        throw new Error(
+          payload.error || `History loading failed (${response.status})`,
+        );
+      diagnosticHistory = payload.snapshots;
+      historyRetention = payload.retention;
+      historyIntervalMs = payload.sampleIntervalMs;
+    } catch (cause) {
+      historyError =
+        cause instanceof Error ? cause.message : "History loading failed";
+    }
+  }
+
   function groupedChecks(checks: DiagnosticCheck[]) {
     const groups = new Map<string, DiagnosticCheck[]>();
     for (const check of checks) {
@@ -331,6 +365,20 @@
       groups.set(check.layer, entries);
     }
     return Array.from(groups, ([layer, entries]) => ({ layer, entries }));
+  }
+
+  function chronologicalHistory() {
+    return [...diagnosticHistory].reverse();
+  }
+
+  function historyCount(status: DiagnosticStatus) {
+    return diagnosticHistory.filter((snapshot) => snapshot.status === status)
+      .length;
+  }
+
+  function intervalLabel(milliseconds: number) {
+    const minutes = Math.round(milliseconds / 60000);
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
   }
 
   async function copyDiagnostics() {
@@ -353,6 +401,8 @@
     diagnosticRoute = null;
     diagnosticReport = null;
     diagnosticError = "";
+    diagnosticHistory = [];
+    historyError = "";
     browserProbe = { status: "idle", summary: "Browser probe has not run" };
   }
 
@@ -550,6 +600,45 @@
             Controller perspective ·
             {new Date(diagnosticReport.generatedAt).toLocaleTimeString()}
           </span>
+        </div>
+        <div class="health-history">
+          <div class="history-heading">
+            <div>
+              <span class="perspective-label">Controller health history</span>
+              <strong>
+                {diagnosticHistory.length} recent snapshot{diagnosticHistory.length ===
+                1
+                  ? ""
+                  : "s"}
+              </strong>
+            </div>
+            <small>
+              Every {intervalLabel(historyIntervalMs)} · retains
+              {historyRetention} per route
+            </small>
+          </div>
+          {#if historyError}
+            <p class="history-error">{historyError}</p>
+          {:else if diagnosticHistory.length > 0}
+            <div class="history-timeline" aria-label="Recent controller health">
+              {#each chronologicalHistory() as snapshot}
+                <span
+                  class={`history-point ${snapshot.status}`}
+                  title={`${new Date(snapshot.recordedAt).toLocaleString()} · ${snapshot.status}`}
+                  aria-label={`${snapshot.status} at ${new Date(snapshot.recordedAt).toLocaleString()}`}
+                ></span>
+              {/each}
+            </div>
+            <div class="history-legend">
+              <span><i class="pass"></i>{historyCount("pass")} pass</span>
+              <span><i class="warn"></i>{historyCount("warn")} warning</span>
+              <span><i class="fail"></i>{historyCount("fail")} fail</span>
+            </div>
+          {:else}
+            <p class="history-empty">
+              The first snapshot will appear after this diagnostic completes.
+            </p>
+          {/if}
         </div>
         <div class="diagnostic-groups">
           {#each groupedChecks(diagnosticReport.checks) as group}

@@ -382,6 +382,8 @@ func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
 			BaseDomain:     "docker.home.arpa",
 			ProxyNetwork:   "proxy",
 			ReconcileEvery: time.Second,
+			HistoryEvery:   time.Minute,
+			HistoryLimit:   3,
 		},
 		repository,
 		discovery,
@@ -441,6 +443,38 @@ func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
 		if !checks[id] {
 			t.Fatalf("diagnostic report missing %q: %#v", id, report)
 		}
+	}
+	if err := handler.SampleHealthHistory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	historyResponse := httptest.NewRecorder()
+	handler.ServeHTTP(
+		historyResponse,
+		httptest.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf("/api/v1/diagnostics/routes/%d/history", route.ID),
+			nil,
+		),
+	)
+	if historyResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"history status = %d, body = %s",
+			historyResponse.Code,
+			historyResponse.Body,
+		)
+	}
+	var history struct {
+		Snapshots        []domain.HealthSnapshot `json:"snapshots"`
+		Retention        int                     `json:"retention"`
+		SampleIntervalMS int64                   `json:"sampleIntervalMs"`
+	}
+	if err := json.NewDecoder(historyResponse.Body).Decode(&history); err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Snapshots) != 2 ||
+		history.Retention != 3 ||
+		history.SampleIntervalMS != time.Minute.Milliseconds() {
+		t.Fatalf("history = %#v", history)
 	}
 }
 

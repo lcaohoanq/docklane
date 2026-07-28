@@ -573,6 +573,16 @@ func serve(args []string) error {
 		"connect routed containers to the proxy network",
 	)
 	reconcileEvery := flags.Duration("reconcile-interval", 5*time.Second, "Docker reconciliation interval")
+	historyEvery := flags.Duration(
+		"health-history-interval",
+		5*time.Minute,
+		"periodic route health snapshot interval",
+	)
+	historyLimit := flags.Int(
+		"health-history-limit",
+		288,
+		"maximum health snapshots retained per route",
+	)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -589,6 +599,8 @@ func serve(args []string) error {
 		TraefikAPIUser: *traefikAPIUser,
 		TraefikAPIPass: *traefikAPIPass,
 		TraefikAPICA:   *traefikAPICA,
+		HistoryEvery:   *historyEvery,
+		HistoryLimit:   *historyLimit,
 		ManageNetworks: *manageNetworks,
 		ReconcileEvery: *reconcileEvery,
 	}
@@ -658,6 +670,7 @@ func serve(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go reconciler.Run(ctx)
+	go handler.RunHealthHistory(ctx)
 
 	serverErrors := make(chan error, 1)
 	go func() {

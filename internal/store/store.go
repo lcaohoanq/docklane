@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -75,6 +76,21 @@ var migrations = []migration{
 				generated_at TEXT NOT NULL
 			)
 		`},
+	},
+	{
+		version:     5,
+		description: "add bounded route health history",
+		statements: []string{
+			`CREATE TABLE health_snapshots (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				route_id INTEGER NOT NULL,
+				status TEXT NOT NULL,
+				report BLOB NOT NULL,
+				recorded_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX health_snapshots_route_recorded
+			 ON health_snapshots (route_id, recorded_at DESC, id DESC)`,
+		},
 	},
 }
 
@@ -422,7 +438,19 @@ func (s *Store) UpdateRoute(ctx context.Context, route domain.Route) (domain.Rou
 }
 
 func (s *Store) DeleteRoute(ctx context.Context, id int64) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM routes WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(
+		ctx,
+		`DELETE FROM health_snapshots WHERE route_id = ?`,
+		id,
+	); err != nil {
+		return fmt.Errorf("delete route health history: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM routes WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete route: %w", err)
 	}
@@ -433,7 +461,7 @@ func (s *Store) DeleteRoute(ctx context.Context, id int64) error {
 	if affected == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) RecordNetworkAttachment(
@@ -563,6 +591,114 @@ func (s *Store) GetProviderSnapshot(
 		)
 	}
 	return snapshot, nil
+}
+
+func (s *Store) SaveHealthSnapshot(
+	ctx context.Context,
+	snapshot domain.HealthSnapshot,
+	retention int,
+) (domain.HealthSnapshot, error) {
+	if snapshot.RouteID <= 0 {
+		return domain.HealthSnapshot{}, errors.New("health snapshot route ID is required")
+	}
+	if retention <= 0 {
+		return domain.HealthSnapshot{}, errors.New("health snapshot retention must be positive")
+	}
+	switch snapshot.Report.Status {
+	case domain.DiagnosticPass, domain.DiagnosticWarn, domain.DiagnosticFail:
+	default:
+		return domain.HealthSnapshot{}, errors.New("health snapshot status is invalid")
+	}
+	if snapshot.RecordedAt.IsZero() {
+		snapshot.RecordedAt = time.Now().UTC()
+	}
+	snapshot.Status = snapshot.Report.Status
+	encoded, err := json.Marshal(snapshot.Report)
+	if err != nil {
+		return domain.HealthSnapshot{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.HealthSnapshot{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO health_snapshots (route_id, status, report, recorded_at)
+		VALUES (?, ?, ?, ?)
+	`,
+		snapshot.RouteID,
+		snapshot.Status,
+		encoded,
+		snapshot.RecordedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return domain.HealthSnapshot{}, err
+	}
+	snapshot.ID, err = result.LastInsertId()
+	if err != nil {
+		return domain.HealthSnapshot{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM health_snapshots
+		WHERE route_id = ? AND id NOT IN (
+			SELECT id
+			FROM health_snapshots
+			WHERE route_id = ?
+			ORDER BY recorded_at DESC, id DESC
+			LIMIT ?
+		)
+	`, snapshot.RouteID, snapshot.RouteID, retention); err != nil {
+		return domain.HealthSnapshot{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.HealthSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (s *Store) ListHealthSnapshots(
+	ctx context.Context,
+	routeID int64,
+	limit int,
+) ([]domain.HealthSnapshot, error) {
+	if routeID <= 0 || limit <= 0 {
+		return nil, errors.New("route ID and history limit must be positive")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, status, report, recorded_at
+		FROM health_snapshots
+		WHERE route_id = ?
+		ORDER BY recorded_at DESC, id DESC
+		LIMIT ?
+	`, routeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	snapshots := []domain.HealthSnapshot{}
+	for rows.Next() {
+		var snapshot domain.HealthSnapshot
+		var encoded []byte
+		var recordedAt string
+		snapshot.RouteID = routeID
+		if err := rows.Scan(
+			&snapshot.ID,
+			&snapshot.Status,
+			&encoded,
+			&recordedAt,
+		); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(encoded, &snapshot.Report); err != nil {
+			return nil, fmt.Errorf("decode health snapshot %d: %w", snapshot.ID, err)
+		}
+		snapshot.RecordedAt, err = time.Parse(time.RFC3339Nano, recordedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse health snapshot %d time: %w", snapshot.ID, err)
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, rows.Err()
 }
 
 type scanner interface {
