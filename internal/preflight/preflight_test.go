@@ -26,13 +26,32 @@ type fakeDockerInspector struct {
 	networkErr error
 	runtime    docker.ContainerRuntime
 	runtimeErr error
+	runtimes   map[string]docker.ContainerRuntime
+	volume     docker.Volume
+	volumeErr  error
 }
 
 func (inspector fakeDockerInspector) InspectContainerRuntime(
+	_ context.Context,
+	id string,
+) (docker.ContainerRuntime, error) {
+	if runtime, ok := inspector.runtimes[id]; ok {
+		return runtime, nil
+	}
+	return inspector.runtime, inspector.runtimeErr
+}
+
+func (inspector fakeDockerInspector) InspectVolume(
 	context.Context,
 	string,
-) (docker.ContainerRuntime, error) {
-	return inspector.runtime, inspector.runtimeErr
+) (docker.Volume, error) {
+	if inspector.volumeErr != nil {
+		return docker.Volume{}, inspector.volumeErr
+	}
+	if inspector.volume.Name == "" {
+		return docker.Volume{}, docker.ErrVolumeNotFound
+	}
+	return inspector.volume, nil
 }
 
 func (inspector fakeDockerInspector) ListContainers(
@@ -144,6 +163,7 @@ func testConfig(t *testing.T) Config {
 		DnsmasqDir:      "/etc/dnsmasq.d",
 		DnsmasqService:  "dnsmasq",
 		TrustAnchorPath: "/trust/root.crt",
+		RuntimeDataPath: "/var/lib/docklane",
 	}
 }
 
@@ -245,6 +265,82 @@ func configureHealthyTLS(
 	}
 }
 
+func configureHealthyRuntime(
+	host *portAwareHost,
+	dockerInspector *fakeDockerInspector,
+) {
+	const imageID = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	dockerInspector.containers = append(
+		dockerInspector.containers,
+		docker.Container{
+			ID:             "docklane123",
+			Name:           "docklane",
+			Image:          "docklane:local",
+			State:          "running",
+			ComposeProject: "docklane",
+			ComposeService: "docklane",
+			PublishedPorts: []uint16{4646},
+			Networks:       []string{"docklane-control"},
+		},
+		docker.Container{
+			ID:             "probe123",
+			Name:           "docklane-probe",
+			Image:          "docklane:local",
+			State:          "running",
+			ComposeProject: "docklane",
+			ComposeService: "probe",
+			Networks:       []string{"proxy"},
+		},
+	)
+	dockerInspector.runtimes = map[string]docker.ContainerRuntime{
+		"docklane123": {
+			ImageID: imageID,
+			Running: true,
+			Health:  "healthy",
+			Command: []string{
+				"serve",
+				"--base-domain=docker.home.arpa",
+				"--proxy-network=proxy",
+				"--docker-socket=/var/run/docker.sock",
+				"--probe-socket=/run/docklane-probe/probe.sock",
+			},
+			Mounts: []docker.ContainerMount{
+				{Type: "bind", Source: "/var/run/docker.sock", Destination: "/var/run/docker.sock", ReadOnly: true},
+				{Type: "bind", Source: "/host/data", Destination: "/data"},
+				{Type: "volume", Name: "docklane-probe-run", Destination: "/run/docklane-probe"},
+				{Type: "bind", Destination: "/run/secrets/traefik-dashboard-password", ReadOnly: true},
+				{Type: "bind", Destination: "/run/secrets/traefik-local-ca.crt", ReadOnly: true},
+			},
+			PortBindings: []docker.ContainerPortBinding{{
+				ContainerPort: 4646,
+				HostIP:        "127.0.0.1",
+				HostPort:      4646,
+			}},
+			ReadOnlyRootFS:  true,
+			NoNewPrivileges: true,
+			RestartPolicy:   "unless-stopped",
+		},
+		"probe123": {
+			ImageID:         imageID,
+			Running:         true,
+			Health:          "healthy",
+			Command:         []string{"probe", "serve", "--socket=/run/docklane-probe/probe.sock"},
+			Mounts:          []docker.ContainerMount{{Type: "volume", Name: "docklane-probe-run", Destination: "/run/docklane-probe"}},
+			ReadOnlyRootFS:  true,
+			NoNewPrivileges: true,
+			DroppedCaps:     []string{"ALL"},
+			RestartPolicy:   "unless-stopped",
+		},
+	}
+	dockerInspector.volume = docker.Volume{
+		Name: runtimeProbeVolume, Driver: "local", Scope: "local",
+	}
+	if host.fileModes == nil {
+		host.fileModes = map[string]os.FileMode{}
+	}
+	host.fileModes["/host/data"] = os.ModeDir | 0o700
+}
+
 func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	config := testConfig(t)
 	dockerInspector := fakeDockerInspector{
@@ -262,6 +358,7 @@ func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	}
 	host := healthyHost()
 	configureHealthyTLS(t, &host, &dockerInspector)
+	configureHealthyRuntime(&host, &dockerInspector)
 	runner, err := New(config, dockerInspector, host)
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +373,8 @@ func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	if report.Inventory.Gateway.Disposition != domain.PreflightAdopt ||
 		report.Inventory.Network.Disposition != domain.PreflightAdopt ||
 		report.Inventory.DNS.Disposition != domain.PreflightAdopt ||
-		report.Inventory.Resolver.Disposition != domain.PreflightAdopt {
+		report.Inventory.Resolver.Disposition != domain.PreflightAdopt ||
+		report.Inventory.Runtime.Disposition != domain.PreflightAdopt {
 		t.Fatalf("inventory = %#v", report.Inventory)
 	}
 	assertCheck(t, report, "gateway", domain.DiagnosticPass, "adoption candidate")
@@ -284,6 +382,35 @@ func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	assertCheck(t, report, "dnsmasq-domain", domain.DiagnosticPass, "127.0.0.1")
 	assertCheck(t, report, "resolver-domain", domain.DiagnosticPass, "127.0.0.1")
 	assertCheck(t, report, "tls-served-certificate", domain.DiagnosticPass, "exact")
+	assertCheck(t, report, "docklane-runtime", domain.DiagnosticPass, "adoption")
+}
+
+func TestRunRejectsProbeWithDockerSocketAccess(t *testing.T) {
+	config := testConfig(t)
+	dockerInspector := healthyGatewayInspector()
+	host := healthyHost()
+	configureHealthyTLS(t, &host, &dockerInspector)
+	configureHealthyRuntime(&host, &dockerInspector)
+	probe := dockerInspector.runtimes["probe123"]
+	probe.Mounts = append(probe.Mounts, docker.ContainerMount{
+		Type:        "bind",
+		Source:      "/var/run/docker.sock",
+		Destination: "/var/run/docker.sock",
+		ReadOnly:    true,
+	})
+	dockerInspector.runtimes["probe123"] = probe
+	runner, err := New(config, dockerInspector, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.now = func() time.Time {
+		return time.Date(2026, time.July, 28, 5, 0, 0, 0, time.UTC)
+	}
+	report := runner.Run(context.Background())
+	assertCheck(t, report, "docklane-probe", domain.DiagnosticFail, "Docker socket")
+	if report.Inventory.Runtime.Disposition != domain.PreflightConflict {
+		t.Fatalf("runtime disposition = %q", report.Inventory.Runtime.Disposition)
+	}
 }
 
 func TestRunRejectsBroadTLSPrivateKeyPermissions(t *testing.T) {
@@ -368,7 +495,8 @@ func TestRunWarnsForCleanUnconfiguredHost(t *testing.T) {
 	if report.Inventory.Gateway.Disposition != domain.PreflightCreate ||
 		report.Inventory.Network.Disposition != domain.PreflightCreate ||
 		report.Inventory.DNS.Disposition != domain.PreflightCreate ||
-		report.Inventory.Resolver.Disposition != domain.PreflightCreate {
+		report.Inventory.Resolver.Disposition != domain.PreflightCreate ||
+		report.Inventory.Runtime.Disposition != domain.PreflightCreate {
 		t.Fatalf("inventory = %#v", report.Inventory)
 	}
 	assertCheck(t, report, "gateway", domain.DiagnosticPass, "may create")
@@ -376,6 +504,8 @@ func TestRunWarnsForCleanUnconfiguredHost(t *testing.T) {
 	assertCheck(t, report, "proxy-network", domain.DiagnosticWarn, "does not exist")
 	assertCheck(t, report, "dnsmasq-domain", domain.DiagnosticWarn, "No dnsmasq")
 	assertCheck(t, report, "resolver-domain", domain.DiagnosticWarn, "does not currently")
+	assertCheck(t, report, "docklane-runtime", domain.DiagnosticWarn, "No existing")
+	assertCheck(t, report, "docklane-probe-volume", domain.DiagnosticWarn, "does not exist")
 }
 
 func TestRunBlocksConflictingHostState(t *testing.T) {

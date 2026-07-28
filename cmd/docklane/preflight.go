@@ -21,6 +21,7 @@ type preflightOptions struct {
 	dnsmasqDir      *string
 	dnsmasqService  *string
 	trustAnchorPath *string
+	runtimeDataPath *string
 }
 
 func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
@@ -65,6 +66,11 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 		"/etc/ca-certificates/trust-source/anchors/traefik-lab-root-ca.crt",
 		"local root CA trust-anchor path",
 	)
+	options.runtimeDataPath = flags.String(
+		"runtime-data",
+		"/var/lib/docklane",
+		"Docklane controller data directory for a clean installation",
+	)
 	return options
 }
 
@@ -82,6 +88,7 @@ func (options preflightOptions) run(
 			DnsmasqDir:      *options.dnsmasqDir,
 			DnsmasqService:  *options.dnsmasqService,
 			TrustAnchorPath: *options.trustAnchorPath,
+			RuntimeDataPath: *options.runtimeDataPath,
 		},
 		dockerClient,
 		preflightcheck.SystemInspector{},

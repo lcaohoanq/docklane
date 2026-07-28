@@ -62,6 +62,30 @@ type PreflightTLS struct {
 	DNSNames               []string             `json:"dnsNames"`
 }
 
+type PreflightRuntimeContainer struct {
+	ContainerID      string `json:"containerId,omitempty"`
+	ContainerName    string `json:"containerName,omitempty"`
+	Image            string `json:"image,omitempty"`
+	ImageFingerprint string `json:"imageFingerprint,omitempty"`
+	Health           string `json:"health,omitempty"`
+}
+
+type PreflightVolume struct {
+	Disposition PreflightDisposition `json:"disposition"`
+	Name        string               `json:"name"`
+	Driver      string               `json:"driver,omitempty"`
+}
+
+type PreflightRuntime struct {
+	Disposition     PreflightDisposition      `json:"disposition"`
+	Controller      PreflightRuntimeContainer `json:"controller"`
+	Probe           PreflightRuntimeContainer `json:"probe"`
+	ControlNetwork  PreflightNetwork          `json:"controlNetwork"`
+	ProbeVolume     PreflightVolume           `json:"probeVolume"`
+	DataDisposition PreflightDisposition      `json:"dataDisposition"`
+	DataPath        string                    `json:"dataPath"`
+}
+
 type PreflightInventory struct {
 	Gateway  PreflightGateway  `json:"gateway"`
 	Network  PreflightNetwork  `json:"network"`
@@ -69,6 +93,7 @@ type PreflightInventory struct {
 	Resolver PreflightResolver `json:"resolver"`
 	Manifest PreflightManifest `json:"manifest"`
 	TLS      PreflightTLS      `json:"tls"`
+	Runtime  PreflightRuntime  `json:"runtime"`
 }
 
 type PreflightReport struct {

@@ -332,10 +332,21 @@ maps its certificate and key back to host paths, and verifies:
 - that the configured host trust anchor issued the leaf certificate; and
 - that the certificate served on port 443 has the inventoried fingerprint.
 
+Preflight identifies the Docklane runtime only through its exact Compose
+project/service ownership and then inspects both containers. Adoption requires
+one healthy controller and one healthy probe built from the same immutable
+image. The controller must publish `4646` to loopback only, run on the private
+control network, use a read-only root filesystem, and mount Docker and Traefik
+credentials read-only. The probe must run only on the proxy network, publish no
+port, have no Docker socket, and drop all Linux capabilities. The shared socket
+volume, control network, and controller data directory are inventoried as
+separate ownership resources.
+
 Existing compatible infrastructure is reported as an adoption candidate;
 missing state is a warning for the future install plan; ambiguous ownership or
-conflicting DNS, network, or TLS state blocks installation. Checks have stable
-IDs and support JSON output for the deterministic `install --dry-run` planner.
+conflicting DNS, network, TLS, or runtime state blocks installation. Checks
+have stable IDs and support JSON output for the deterministic
+`install --dry-run` planner.
 
 `docklane install --dry-run` converts structured preflight inventory—not
 human-readable summaries—into validated manifest resources and ordered
@@ -344,10 +355,11 @@ missing resources become managed with remove or restore rollback. A SHA-256
 token covers the target, inventory, resources, operations, blockers, and
 pending coverage while excluding observation time, so unchanged machine state
 produces the same review token. The current foundation plan explicitly marks
-Docklane runtime deployment as pending and cannot be used for apply. A verified
-existing certificate, private key, and trust anchor are each fingerprinted and
-recorded as adopted/preserved resources; failure at any TLS ownership boundary
-prevents adoption.
+every installation resource as covered but still cannot be used for apply.
+A verified existing certificate, private key, trust anchor, controller image,
+and probe image are fingerprinted. Containers, networks, volumes, and the data
+directory are independently recorded as adopted/preserved or
+managed/removable; failure at any ownership boundary prevents adoption.
 
 ## 6. Route lifecycle
 

@@ -38,9 +38,7 @@ func Build(
 		Resources:     []domain.InstallationResource{},
 		Operations:    []domain.InstallationOperation{},
 		Blockers:      []string{},
-		Pending: []string{
-			"docklane-runtime",
-		},
+		Pending:       []string{},
 	}
 	for _, check := range report.Checks {
 		if check.Status == domain.DiagnosticFail {
@@ -55,6 +53,7 @@ func Build(
 	addDNS(&plan, options)
 	addResolver(&plan)
 	addTLS(&plan)
+	addRuntime(&plan)
 	addManifestOperation(&plan)
 	sort.Strings(plan.Blockers)
 	plan.Blockers = unique(plan.Blockers)
@@ -307,6 +306,136 @@ func addTLS(plan *domain.InstallationPlan) {
 		)
 		plan.Blockers = append(plan.Blockers, "tls-ownership")
 	}
+}
+
+func addRuntime(plan *domain.InstallationPlan) {
+	fact := plan.Inventory.Runtime
+	addRuntimeNetwork(plan, fact.ControlNetwork)
+	addRuntimeVolume(plan, fact.ProbeVolume)
+	addRuntimeData(plan, fact.DataDisposition, fact.DataPath)
+	switch fact.Disposition {
+	case domain.PreflightAdopt:
+		for _, resource := range []domain.InstallationResource{
+			{
+				ID:          "docklane-probe",
+				Kind:        domain.ResourceDockerContainer,
+				Target:      fact.Probe.ContainerName,
+				Ownership:   domain.ResourceAdopted,
+				State:       domain.ResourceVerified,
+				Rollback:    domain.RollbackPreserve,
+				Fingerprint: fact.Probe.ImageFingerprint,
+			},
+			{
+				ID:          "docklane-controller",
+				Kind:        domain.ResourceDockerContainer,
+				Target:      fact.Controller.ContainerName,
+				Ownership:   domain.ResourceAdopted,
+				State:       domain.ResourceVerified,
+				Rollback:    domain.RollbackPreserve,
+				Fingerprint: fact.Controller.ImageFingerprint,
+			},
+		} {
+			addResource(
+				plan,
+				resource,
+				"Verified Docklane runtime container will be recorded and preserved.",
+			)
+		}
+	case domain.PreflightCreate:
+		for _, name := range []string{runtimeProbeName, runtimeControllerName} {
+			addResource(
+				plan,
+				domain.InstallationResource{
+					ID:        name,
+					Kind:      domain.ResourceDockerContainer,
+					Target:    name,
+					Ownership: domain.ResourceManaged,
+					State:     domain.ResourcePlanned,
+					Rollback:  domain.RollbackRemove,
+				},
+				"Missing Docklane runtime container must be created.",
+			)
+		}
+	default:
+		plan.Blockers = append(plan.Blockers, "docklane-runtime-ownership")
+	}
+}
+
+const (
+	runtimeControllerName = "docklane"
+	runtimeProbeName      = "docklane-probe"
+)
+
+func addRuntimeNetwork(
+	plan *domain.InstallationPlan,
+	fact domain.PreflightNetwork,
+) {
+	addRuntimeFoundationResource(
+		plan,
+		"docklane-control-network",
+		domain.ResourceDockerNetwork,
+		fact.Name,
+		fact.Disposition,
+	)
+}
+
+func addRuntimeVolume(
+	plan *domain.InstallationPlan,
+	fact domain.PreflightVolume,
+) {
+	addRuntimeFoundationResource(
+		plan,
+		"docklane-probe-volume",
+		domain.ResourceDockerVolume,
+		fact.Name,
+		fact.Disposition,
+	)
+}
+
+func addRuntimeData(
+	plan *domain.InstallationPlan,
+	disposition domain.PreflightDisposition,
+	path string,
+) {
+	addRuntimeFoundationResource(
+		plan,
+		"docklane-data",
+		domain.ResourceDirectory,
+		path,
+		disposition,
+	)
+}
+
+func addRuntimeFoundationResource(
+	plan *domain.InstallationPlan,
+	id string,
+	kind domain.ResourceKind,
+	target string,
+	disposition domain.PreflightDisposition,
+) {
+	resource := domain.InstallationResource{
+		ID:     id,
+		Kind:   kind,
+		Target: target,
+	}
+	switch disposition {
+	case domain.PreflightAdopt:
+		resource.Ownership = domain.ResourceAdopted
+		resource.State = domain.ResourceVerified
+		resource.Rollback = domain.RollbackPreserve
+	case domain.PreflightCreate:
+		resource.Ownership = domain.ResourceManaged
+		resource.State = domain.ResourcePlanned
+		resource.Rollback = domain.RollbackRemove
+	default:
+		plan.Blockers = append(plan.Blockers, id+"-ownership")
+		return
+	}
+	addResource(
+		plan,
+		resource,
+		"Docklane runtime foundation ownership will be recorded explicitly.",
+	)
 }
 
 func addManifestOperation(plan *domain.InstallationPlan) {

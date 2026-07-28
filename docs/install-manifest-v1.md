@@ -34,6 +34,7 @@ ownership/rollback combinations.
 Supported v1 resource kinds are:
 
 - `file`
+- `directory`
 - `trust_anchor`
 - `docker_network`
 - `docker_volume`

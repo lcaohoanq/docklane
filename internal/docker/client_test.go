@@ -172,11 +172,21 @@ func TestInspectContainerRuntimeReturnsCommandAndMountOwnership(t *testing.T) {
 				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
 			}
 			body := `{
+				"Image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"State":{"Running":true,"Health":{"Status":"healthy"}},
 				"Config":{"Cmd":["--providers.file.filename=/dynamic/tls.yml"]},
 				"Mounts":[
-					{"Source":"/host/dynamic","Destination":"/dynamic","RW":false},
-					{"Source":"/host/certs","Destination":"/certs","RW":true}
-				]
+					{"Type":"bind","Source":"/host/dynamic","Destination":"/dynamic","RW":false},
+					{"Type":"volume","Name":"certs","Source":"/var/lib/certs","Destination":"/certs","RW":true}
+				],
+				"HostConfig":{
+					"ReadonlyRootfs":true,
+					"Privileged":false,
+					"SecurityOpt":["no-new-privileges:true"],
+					"CapDrop":["ALL"],
+					"RestartPolicy":{"Name":"unless-stopped"},
+					"PortBindings":{"4646/tcp":[{"HostIp":"127.0.0.1","HostPort":"4646"}]}
+				}
 			}`
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -196,9 +206,57 @@ func TestInspectContainerRuntimeReturnsCommandAndMountOwnership(t *testing.T) {
 	}
 	if len(runtime.Mounts) != 2 ||
 		!runtime.Mounts[0].ReadOnly ||
-		runtime.Mounts[1].ReadOnly {
+		runtime.Mounts[1].ReadOnly ||
+		runtime.Mounts[1].Name != "certs" {
 		t.Fatalf("mounts = %#v", runtime.Mounts)
 	}
+	if !runtime.Running ||
+		runtime.Health != "healthy" ||
+		!runtime.ReadOnlyRootFS ||
+		!runtime.NoNewPrivileges ||
+		runtime.Privileged ||
+		runtime.RestartPolicy != "unless-stopped" ||
+		len(runtime.PortBindings) != 1 ||
+		runtime.PortBindings[0].HostIP != "127.0.0.1" ||
+		!containsString(runtime.DroppedCaps, "ALL") {
+		t.Fatalf("runtime = %#v", runtime)
+	}
+}
+
+func TestInspectVolumeReturnsOwnershipFacts(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path != "/volumes/docklane-probe-run" {
+				t.Fatalf("path = %q", request.URL.Path)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(
+					`{"Name":"docklane-probe-run","Driver":"local","Scope":"local"}`,
+				)),
+			}, nil
+		},
+	)}}
+	volume, err := client.InspectVolume(context.Background(), "docklane-probe-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if volume.Name != "docklane-probe-run" ||
+		volume.Driver != "local" ||
+		volume.Scope != "local" {
+		t.Fatalf("volume = %#v", volume)
+	}
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDetectActiveTraefikGateway(t *testing.T) {

@@ -48,6 +48,28 @@ func adoptionReport() domain.PreflightReport {
 				PrivateKeyFingerprint:  strings.Repeat("b", 64),
 				TrustFingerprint:       strings.Repeat("c", 64),
 			},
+			Runtime: domain.PreflightRuntime{
+				Disposition: domain.PreflightAdopt,
+				Controller: domain.PreflightRuntimeContainer{
+					ContainerName:    "docklane",
+					ImageFingerprint: strings.Repeat("d", 64),
+				},
+				Probe: domain.PreflightRuntimeContainer{
+					ContainerName:    "docklane-probe",
+					ImageFingerprint: strings.Repeat("d", 64),
+				},
+				ControlNetwork: domain.PreflightNetwork{
+					Disposition: domain.PreflightAdopt,
+					Name:        "docklane-control",
+				},
+				ProbeVolume: domain.PreflightVolume{
+					Disposition: domain.PreflightAdopt,
+					Name:        "docklane-probe-run",
+					Driver:      "local",
+				},
+				DataDisposition: domain.PreflightAdopt,
+				DataPath:        "/var/lib/docklane",
+			},
 		},
 		Checks: []domain.DiagnosticCheck{},
 	}
@@ -65,10 +87,10 @@ func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	if !plan.Ready || plan.Status != domain.DiagnosticPass {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if plan.Complete || len(plan.Pending) != 1 {
+	if !plan.Complete || len(plan.Pending) != 0 {
 		t.Fatalf("coverage = complete:%t pending:%v", plan.Complete, plan.Pending)
 	}
-	if len(plan.Resources) != 8 || len(plan.Operations) != 9 {
+	if len(plan.Resources) != 13 || len(plan.Operations) != 14 {
 		t.Fatalf(
 			"resources = %d, operations = %d",
 			len(plan.Resources),
@@ -84,6 +106,12 @@ func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	}
 	if plan.Operations[0].Action != domain.InstallationCreateManifest {
 		t.Fatalf("first operation = %#v", plan.Operations[0])
+	}
+	if operationIndex(plan, "adopt-docklane-control-network") >
+		operationIndex(plan, "adopt-docklane-probe") ||
+		operationIndex(plan, "adopt-docklane-probe") >
+			operationIndex(plan, "adopt-docklane-controller") {
+		t.Fatalf("runtime dependency order = %#v", plan.Operations)
 	}
 	if plan.Token == "" {
 		t.Fatal("plan token is empty")
@@ -123,6 +151,19 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	}
 	report.Inventory.TLS = domain.PreflightTLS{
 		Disposition: domain.PreflightCreate,
+	}
+	report.Inventory.Runtime = domain.PreflightRuntime{
+		Disposition: domain.PreflightCreate,
+		ControlNetwork: domain.PreflightNetwork{
+			Disposition: domain.PreflightCreate,
+			Name:        "docklane-control",
+		},
+		ProbeVolume: domain.PreflightVolume{
+			Disposition: domain.PreflightCreate,
+			Name:        "docklane-probe-run",
+		},
+		DataDisposition: domain.PreflightCreate,
+		DataPath:        "/var/lib/docklane",
 	}
 	plan, err := Build(report, Options{
 		DnsmasqTarget:  "/etc/dnsmasq.d/docklane.conf",
@@ -214,4 +255,13 @@ func assertResource(
 		}
 	}
 	t.Fatalf("resource %s not found", id)
+}
+
+func operationIndex(plan domain.InstallationPlan, id string) int {
+	for index, operation := range plan.Operations {
+		if operation.ID == id {
+			return index
+		}
+	}
+	return len(plan.Operations)
 }

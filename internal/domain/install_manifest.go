@@ -25,6 +25,7 @@ type ResourceKind string
 
 const (
 	ResourceFile            ResourceKind = "file"
+	ResourceDirectory       ResourceKind = "directory"
 	ResourceTrustAnchor     ResourceKind = "trust_anchor"
 	ResourceDockerNetwork   ResourceKind = "docker_network"
 	ResourceDockerVolume    ResourceKind = "docker_volume"
@@ -208,7 +209,7 @@ func (resource InstallationResource) Validate() error {
 		strings.TrimSpace(resource.Target) != resource.Target {
 		return fmt.Errorf("resource target is required")
 	}
-	if resource.Kind == ResourceFile {
+	if resource.Kind == ResourceFile || resource.Kind == ResourceDirectory {
 		if !filepath.IsAbs(resource.Target) {
 			return fmt.Errorf("file target %q must be absolute", resource.Target)
 		}
@@ -277,6 +278,7 @@ func validInstallationState(state InstallationState) bool {
 func validResourceKind(kind ResourceKind) bool {
 	switch kind {
 	case ResourceFile,
+		ResourceDirectory,
 		ResourceTrustAnchor,
 		ResourceDockerNetwork,
 		ResourceDockerVolume,
