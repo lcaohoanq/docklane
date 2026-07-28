@@ -31,6 +31,7 @@ type InstallationPaths struct {
 	StateDirectory       string `json:"stateDirectory"`
 	DataDirectory        string `json:"dataDirectory"`
 	TraefikDirectory     string `json:"traefikDirectory"`
+	BackupDirectory      string `json:"backupDirectory"`
 	TraefikDynamicConfig string `json:"traefikDynamicConfig"`
 	DashboardPassword    string `json:"dashboardPassword"`
 	DashboardUsers       string `json:"dashboardUsers"`
@@ -119,6 +120,7 @@ func (spec InstallationSpecification) Validate() error {
 		"state directory":        spec.Paths.StateDirectory,
 		"data directory":         spec.Paths.DataDirectory,
 		"Traefik directory":      spec.Paths.TraefikDirectory,
+		"backup directory":       spec.Paths.BackupDirectory,
 		"Traefik dynamic config": spec.Paths.TraefikDynamicConfig,
 		"dashboard password":     spec.Paths.DashboardPassword,
 		"dashboard users":        spec.Paths.DashboardUsers,
@@ -144,6 +146,7 @@ func (spec InstallationSpecification) Validate() error {
 	if spec.Paths.StateDirectory == string(filepath.Separator) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DataDirectory) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.TraefikDirectory) ||
+		!pathWithin(spec.Paths.StateDirectory, spec.Paths.BackupDirectory) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DashboardPassword) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DashboardUsers) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.PKI.RootCertificatePath) ||

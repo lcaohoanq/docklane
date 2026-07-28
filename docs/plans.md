@@ -321,10 +321,16 @@ safe and repeatable.
   installation-bound private cache with strict descriptor/inventory
   validation, effective-user ownership checks, restart rehydration, and
   write-ahead terminal cleanup.
+- [X] Record managed state directories explicitly and add journal-backed,
+  atomic no-replace creation with ownership markers, restart reconstruction,
+  drift-safe removal, and nested reverse cleanup.
+- [X] Enforce complete managed workflow composition in dependency order:
+  directories, files, host activation, Docker runtime, then verification.
+  Integration coverage proves cached-file rollback precedes directory cleanup.
 - [ ] Add `docklane uninstall`.
 - [-] Record every file, trust entry, Docker network, container, and service
-  created by Docklane. File and trust-anchor ownership are complete; Docker,
-  directory, resolver behavior, and service observations remain.
+  created by Docklane. File, directory, and trust-anchor ownership are
+  complete; Docker, resolver behavior, and service observations remain.
 - [X] Add read-only preflight checks for ports 80/443, Docker access and proxy
   network compatibility, dnsmasq, resolver conflicts, manifest state, and
   existing Traefik.

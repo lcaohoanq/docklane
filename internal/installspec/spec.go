@@ -44,6 +44,7 @@ func Build(config Config) (domain.InstallationSpecification, error) {
 			StateDirectory:       state,
 			DataDirectory:        data,
 			TraefikDirectory:     traefikDirectory,
+			BackupDirectory:      filepath.Join(state, "backups"),
 			TraefikDynamicConfig: filepath.Join(traefikDirectory, "dynamic", "tls.yml"),
 			DashboardPassword:    filepath.Join(state, "secrets", "traefik-dashboard-password"),
 			DashboardUsers:       filepath.Join(state, "secrets", "traefik-dashboard-users"),

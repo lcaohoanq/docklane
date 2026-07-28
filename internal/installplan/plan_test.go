@@ -268,6 +268,22 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 		domain.ResourceManaged,
 		domain.RollbackRestore,
 	)
+	for _, directoryID := range []string{
+		"docklane-traefik-directory",
+		"docklane-traefik-dynamic-directory",
+		"docklane-traefik-certs-directory",
+		"docklane-pki-directory",
+		"docklane-secrets-directory",
+		"docklane-backup-directory",
+	} {
+		assertResource(
+			t,
+			plan,
+			directoryID,
+			domain.ResourceManaged,
+			domain.RollbackRemove,
+		)
+	}
 }
 
 func TestBuildHybridPlanDoesNotManageAdoptedFileArtifacts(t *testing.T) {

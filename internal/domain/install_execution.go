@@ -22,10 +22,11 @@ const (
 type InstallationExecutionStage string
 
 const (
-	ExecutionFiles  InstallationExecutionStage = "files"
-	ExecutionHost   InstallationExecutionStage = "host"
-	ExecutionDocker InstallationExecutionStage = "docker"
-	ExecutionVerify InstallationExecutionStage = "verify"
+	ExecutionDirectories InstallationExecutionStage = "directories"
+	ExecutionFiles       InstallationExecutionStage = "files"
+	ExecutionHost        InstallationExecutionStage = "host"
+	ExecutionDocker      InstallationExecutionStage = "docker"
+	ExecutionVerify      InstallationExecutionStage = "verify"
 )
 
 type InstallationOperationState string
@@ -235,10 +236,12 @@ func (operation InstallationExecutionOperation) validate() error {
 	if operation.IntentMode > 0o777 {
 		return fmt.Errorf("intent mode must not exceed 0777")
 	}
-	if operation.Stage == ExecutionFiles &&
+	if (operation.Stage == ExecutionDirectories ||
+		operation.Stage == ExecutionFiles) &&
 		(operation.IntentFingerprint == "" || operation.IntentMode == 0) {
 		return fmt.Errorf(
-			"file operation requires intent fingerprint and mode",
+			"%s operation requires intent fingerprint and mode",
+			operation.Stage,
 		)
 	}
 	if !validOperationState(operation.State) {
@@ -318,7 +321,11 @@ func validExecutionPhase(phase InstallationExecutionPhase) bool {
 
 func validExecutionStage(stage InstallationExecutionStage) bool {
 	switch stage {
-	case ExecutionFiles, ExecutionHost, ExecutionDocker, ExecutionVerify:
+	case ExecutionDirectories,
+		ExecutionFiles,
+		ExecutionHost,
+		ExecutionDocker,
+		ExecutionVerify:
 		return true
 	default:
 		return false

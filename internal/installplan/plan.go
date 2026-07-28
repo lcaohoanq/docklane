@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/installartifacts"
@@ -77,6 +78,13 @@ func Build(
 		if err := domain.ValidateInstallationArtifacts(plan.ManagedArtifacts); err != nil {
 			return domain.InstallationPlan{}, err
 		}
+		if err := addManagedDirectoryResources(
+			&plan,
+			specification,
+			plan.ManagedArtifacts,
+		); err != nil {
+			return domain.InstallationPlan{}, err
+		}
 		if err := addManagedArtifactResources(
 			&plan,
 			plan.ManagedArtifacts,
@@ -106,6 +114,110 @@ func Build(
 	}
 	plan.Token = token
 	return plan, nil
+}
+
+func addManagedDirectoryResources(
+	plan *domain.InstallationPlan,
+	specification domain.InstallationSpecification,
+	artifacts []domain.InstallationArtifact,
+) error {
+	hasFiles := false
+	needed := map[string]bool{}
+	state := specification.Paths.StateDirectory
+	for _, artifact := range artifacts {
+		if artifact.Kind == domain.ArtifactContainerSpec {
+			continue
+		}
+		hasFiles = true
+		parent := filepath.Dir(artifact.Target)
+		for parent != state && pathBelow(state, parent) {
+			needed[parent] = true
+			parent = filepath.Dir(parent)
+		}
+	}
+	if !hasFiles {
+		return nil
+	}
+	needed[specification.Paths.BackupDirectory] = true
+	candidates := []struct {
+		id     string
+		target string
+	}{
+		{"docklane-traefik-directory", specification.Paths.TraefikDirectory},
+		{
+			"docklane-traefik-dynamic-directory",
+			filepath.Dir(specification.Paths.TraefikDynamicConfig),
+		},
+		{
+			"docklane-traefik-certs-directory",
+			filepath.Dir(specification.PKI.LeafCertificatePath),
+		},
+		{
+			"docklane-pki-directory",
+			filepath.Dir(specification.PKI.RootPrivateKeyPath),
+		},
+		{
+			"docklane-secrets-directory",
+			filepath.Dir(specification.Paths.DashboardPassword),
+		},
+		{"docklane-backup-directory", specification.Paths.BackupDirectory},
+	}
+	known := map[string]bool{}
+	for _, candidate := range candidates {
+		known[candidate.target] = true
+		if !needed[candidate.target] {
+			continue
+		}
+		if resourceTargetExists(
+			plan.Resources,
+			domain.ResourceDirectory,
+			candidate.target,
+		) {
+			continue
+		}
+		addResource(
+			plan,
+			domain.InstallationResource{
+				ID:        candidate.id,
+				Kind:      domain.ResourceDirectory,
+				Target:    candidate.target,
+				Ownership: domain.ResourceManaged,
+				State:     domain.ResourcePlanned,
+				Rollback:  domain.RollbackRemove,
+			},
+			"Managed file parent must have explicit directory ownership.",
+		)
+	}
+	for directory := range needed {
+		if !known[directory] {
+			return fmt.Errorf(
+				"managed state directory %s has no ownership resource",
+				directory,
+			)
+		}
+	}
+	return nil
+}
+
+func pathBelow(parent string, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	return err == nil &&
+		relative != "." &&
+		relative != ".." &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func resourceTargetExists(
+	resources []domain.InstallationResource,
+	kind domain.ResourceKind,
+	target string,
+) bool {
+	for _, resource := range resources {
+		if resource.Kind == kind && resource.Target == target {
+			return true
+		}
+	}
+	return false
 }
 
 func selectManagedArtifacts(

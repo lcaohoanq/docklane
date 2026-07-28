@@ -433,6 +433,33 @@ clears that clone at the terminal boundary. A restarted workflow must
 rehydrate the exact same bytes: the journal rejects a changed fingerprint
 before another file is touched.
 
+Managed parent directories are explicit resources rather than side effects of
+file creation. The plan records the Traefik, dynamic configuration,
+certificate, PKI, secret, and backup directories independently. Each new
+directory is published with a private Docklane ownership marker by an atomic
+no-replace rename, so an unmarked pre-existing path is a conflict instead of
+being silently adopted. Inspection binds the marker fingerprint and mode into
+the execution journal and can reconstruct publication after a crash.
+
+Directory rollback removes the ownership marker and then the directory only
+when no other entries remain. It refuses symbolic links, wrong ownership,
+changed modes or markers, and non-empty directories. Recovery also handles a
+crash between marker removal and directory removal. Nested directories are
+created parent-first and removed child-first.
+
+The managed workflow composer enforces one complete operation for every
+managed resource and this stage order:
+
+```text
+directories → files → host activation → Docker runtime → verification
+```
+
+Files below a managed directory tree require their direct parent to be an
+explicit directory step. Rollback uses the exact reverse order, ensuring files
+and runtime consumers are removed before their directories. The directory and
+cached-file adapters are integration-tested through this composition boundary;
+host activation, Docker runtime, and command wiring remain to be connected.
+
 The private material cache now provides that rehydration boundary. Before any
 target file step, selected materialization is published atomically under:
 
