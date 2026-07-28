@@ -106,6 +106,7 @@ type InstallationManifest struct {
 	Settings             InstallationSettings       `json:"settings"`
 	ManagedSpecification *InstallationSpecification `json:"managedSpecification,omitempty"`
 	ManagedArtifacts     []InstallationArtifact     `json:"managedArtifacts,omitempty"`
+	Execution            *InstallationExecution     `json:"execution,omitempty"`
 	Resources            []InstallationResource     `json:"resources"`
 }
 
@@ -184,6 +185,28 @@ func (manifest InstallationManifest) Validate() error {
 		}
 		seenTargets[targetKey] = true
 	}
+	if manifest.Execution != nil {
+		if manifest.ManagedSpecification == nil {
+			return fmt.Errorf("execution journal requires a managed specification")
+		}
+		if err := manifest.Execution.Validate(manifest.Resources); err != nil {
+			return fmt.Errorf("execution journal: %w", err)
+		}
+		expectedState := map[InstallationExecutionPhase]InstallationState{
+			ExecutionForward:    InstallationApplying,
+			ExecutionRollback:   InstallationRollingBack,
+			ExecutionComplete:   InstallationInstalled,
+			ExecutionRolledBack: InstallationRolledBack,
+			ExecutionFailed:     InstallationFailed,
+		}[manifest.Execution.Phase]
+		if manifest.State != expectedState {
+			return fmt.Errorf(
+				"execution phase %s requires installation state %s",
+				manifest.Execution.Phase,
+				expectedState,
+			)
+		}
+	}
 	if manifest.State == InstallationInstalled {
 		if len(manifest.Resources) == 0 {
 			return fmt.Errorf("installed manifest must contain resources")
@@ -196,6 +219,12 @@ func (manifest InstallationManifest) Validate() error {
 				)
 			}
 		}
+		if manifest.Execution != nil &&
+			manifest.Execution.Phase != ExecutionComplete {
+			return fmt.Errorf(
+				"installed manifest execution phase must be complete",
+			)
+		}
 	}
 	if manifest.State == InstallationRolledBack {
 		for _, resource := range manifest.Resources {
@@ -206,6 +235,12 @@ func (manifest InstallationManifest) Validate() error {
 					resource.ID,
 				)
 			}
+		}
+		if manifest.Execution != nil &&
+			manifest.Execution.Phase != ExecutionRolledBack {
+			return fmt.Errorf(
+				"rolled-back manifest execution phase must be rolled_back",
+			)
 		}
 	}
 	return nil

@@ -311,6 +311,9 @@ safe and repeatable.
 - [X] Add transactional dnsmasq validation, trust refresh/verification,
   service-state restoration, resolver cache flush, DNS verification, drift
   refusal, and failure rollback.
+- [X] Add a validated per-resource execution journal and recovery coordinator
+  with write-ahead apply/rollback checkpoints, exact workflow matching,
+  generation-conflict refusal, and both crash windows covered by tests.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.
@@ -326,7 +329,9 @@ safe and repeatable.
 - [ ] Add `docklane app enable` for opt-in network attachment and routing.
 - [ ] Add `docklane app disable` with safe detach behavior.
 - [ ] Export copy-paste Compose guidance without editing user files.
-- [ ] Add interrupted-install recovery.
+- [-] Add interrupted-install recovery. The generic journal and recovery state
+  machine are complete; concrete managed resource adapters and command resume
+  wiring remain.
 - [ ] Add upgrade and schema migration flow.
 - [ ] Exercise install/rollback in a disposable VM before host rollout.
 

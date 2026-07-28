@@ -104,6 +104,33 @@ rollback, while a failed file restore blocks service reload. This transaction
 also remains disconnected until each successful step and rollback contract is
 journaled durably.
 
+## Managed execution journal
+
+A managed manifest may contain an `execution` object with its own schema
+version, phase, and immutable ordered operation list. Every managed resource is
+covered exactly once; adopted resources never enter this mutation journal.
+Each operation binds its resource ID and target to a stage and records the
+attempt count plus a non-secret observation such as an external object ID,
+content fingerprint, backup contract, or inspected-state fingerprint.
+
+Before an external apply, the next manifest generation records `applying`.
+After successful inspection it records `applied`. Rollback similarly records
+`rolling_back` before mutation and `rolled_back` after inspection. Recovery
+handles the two ambiguous crash windows by inspecting first:
+
+- already applied advances without creating again;
+- absent after interrupted apply may be retried behind a new checkpoint;
+- already rolled back advances without deleting or restoring again;
+- ownership or configuration drift records `failed` and performs no further
+  mutation.
+
+All compare-and-swap generation conflicts stop before the associated mutation.
+An apply error is also inspected because the external API may have completed
+the action before its response was lost. Any observed success is journaled and
+then included in reverse rollback. This coordinator is currently an
+independently tested composition boundary; managed command wiring still waits
+for concrete operation adapters.
+
 ## Reverse planning
 
 `docklane uninstall --dry-run` accepts only an `installed` manifest and walks

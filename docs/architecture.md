@@ -459,6 +459,30 @@ the restored dnsmasq configuration, and restores resolver then dnsmasq to their
 exact prior active/inactive states. A failed file restore prevents any service
 reload, and partial rollback steps remain retryable.
 
+Managed transaction composition uses an optional schema-v1 execution journal
+inside the installation manifest. Each managed resource has exactly one
+ordered operation recording its stage, target, attempt count, external
+observation, and one of:
+
+```text
+pending → applying → applied → rolling_back → rolled_back
+                         ↘ failed ↗
+```
+
+`applying` and `rolling_back` are persisted before calling an external
+executor. If the process stops after the external mutation but before the next
+manifest generation is saved, recovery inspects the target against the
+journaled contract. It advances an already-completed step, retries only when
+inspection proves the mutation absent, and records a conflict without further
+mutation when ownership or configuration drift is observed. Rollback walks the
+same immutable operation list in reverse. The operation list must match the
+recovering workflow exactly, preventing a changed binary or specification from
+guessing how to resume old state.
+
+The composition coordinator and its crash-window recovery are implemented and
+tested independently. Concrete per-resource adapters are not connected to
+`docklane install` yet, so managed install remains deliberately blocked.
+
 `docklane install --token TOKEN` always reruns preflight and reconstructs the
 plan. A constant-time exact comparison binds apply to the machine state the
 user reviewed. The adoption executor refuses incomplete, blocked, stale, or

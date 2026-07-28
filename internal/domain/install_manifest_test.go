@@ -134,3 +134,92 @@ func TestInstallationResourceAcceptsRecordedRestoreBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInstallationExecutionValidation(t *testing.T) {
+	resources := []InstallationResource{{
+		ID:        "proxy-network",
+		Kind:      ResourceDockerNetwork,
+		Target:    "proxy",
+		Ownership: ResourceManaged,
+		State:     ResourcePlanned,
+		Rollback:  RollbackRemove,
+	}}
+	valid := InstallationExecution{
+		SchemaVersion: InstallationExecutionSchemaVersion,
+		Phase:         ExecutionForward,
+		Operations: []InstallationExecutionOperation{{
+			ID:         "create-proxy-network",
+			ResourceID: "proxy-network",
+			Target:     "proxy",
+			Stage:      ExecutionDocker,
+			State:      OperationPending,
+		}},
+	}
+	if err := valid.Validate(resources); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		change   func(*InstallationExecution)
+		contains string
+	}{
+		{
+			name: "duplicate operation",
+			change: func(execution *InstallationExecution) {
+				execution.Operations = append(
+					execution.Operations,
+					execution.Operations[0],
+				)
+			},
+			contains: "duplicate operation ID",
+		},
+		{
+			name: "missing observation",
+			change: func(execution *InstallationExecution) {
+				execution.Operations[0].State = OperationApplied
+				execution.Operations[0].Attempt = 1
+			},
+			contains: "invalid checkpoint data",
+		},
+		{
+			name: "complete pending operation",
+			change: func(execution *InstallationExecution) {
+				execution.Phase = ExecutionComplete
+			},
+			contains: "requires applied operations",
+		},
+		{
+			name: "rollback state in forward phase",
+			change: func(execution *InstallationExecution) {
+				execution.Operations[0].State = OperationRollingBack
+				execution.Operations[0].Attempt = 1
+				execution.Operations[0].Observation = &InstallationObservation{}
+			},
+			contains: "cannot be rolling_back",
+		},
+		{
+			name: "oversized error",
+			change: func(execution *InstallationExecution) {
+				execution.Phase = ExecutionFailed
+				execution.Operations[0].State = OperationFailed
+				execution.Operations[0].Attempt = 1
+				execution.Operations[0].ErrorMessage = strings.Repeat("x", 4097)
+			},
+			contains: "exceeds 4096",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			execution := valid
+			execution.Operations = append(
+				[]InstallationExecutionOperation(nil),
+				valid.Operations...,
+			)
+			test.change(&execution)
+			err := execution.Validate(resources)
+			if err == nil || !strings.Contains(err.Error(), test.contains) {
+				t.Fatalf("error = %v, want containing %q", err, test.contains)
+			}
+		})
+	}
+}
