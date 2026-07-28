@@ -109,6 +109,21 @@ func (c *Client) ProbeUpstream(
 	return result, err
 }
 
+func (c *Client) InspectTraefikRuntime(
+	ctx context.Context,
+	id int64,
+) (domain.TraefikRouteRuntime, error) {
+	var result domain.TraefikRouteRuntime
+	err := c.do(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/routes/%d/traefik-runtime", id),
+		nil,
+		&result,
+	)
+	return result, err
+}
+
 func (c *Client) CreateRoute(ctx context.Context, route domain.Route) (domain.Route, error) {
 	var created domain.Route
 	err := c.do(ctx, http.MethodPost, "/api/v1/routes", writableRoute(route), &created)

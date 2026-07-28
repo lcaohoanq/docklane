@@ -23,6 +23,7 @@ type Controller interface {
 	Health(context.Context) (domain.ControllerHealth, error)
 	ListContainersWithNetworkAliases(context.Context) ([]docker.Container, error)
 	ListRoutes(context.Context) (client.Routes, error)
+	InspectTraefikRuntime(context.Context, int64) (domain.TraefikRouteRuntime, error)
 	ProbeUpstream(context.Context, int64) (domain.UpstreamProbe, error)
 }
 
@@ -249,6 +250,8 @@ func Run(
 		report.addWorkloadChecks(route, containers, health.ProxyNetwork)
 	}
 	if route.Observed.State == domain.RouteStateReady {
+		runtime, runtimeErr := controller.InspectTraefikRuntime(ctx, route.ID)
+		report.addTraefikRuntimeChecks(runtime, runtimeErr)
 		result, probeErr := controller.ProbeUpstream(ctx, route.ID)
 		report.add(upstreamProbeCheck(result, probeErr))
 	}
@@ -482,6 +485,120 @@ func (report *diagnosticReport) addHostChecks(
 			fmt.Sprintf("HTTPS returned %d", statusCode),
 		))
 	}
+}
+
+func (report *diagnosticReport) addTraefikRuntimeChecks(
+	runtime domain.TraefikRouteRuntime,
+	err error,
+) {
+	if err != nil {
+		report.add(warn(
+			"traefik-runtime",
+			"traefik",
+			"Traefik runtime inspection is unavailable",
+			"Verify the dashboard credential, local CA, and private Traefik API connection.",
+		))
+		return
+	}
+	httpProvider := false
+	for _, provider := range runtime.Providers {
+		if strings.EqualFold(provider, "http") {
+			httpProvider = true
+			break
+		}
+	}
+	if httpProvider {
+		report.add(pass(
+			"traefik-provider-runtime",
+			"traefik",
+			"Traefik has loaded the HTTP provider",
+		))
+	} else {
+		report.add(fail(
+			"traefik-provider-runtime",
+			"traefik",
+			"Traefik has not loaded the HTTP provider",
+			"",
+			"Verify Traefik's providers.http endpoint and inspect its logs.",
+		))
+	}
+	report.add(traefikComponentCheck("router", runtime.Router))
+	report.add(traefikServiceCheck(runtime))
+}
+
+func traefikComponentCheck(
+	kind string,
+	component domain.TraefikRuntimeComponent,
+) domain.DiagnosticCheck {
+	id := "traefik-" + kind + "-runtime"
+	if !component.Present {
+		return fail(
+			id,
+			"traefik",
+			fmt.Sprintf("Traefik %s %s is missing", kind, component.Name),
+			"",
+			"Wait for the HTTP provider poll, then inspect Traefik logs and provider status.",
+		)
+	}
+	if !strings.EqualFold(component.Status, "enabled") ||
+		len(component.Errors) > 0 {
+		return fail(
+			id,
+			"traefik",
+			fmt.Sprintf(
+				"Traefik %s %s is %s",
+				kind,
+				component.Name,
+				component.Status,
+			),
+			strings.Join(component.Errors, "; "),
+			"Inspect the runtime component error in the Traefik dashboard.",
+		)
+	}
+	return pass(
+		id,
+		"traefik",
+		fmt.Sprintf("Traefik %s %s is enabled", kind, component.Name),
+	)
+}
+
+func traefikServiceCheck(
+	runtime domain.TraefikRouteRuntime,
+) domain.DiagnosticCheck {
+	component := traefikComponentCheck("service", runtime.Service)
+	if component.Status == domain.DiagnosticFail {
+		return component
+	}
+	if len(runtime.ServerStatus) == 0 {
+		return fail(
+			"traefik-service-runtime",
+			"traefik",
+			fmt.Sprintf("Traefik service %s has no backends", runtime.Service.Name),
+			"",
+			"Inspect the HTTP-provider service definition and route reconciliation.",
+		)
+	}
+	for server, status := range runtime.ServerStatus {
+		if !strings.EqualFold(status, "up") {
+			return fail(
+				"traefik-service-runtime",
+				"traefik",
+				fmt.Sprintf(
+					"Traefik reports backend %s as %s",
+					server,
+					status,
+				),
+				"",
+				"Verify the application listener, internal port, and proxy network.",
+			)
+		}
+	}
+	component.Summary = fmt.Sprintf(
+		"Traefik service %s is enabled with %d backend(s) UP",
+		runtime.Service.Name,
+		len(runtime.ServerStatus),
+	)
+	return component
 }
 
 func upstreamProbeCheck(

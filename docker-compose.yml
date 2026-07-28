@@ -13,6 +13,11 @@ services:
       - --docker-socket=/var/run/docker.sock
       - --proxy-network=proxy
       - --probe-socket=/run/docklane-probe/probe.sock
+      - --traefik-api-url=https://dashboard.lab
+      - --traefik-api-address=traefik:443
+      - --traefik-api-username=admin
+      - --traefik-api-password-file=/run/secrets/traefik-dashboard-password
+      - --traefik-api-ca-file=/run/secrets/traefik-local-ca.crt
       - --manage-network-attachments
       - --reconcile-interval=5s
     ports:
@@ -21,6 +26,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./data:/data
       - probe-run:/run/docklane-probe
+      - ./data/traefik-dashboard-password:/run/secrets/traefik-dashboard-password:ro
+      - ${DOCKLANE_TRAEFIK_CA_FILE:-/etc/ca-certificates/trust-source/anchors/traefik-lab-root-ca.crt}:/run/secrets/traefik-local-ca.crt:ro
     networks:
       - control
     depends_on:

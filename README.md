@@ -38,6 +38,8 @@ The current integrated checkpoint additionally provides:
   snapshot and provider source/error reporting in controller health;
 - a restricted proxy-network-only probe sidecar for direct upstream
   reachability diagnostics over a shared Unix socket;
+- authenticated, route-scoped Traefik runtime inspection for provider, router,
+  service, and backend status;
 - a managed Docklane container on a private `docklane-control` network shared
   only with Traefik;
 - Traefik HTTP-provider polling every two seconds;
@@ -76,9 +78,17 @@ For isolated source development:
 For the integrated service:
 
 ```sh
+mkdir -p data
+printf '%s' '<Traefik-dashboard-password>' > data/traefik-dashboard-password
+chmod 600 data/traefik-dashboard-password
 docker compose up -d
 docker compose ps
 ```
+
+The password file is runtime-only and ignored by Git. The integrated Compose
+configuration trusts the host's local Traefik CA and connects directly to
+Traefik over the private control network. Set `DOCKLANE_TRAEFIK_CA_FILE` when
+the CA certificate is installed at a different host path.
 
 Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 
@@ -111,6 +121,8 @@ network alias, local DNS, TCP 80/443, HTTP-to-HTTPS redirect, trusted
 certificate/SAN/expiry, and final HTTPS response. The probes are read-only and
 use the relevant perspective: browser-facing checks run from the CLI machine,
 while direct upstream checks run from the shared proxy network.
+Traefik runtime checks use its authenticated API to verify that the HTTP
+provider has produced the expected router, service, and `UP` backend.
 
 Current API endpoints:
 
@@ -122,6 +134,7 @@ Current API endpoints:
 - `POST /api/v1/routes`
 - `GET /api/v1/routes/{id}`
 - `GET /api/v1/routes/{id}/upstream-probe`
+- `GET /api/v1/routes/{id}/traefik-runtime`
 - `PUT /api/v1/routes/{id}`
 - `DELETE /api/v1/routes/{id}`
 - `GET /internal/traefik`

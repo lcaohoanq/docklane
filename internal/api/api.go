@@ -25,6 +25,7 @@ type API struct {
 	discovery  docker.Discovery
 	reconciler *reconcile.Reconciler
 	upstream   UpstreamProber
+	runtime    TraefikRuntimeInspector
 
 	providerMu     sync.RWMutex
 	providerStatus domain.ProviderStatus
@@ -34,11 +35,21 @@ type UpstreamProber interface {
 	Probe(context.Context, string) (domain.UpstreamProbe, error)
 }
 
+type TraefikRuntimeInspector interface {
+	InspectRoute(context.Context, string) (domain.TraefikRouteRuntime, error)
+}
+
 type Option func(*API)
 
 func WithUpstreamProber(prober UpstreamProber) Option {
 	return func(api *API) {
 		api.upstream = prober
+	}
+}
+
+func WithTraefikRuntimeInspector(inspector TraefikRuntimeInspector) Option {
+	return func(api *API) {
+		api.runtime = inspector
 	}
 }
 
@@ -72,9 +83,46 @@ func New(
 	mux.HandleFunc("PUT /api/v1/routes/{id}", api.updateRoute)
 	mux.HandleFunc("DELETE /api/v1/routes/{id}", api.deleteRoute)
 	mux.HandleFunc("GET /api/v1/routes/{id}/upstream-probe", api.upstreamProbe)
+	mux.HandleFunc("GET /api/v1/routes/{id}/traefik-runtime", api.traefikRuntime)
 	mux.HandleFunc("GET /internal/traefik", api.traefik)
 	mux.Handle("/", webui.Handler())
 	return requestLog(mux)
+}
+
+func (a *API) traefikRuntime(response http.ResponseWriter, request *http.Request) {
+	id, err := routeID(request)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	route, err := a.store.GetRoute(request.Context(), id)
+	if err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	route = a.reconciler.Enrich([]domain.Route{route})[0]
+	if route.Observed.State != domain.RouteStateReady {
+		writeError(
+			response,
+			http.StatusConflict,
+			fmt.Errorf("route is not ready for Traefik inspection: %s", route.Observed.State),
+		)
+		return
+	}
+	if a.runtime == nil {
+		writeError(
+			response,
+			http.StatusServiceUnavailable,
+			errors.New("Traefik runtime inspection is not configured"),
+		)
+		return
+	}
+	result, err := a.runtime.InspectRoute(request.Context(), route.Name)
+	if err != nil {
+		writeError(response, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, result)
 }
 
 func (a *API) upstreamProbe(response http.ResponseWriter, request *http.Request) {

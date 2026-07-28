@@ -44,6 +44,19 @@ type fakeUpstreamProber struct {
 	url    string
 }
 
+type fakeRuntimeInspector struct {
+	result    domain.TraefikRouteRuntime
+	routeName string
+}
+
+func (inspector *fakeRuntimeInspector) InspectRoute(
+	_ context.Context,
+	routeName string,
+) (domain.TraefikRouteRuntime, error) {
+	inspector.routeName = routeName
+	return inspector.result, nil
+}
+
 func (prober *fakeUpstreamProber) Probe(
 	_ context.Context,
 	upstreamURL string,
@@ -311,6 +324,69 @@ func TestRouteUpstreamProbeUsesObservedURL(t *testing.T) {
 	}
 	if prober.url != "http://draw:80" {
 		t.Fatalf("probed URL = %q", prober.url)
+	}
+}
+
+func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	route, err := repository.CreateRoute(context.Background(), domain.Route{
+		Name:     "draw",
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery := fakeDiscovery{containers: []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"proxy"},
+	}}}
+	reconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithBaseDomain("docker.home.arpa"),
+		reconcile.WithNetworkAttachments("proxy", nil),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	inspector := &fakeRuntimeInspector{result: domain.TraefikRouteRuntime{
+		Providers: []string{"HTTP"},
+	}}
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+		WithTraefikRuntimeInspector(inspector),
+	)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf("/api/v1/routes/%d/traefik-runtime", route.ID),
+			nil,
+		),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if inspector.routeName != "draw" {
+		t.Fatalf("inspected route = %q", inspector.routeName)
 	}
 }
 

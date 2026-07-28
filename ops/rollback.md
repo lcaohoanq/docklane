@@ -45,6 +45,12 @@ removed after both Docklane services are stopped:
 docker volume rm docklane-probe-run
 ```
 
+Running without the `--traefik-api-*` settings also preserves routing; doctor
+then reports Traefik runtime inspection as unavailable. After the integrated
+service is stopped, remove `data/traefik-dashboard-password` if Docklane will
+no longer use that credential. The file is ignored by Git and its removal does
+not affect the Traefik dashboard account.
+
 After both Compose projects no longer reference it, the private control
 network can be removed with:
 

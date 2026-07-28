@@ -32,7 +32,7 @@ A task is complete only when:
 | 3     | Managed Docker network and Traefik integration | In progress                    |
 | 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
 | 5     | Installer, migration, and rollback             | Planned                        |
-| 6     | Diagnostics and observability                  | Planned                        |
+| 6     | Diagnostics and observability                  | In progress                    |
 | 7     | UX/DX hardening and first release              | Planned                        |
 
 ## Phase 0 — Product foundation
@@ -313,7 +313,7 @@ Goal: explain failures by layer instead of presenting a generic browser error.
 - [X] Check DNS resolution.
 - [X] Check TCP listeners on ports 80 and 443.
 - [X] Check certificate chain, trust, expiry, and SAN match.
-- [ ] Check Traefik router and provider state.
+- [X] Check Traefik router and provider state.
 - [X] Check workload selector resolution.
 - [X] Check shared-network membership and alias resolution.
 - [X] Check upstream port reachability from Traefik's network.
@@ -325,7 +325,7 @@ Goal: explain failures by layer instead of presenting a generic browser error.
 
 Acceptance criteria:
 
-- [ ] DNS, TLS, Traefik 404, network, and upstream failures are distinguishable.
+- [X] DNS, TLS, Traefik 404, network, and upstream failures are distinguishable.
 - [X] The Excalidraw route can be diagnosed end to end with one command.
 - [X] Diagnostics are read-only unless an explicit repair command is invoked.
 

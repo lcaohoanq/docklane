@@ -17,8 +17,17 @@ type fakeController struct {
 	healthErr  error
 	containers []docker.Container
 	routes     client.Routes
+	runtime    domain.TraefikRouteRuntime
+	runtimeErr error
 	probe      domain.UpstreamProbe
 	probeErr   error
+}
+
+func (controller fakeController) InspectTraefikRuntime(
+	context.Context,
+	int64,
+) (domain.TraefikRouteRuntime, error) {
+	return controller.runtime, controller.runtimeErr
 }
 
 func (controller fakeController) Health(
@@ -121,6 +130,22 @@ func TestRunHealthyRoute(t *testing.T) {
 				BaseDomain: "docker.home.arpa",
 				Routes:     []domain.Route{route},
 			},
+			runtime: domain.TraefikRouteRuntime{
+				Providers: []string{"Docker", "File", "HTTP"},
+				Router: domain.TraefikRuntimeComponent{
+					Name:    "draw@http",
+					Present: true,
+					Status:  "enabled",
+				},
+				Service: domain.TraefikRuntimeComponent{
+					Name:    "draw@http",
+					Present: true,
+					Status:  "enabled",
+				},
+				ServerStatus: map[string]string{
+					"http://docklane-route-7:80": "UP",
+				},
+			},
 			probe: domain.UpstreamProbe{
 				Reachable:  true,
 				HTTPStatus: 200,
@@ -145,6 +170,44 @@ func TestRunHealthyRoute(t *testing.T) {
 			t.Fatalf("check = %#v", check)
 		}
 	}
+}
+
+func TestTraefikRuntimeChecksExplainMissingRouter(t *testing.T) {
+	report := diagnosticReport{
+		Status: domain.DiagnosticPass,
+		Checks: []domain.DiagnosticCheck{},
+	}
+	report.addTraefikRuntimeChecks(domain.TraefikRouteRuntime{
+		Providers: []string{"Docker", "File"},
+		Router: domain.TraefikRuntimeComponent{
+			Name: "draw@http",
+		},
+		Service: domain.TraefikRuntimeComponent{
+			Name: "draw@http",
+		},
+	}, nil)
+	result := domain.DiagnosticReport(report)
+	assertCheck(
+		t,
+		result,
+		"traefik-provider-runtime",
+		domain.DiagnosticFail,
+		"not loaded",
+	)
+	assertCheck(
+		t,
+		result,
+		"traefik-router-runtime",
+		domain.DiagnosticFail,
+		"is missing",
+	)
+	assertCheck(
+		t,
+		result,
+		"traefik-service-runtime",
+		domain.DiagnosticFail,
+		"is missing",
+	)
 }
 
 func TestRunExplainsUnresolvedRouteAndDNSFailure(t *testing.T) {

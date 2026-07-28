@@ -14,6 +14,11 @@ type Config struct {
 	DockerSocket   string
 	ProxyNetwork   string
 	ProbeSocket    string
+	TraefikAPIURL  string
+	TraefikAPIAddr string
+	TraefikAPIUser string
+	TraefikAPIPass string
+	TraefikAPICA   string
 	ManageNetworks bool
 	ReconcileEvery time.Duration
 }
@@ -30,6 +35,22 @@ func (c Config) Validate() error {
 	}
 	if c.ManageNetworks && strings.TrimSpace(c.ProxyNetwork) == "" {
 		return fmt.Errorf("proxy network is required when network attachment is enabled")
+	}
+	traefikRuntimeValues := []string{
+		c.TraefikAPIURL,
+		c.TraefikAPIAddr,
+		c.TraefikAPIUser,
+		c.TraefikAPIPass,
+		c.TraefikAPICA,
+	}
+	configured := 0
+	for _, value := range traefikRuntimeValues {
+		if strings.TrimSpace(value) != "" {
+			configured++
+		}
+	}
+	if configured != 0 && configured != len(traefikRuntimeValues) {
+		return fmt.Errorf("all Traefik runtime API settings must be configured together")
 	}
 	if strings.TrimSpace(c.BaseDomain) == "" || strings.ContainsAny(c.BaseDomain, "/: ") {
 		return fmt.Errorf("invalid base domain %q", c.BaseDomain)

@@ -97,6 +97,10 @@ desired routes and observed Docker/network state. The CLI performs DNS, TCP,
 TLS, redirect, and HTTPS probes from the user's machine, matching the browser's
 resolver and trust store. Diagnostic commands use only GET APIs and network
 probes; repair remains a separate, explicitly mutating workflow.
+The controller also reads Traefik's authenticated API over the private control
+network and returns only route-scoped provider, router, service, and backend
+status. Dashboard credentials and raw runtime configuration never cross the
+Docklane administration API.
 Network aliases are hydrated only when diagnostics explicitly request them;
 ordinary UI discovery does not perform per-container Docker inspect calls.
 
@@ -432,6 +436,7 @@ Current endpoints:
 | `POST` | `/api/v1/routes` | Create a route |
 | `GET` | `/api/v1/routes/{id}` | Read a route and its observed state |
 | `GET` | `/api/v1/routes/{id}/upstream-probe` | Probe the reconciled upstream from the proxy network |
+| `GET` | `/api/v1/routes/{id}/traefik-runtime` | Inspect summarized provider/router/service runtime state |
 | `PUT` | `/api/v1/routes/{id}` | Revision-checked replacement of writable route configuration |
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |
@@ -454,6 +459,9 @@ Docklane is local-only, but local-only does not mean permission-free.
   minimum practical privileges and never exposes that capability remotely.
 - Administrative API access is limited to loopback or a Unix socket.
 - The Traefik provider endpoint is reachable only on a private Docker network.
+- Traefik runtime inspection reuses the authenticated HTTPS dashboard API,
+  connects directly over the private control network, and trusts an explicitly
+  mounted local CA. Its password is a mode-`0600`, Git-ignored runtime file.
 - The upstream probe sidecar joins only the proxy network, has no Docker
   socket or published port, and accepts route-scoped probes only through a
   Unix socket shared with the controller.
@@ -503,6 +511,7 @@ docklane/
 │   ├── domain/            Route model and validation
 │   ├── store/             SQLite persistence
 │   ├── traefik/           Dynamic configuration renderer
+│   ├── traefikruntime/    Authenticated Traefik runtime client
 │   ├── upstreamprobe/     Restricted proxy-network reachability probe
 │   └── webui/             Embedded production UI assets
 ├── web/                   Svelte source

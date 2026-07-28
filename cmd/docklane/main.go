@@ -23,6 +23,7 @@ import (
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/reconcile"
 	"docklane.local/docklane/internal/store"
+	"docklane.local/docklane/internal/traefikruntime"
 	"docklane.local/docklane/internal/upstreamprobe"
 )
 
@@ -541,6 +542,31 @@ func serve(args []string) error {
 		"",
 		"proxy-network probe Unix socket",
 	)
+	traefikAPIURL := flags.String(
+		"traefik-api-url",
+		"",
+		"authenticated Traefik dashboard API URL",
+	)
+	traefikAPIAddr := flags.String(
+		"traefik-api-address",
+		"",
+		"private Traefik API dial address",
+	)
+	traefikAPIUser := flags.String(
+		"traefik-api-username",
+		"",
+		"Traefik API basic-auth username",
+	)
+	traefikAPIPass := flags.String(
+		"traefik-api-password-file",
+		"",
+		"Traefik API basic-auth password file",
+	)
+	traefikAPICA := flags.String(
+		"traefik-api-ca-file",
+		"",
+		"Traefik API trusted CA file",
+	)
 	manageNetworks := flags.Bool(
 		"manage-network-attachments",
 		false,
@@ -558,6 +584,11 @@ func serve(args []string) error {
 		DockerSocket:   *dockerSocket,
 		ProxyNetwork:   *proxyNetwork,
 		ProbeSocket:    *probeSocket,
+		TraefikAPIURL:  *traefikAPIURL,
+		TraefikAPIAddr: *traefikAPIAddr,
+		TraefikAPIUser: *traefikAPIUser,
+		TraefikAPIPass: *traefikAPIPass,
+		TraefikAPICA:   *traefikAPICA,
 		ManageNetworks: *manageNetworks,
 		ReconcileEvery: *reconcileEvery,
 	}
@@ -597,6 +628,19 @@ func serve(args []string) error {
 			apiOptions,
 			api.WithUpstreamProber(upstreamprobe.NewClient(cfg.ProbeSocket)),
 		)
+	}
+	if cfg.TraefikAPIURL != "" {
+		inspector, err := traefikruntime.New(traefikruntime.Config{
+			BaseURL:      cfg.TraefikAPIURL,
+			DialAddress:  cfg.TraefikAPIAddr,
+			Username:     cfg.TraefikAPIUser,
+			PasswordFile: cfg.TraefikAPIPass,
+			CAFile:       cfg.TraefikAPICA,
+		})
+		if err != nil {
+			return fmt.Errorf("configure Traefik runtime inspection: %w", err)
+		}
+		apiOptions = append(apiOptions, api.WithTraefikRuntimeInspector(inspector))
 	}
 	handler := api.New(
 		cfg,
