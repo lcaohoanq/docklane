@@ -293,6 +293,10 @@ safe and repeatable.
   adopted-resource preservation, and managed remove/restore contracts.
 - [X] Define managed installation specification v1 for canonical state/PKI
   paths, image references, TLS policy, and gateway/controller/probe topology.
+- [X] Render deterministic managed dnsmasq, Traefik, and container artifacts
+  with content fingerprints; declare private material as apply-time-only.
+- [X] Generate and verify the managed root/leaf PKI bundle entirely in memory,
+  including explicit apex and wildcard SAN coverage.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.

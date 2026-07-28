@@ -168,6 +168,15 @@ gateway/controller/probe topology. Mutable state is constrained below the
 dedicated `--managed-state-dir` (default `/var/lib/docklane`). Pure adoption
 plans omit this managed contract.
 
+The same managed plan includes a deterministic artifact bundle. It renders the
+exact dnsmasq rule, Traefik dynamic TLS/dashboard configuration, and three
+container specifications with SHA-256 fingerprints. PKI keys, certificates,
+and dashboard credentials appear only as permission-constrained
+`generatedAtApply` descriptors; dry-run never generates or prints private
+material. The PKI generator creates a 3072-bit local root and leaf entirely in
+memory, verifies the apex and wildcard SANs against that root, and returns the
+bundle for a future atomic writer.
+
 `docklane install --token TOKEN` reruns preflight and planning, then
 applies only if the supplied token exactly matches the fresh plan. The current
 apply engine supports safe adoption: it atomically journals `planned`,

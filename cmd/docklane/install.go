@@ -172,6 +172,25 @@ func printInstallationPlan(plan domain.InstallationPlan) {
 			specification.BaseDomain,
 			specification.PKI.RootPrivateKeyPath,
 		)
+		rendered := 0
+		generated := 0
+		containers := 0
+		for _, artifact := range plan.ManagedArtifacts {
+			switch {
+			case artifact.GeneratedAtApply:
+				generated++
+			case artifact.Kind == domain.ArtifactContainerSpec:
+				containers++
+			default:
+				rendered++
+			}
+		}
+		fmt.Printf(
+			"Managed artifacts: %d rendered · %d generated at apply · %d container specs\n",
+			rendered,
+			generated,
+			containers,
+		)
 	}
 	for _, operation := range plan.Operations {
 		marker := "record"

@@ -105,6 +105,7 @@ type InstallationManifest struct {
 	UpdatedAt            time.Time                  `json:"updatedAt"`
 	Settings             InstallationSettings       `json:"settings"`
 	ManagedSpecification *InstallationSpecification `json:"managedSpecification,omitempty"`
+	ManagedArtifacts     []InstallationArtifact     `json:"managedArtifacts,omitempty"`
 	Resources            []InstallationResource     `json:"resources"`
 }
 
@@ -153,6 +154,12 @@ func (manifest InstallationManifest) Validate() error {
 		if err := manifest.ManagedSpecification.Validate(); err != nil {
 			return fmt.Errorf("managed specification: %w", err)
 		}
+	}
+	if err := ValidateInstallationArtifacts(manifest.ManagedArtifacts); err != nil {
+		return err
+	}
+	if manifest.ManagedSpecification == nil && len(manifest.ManagedArtifacts) != 0 {
+		return fmt.Errorf("managed artifacts require a managed specification")
 	}
 	if manifest.Resources == nil {
 		return fmt.Errorf("installation resources must be an array")

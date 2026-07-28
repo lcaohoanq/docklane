@@ -370,6 +370,20 @@ enforces the gateway ports, loopback controller port, and capability-free
 probe. Pure adoption plans omit the managed specification because their exact
 external resources are already recorded by inventory.
 
+Managed plans also carry a deterministic artifact bundle derived solely from
+that specification. Rendered dnsmasq and Traefik configuration and normalized
+container specifications include their SHA-256 fingerprints, so a reviewed
+token commits to their exact bytes. Private keys, certificates, and dashboard
+credentials are represented only by target, mode, sensitivity, and
+`generatedAtApply`; their values never enter dry-run output.
+
+The PKI generator operates in memory. It creates separate 3072-bit RSA root
+and leaf keys, a self-signed CA, and a server certificate whose SAN extension
+explicitly contains both the base domain and its wildcard. Before any future
+writer may stage these bytes, the leaf is verified against the new root for
+both the apex and a representative subdomain. This separates reproducible
+review input from intentionally random apply-time material.
+
 `docklane install --token TOKEN` always reruns preflight and reconstructs the
 plan. A constant-time exact comparison binds apply to the machine state the
 user reviewed. The adoption executor refuses incomplete, blocked, stale, or

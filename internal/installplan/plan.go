@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"docklane.local/docklane/internal/domain"
+	"docklane.local/docklane/internal/installartifacts"
 )
 
 type Options struct {
@@ -65,6 +66,17 @@ func Build(
 		}
 		specification := options.ManagedSpecification
 		plan.ManagedSpecification = &specification
+		artifacts, err := installartifacts.Build(specification)
+		if err != nil {
+			return domain.InstallationPlan{}, fmt.Errorf(
+				"managed installation artifacts: %w",
+				err,
+			)
+		}
+		plan.ManagedArtifacts = artifacts
+		if err := domain.ValidateInstallationArtifacts(plan.ManagedArtifacts); err != nil {
+			return domain.InstallationPlan{}, err
+		}
 	}
 	sort.Strings(plan.Blockers)
 	plan.Blockers = unique(plan.Blockers)

@@ -33,6 +33,7 @@ type InstallationPaths struct {
 	TraefikDirectory     string `json:"traefikDirectory"`
 	TraefikDynamicConfig string `json:"traefikDynamicConfig"`
 	DashboardPassword    string `json:"dashboardPassword"`
+	DashboardUsers       string `json:"dashboardUsers"`
 	DnsmasqConfig        string `json:"dnsmasqConfig"`
 }
 
@@ -108,6 +109,7 @@ func (spec InstallationSpecification) Validate() error {
 		"Traefik directory":      spec.Paths.TraefikDirectory,
 		"Traefik dynamic config": spec.Paths.TraefikDynamicConfig,
 		"dashboard password":     spec.Paths.DashboardPassword,
+		"dashboard users":        spec.Paths.DashboardUsers,
 		"dnsmasq config":         spec.Paths.DnsmasqConfig,
 		"root certificate":       spec.PKI.RootCertificatePath,
 		"root private key":       spec.PKI.RootPrivateKeyPath,
@@ -122,6 +124,8 @@ func (spec InstallationSpecification) Validate() error {
 	if spec.Paths.StateDirectory == string(filepath.Separator) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DataDirectory) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.TraefikDirectory) ||
+		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DashboardPassword) ||
+		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DashboardUsers) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.PKI.RootCertificatePath) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.PKI.RootPrivateKeyPath) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.PKI.LeafCertificatePath) ||

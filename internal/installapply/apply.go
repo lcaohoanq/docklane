@@ -96,6 +96,10 @@ func (runner *Runner) Apply(
 	if plan.ManagedSpecification != nil {
 		specification := *plan.ManagedSpecification
 		manifest.ManagedSpecification = &specification
+		manifest.ManagedArtifacts = append(
+			[]domain.InstallationArtifact(nil),
+			plan.ManagedArtifacts...,
+		)
 	}
 	if err := manifest.Validate(); err != nil {
 		return domain.InstallationManifest{}, fmt.Errorf(

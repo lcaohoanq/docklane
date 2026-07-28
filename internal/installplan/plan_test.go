@@ -95,6 +95,9 @@ func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	if plan.ManagedSpecification != nil {
 		t.Fatalf("adoption plan claimed managed specification: %#v", plan.ManagedSpecification)
 	}
+	if len(plan.ManagedArtifacts) != 0 {
+		t.Fatalf("adoption plan claimed managed artifacts: %#v", plan.ManagedArtifacts)
+	}
 	if len(plan.Resources) != 13 || len(plan.Operations) != 14 {
 		t.Fatalf(
 			"resources = %d, operations = %d",
@@ -202,6 +205,9 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	}
 	if plan.ManagedSpecification == nil {
 		t.Fatal("managed specification is missing")
+	}
+	if len(plan.ManagedArtifacts) != 12 {
+		t.Fatalf("managed artifacts = %d, want 12", len(plan.ManagedArtifacts))
 	}
 	changedSpecification := testManagedSpecification(t)
 	changedSpecification.Images.Traefik = "traefik:v3.8"
