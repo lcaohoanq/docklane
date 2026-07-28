@@ -85,7 +85,7 @@ the resulting file bundle to a reversible atomic stager. Replaced files receive
 mode-preserving backups whose SHA-256 fingerprints fit the resource backup
 contract below; newly created files require no backup. Managed apply remains
 blocked until these results are journaled into manifest generations together
-with the non-file host and Docker operations.
+with the independently tested host and Docker transactions.
 
 The Docker executor likewise remains disconnected from the command while its
 transaction is tested independently. It injects the manifest installation ID
@@ -94,6 +94,15 @@ records Docker's exact returned IDs and inspected state; and rolls back in
 reverse dependency order. This identity is necessary because Docker named
 volume creation is idempotent and does not provide an atomic
 create-if-absent operation.
+
+The Arch host transaction pins p11-kit and systemd-resolved capabilities,
+snapshots dnsmasq/resolver service state, validates and activates the staged
+configuration, refreshes and verifies the trust anchor, and probes both apex
+and wildcard DNS. Its rollback restores the file transaction before refreshing
+trust and returning services to their prior state. Service drift blocks file
+rollback, while a failed file restore blocks service reload. This transaction
+also remains disconnected until each successful step and rollback contract is
+journaled durably.
 
 ## Reverse planning
 

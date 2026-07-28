@@ -46,8 +46,8 @@ func TestBuildRendersDeterministicSafeArtifacts(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("artifact rendering is not deterministic")
 	}
-	if len(first) != 12 {
-		t.Fatalf("artifact count = %d, want 12", len(first))
+	if len(first) != 13 {
+		t.Fatalf("artifact count = %d, want 13", len(first))
 	}
 
 	byID := map[string]domain.InstallationArtifact{}
@@ -75,6 +75,13 @@ func TestBuildRendersDeterministicSafeArtifacts(t *testing.T) {
 		if !strings.Contains(dynamic, required) {
 			t.Fatalf("Traefik config omits %q:\n%s", required, dynamic)
 		}
+	}
+	if got := byID["resolver-domain"].Content; got !=
+		"# Managed by Docklane installation manifest\n"+
+			"[Resolve]\n"+
+			"DNS=127.0.0.1\n"+
+			"Domains=~docker.home.arpa\n" {
+		t.Fatalf("resolver content = %q", got)
 	}
 	if !byID["pki-root-private-key"].GeneratedAtApply ||
 		!byID["traefik-dashboard-password"].GeneratedAtApply {

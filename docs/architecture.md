@@ -384,9 +384,11 @@ writer may stage these bytes, the leaf is verified against the new root for
 both the apex and a representative subdomain. This separates reproducible
 review input from intentionally random apply-time material.
 
-Materialization expands those descriptors into nine files in memory: two
+Materialization expands those descriptors into ten files in memory: three
 rendered configurations, five PKI/trust files, and two dashboard credential
-files. The password is a URL-safe encoding of 256 random bits. Only its bcrypt
+files. The rendered host configuration includes the dnsmasq wildcard rule and
+an exact systemd-resolved route-only domain drop-in. The password is a
+URL-safe encoding of 256 random bits. Only its bcrypt
 hash enters Traefik's users file; the raw password is confined to the
 controller's mode-`0600` secret file. Sensitive buffers have an explicit
 clearing path after staging.
@@ -407,9 +409,8 @@ fingerprint is revalidated. Rollback also requires the current target's
 fingerprint and mode to still match the staged result, preventing it from
 overwriting an external edit. Backup corruption or target drift stops that
 step, preserves the backup, and permits a retry after the conflict is repaired.
-This executor is not connected to
-`docklane install` yet; service, trust-store, resolver, and Docker operations
-must join the same recovery boundary first.
+This executor is not connected to `docklane install` yet; all independent
+transactions must first be composed with durable manifest journaling.
 
 Managed Docker execution follows a separate reversible transaction. The
 installation specification expands into strict Engine API requests in this
@@ -436,6 +437,27 @@ Rollback walks the graph in reverse, re-inspects the exact returned ID, and
 removes it only if its configuration and ownership still match the recorded
 post-create snapshot. Running and health are treated as volatile; topology and
 ownership drift stop deletion and permit a later retry.
+
+Host integration composes around the reversible file transaction:
+
+```text
+snapshot services
+  → validate dnsmasq
+  → refresh p11-kit trust and verify the CA
+  → start/restart dnsmasq
+  → start/restart systemd-resolved
+  → flush resolver caches
+  → verify apex and wildcard DNS resolve only to 127.0.0.1
+```
+
+The managed specification pins the `p11-kit` and `systemd-resolved` profiles,
+both service names, and the exact resolver drop-in target. The drop-in routes
+only `~docker.home.arpa` to loopback dnsmasq. Rollback first compares current
+service state with the recorded post-apply state; drift stops rollback before
+files change. It then restores the file transaction, refreshes trust, validates
+the restored dnsmasq configuration, and restores resolver then dnsmasq to their
+exact prior active/inactive states. A failed file restore prevents any service
+reload, and partial rollback steps remain retryable.
 
 `docklane install --token TOKEN` always reruns preflight and reconstructs the
 plan. A constant-time exact comparison binds apply to the machine state the

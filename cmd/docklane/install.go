@@ -32,6 +32,11 @@ func install(args []string) error {
 		"/etc/ca-certificates/trust-source/anchors/docklane-local-root-ca.crt",
 		"clean-install system trust-anchor target",
 	)
+	managedResolverConfig := flags.String(
+		"managed-resolver-config",
+		"/etc/systemd/resolved.conf.d/docklane.conf",
+		"clean-install systemd-resolved route-only domain target",
+	)
 	traefikImage := flags.String(
 		"traefik-image",
 		"traefik:v3.7",
@@ -78,6 +83,7 @@ func install(args []string) error {
 		StateDirectory:  *managedStateDirectory,
 		DataDirectory:   *options.runtimeDataPath,
 		DnsmasqConfig:   *dnsmasqTarget,
+		ResolverConfig:  *managedResolverConfig,
 		TrustAnchorPath: *managedTrustAnchor,
 		TraefikImage:    *traefikImage,
 		DocklaneImage:   *docklaneImage,

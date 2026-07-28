@@ -35,6 +35,14 @@ type InstallationPaths struct {
 	DashboardPassword    string `json:"dashboardPassword"`
 	DashboardUsers       string `json:"dashboardUsers"`
 	DnsmasqConfig        string `json:"dnsmasqConfig"`
+	ResolverConfig       string `json:"resolverConfig"`
+}
+
+type InstallationHostIntegration struct {
+	DNSService      string `json:"dnsService"`
+	ResolverService string `json:"resolverService"`
+	TrustProfile    string `json:"trustProfile"`
+	ResolverProfile string `json:"resolverProfile"`
 }
 
 type InstallationPortBinding struct {
@@ -65,16 +73,17 @@ type InstallationContainer struct {
 }
 
 type InstallationSpecification struct {
-	SchemaVersion  int                     `json:"schemaVersion"`
-	BaseDomain     string                  `json:"baseDomain"`
-	ProxyNetwork   string                  `json:"proxyNetwork"`
-	ControlNetwork string                  `json:"controlNetwork"`
-	ProbeVolume    string                  `json:"probeVolume"`
-	DockerSocket   string                  `json:"dockerSocket"`
-	Images         InstallationImages      `json:"images"`
-	Paths          InstallationPaths       `json:"paths"`
-	PKI            InstallationPKI         `json:"pki"`
-	Containers     []InstallationContainer `json:"containers"`
+	SchemaVersion  int                         `json:"schemaVersion"`
+	BaseDomain     string                      `json:"baseDomain"`
+	ProxyNetwork   string                      `json:"proxyNetwork"`
+	ControlNetwork string                      `json:"controlNetwork"`
+	ProbeVolume    string                      `json:"probeVolume"`
+	DockerSocket   string                      `json:"dockerSocket"`
+	Images         InstallationImages          `json:"images"`
+	Paths          InstallationPaths           `json:"paths"`
+	Host           InstallationHostIntegration `json:"host"`
+	PKI            InstallationPKI             `json:"pki"`
+	Containers     []InstallationContainer     `json:"containers"`
 }
 
 func (spec InstallationSpecification) Validate() error {
@@ -114,6 +123,7 @@ func (spec InstallationSpecification) Validate() error {
 		"dashboard password":     spec.Paths.DashboardPassword,
 		"dashboard users":        spec.Paths.DashboardUsers,
 		"dnsmasq config":         spec.Paths.DnsmasqConfig,
+		"resolver config":        spec.Paths.ResolverConfig,
 		"root certificate":       spec.PKI.RootCertificatePath,
 		"root private key":       spec.PKI.RootPrivateKeyPath,
 		"leaf certificate":       spec.PKI.LeafCertificatePath,
@@ -123,6 +133,13 @@ func (spec InstallationSpecification) Validate() error {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 			return fmt.Errorf("%s path must be absolute and canonical", label)
 		}
+	}
+	if !dockerNamePattern.MatchString(spec.Host.DNSService) ||
+		!dockerNamePattern.MatchString(spec.Host.ResolverService) ||
+		spec.Host.DNSService == spec.Host.ResolverService ||
+		spec.Host.TrustProfile != "p11-kit" ||
+		spec.Host.ResolverProfile != "systemd-resolved" {
+		return fmt.Errorf("invalid managed host integration profile")
 	}
 	if spec.Paths.StateDirectory == string(filepath.Separator) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DataDirectory) ||

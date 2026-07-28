@@ -28,7 +28,11 @@ func TestBuildCreatesSelfContainedManagedSpecification(t *testing.T) {
 		specification.PKI.LeafCertificatePath !=
 			"/var/lib/docklane/traefik/certs/local.crt" ||
 		specification.Paths.TraefikDynamicConfig !=
-			"/var/lib/docklane/traefik/dynamic/tls.yml" {
+			"/var/lib/docklane/traefik/dynamic/tls.yml" ||
+		specification.Paths.ResolverConfig !=
+			"/etc/systemd/resolved.conf.d/docklane.conf" ||
+		specification.Host.TrustProfile != "p11-kit" ||
+		specification.Host.ResolverProfile != "systemd-resolved" {
 		t.Fatalf("managed paths = %#v", specification)
 	}
 	if len(specification.Containers) != 3 ||

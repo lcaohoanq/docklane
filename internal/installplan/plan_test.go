@@ -206,8 +206,8 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	if plan.ManagedSpecification == nil {
 		t.Fatal("managed specification is missing")
 	}
-	if len(plan.ManagedArtifacts) != 12 {
-		t.Fatalf("managed artifacts = %d, want 12", len(plan.ManagedArtifacts))
+	if len(plan.ManagedArtifacts) != 13 {
+		t.Fatalf("managed artifacts = %d, want 13", len(plan.ManagedArtifacts))
 	}
 	changedSpecification := testManagedSpecification(t)
 	changedSpecification.Images.Traefik = "traefik:v3.8"

@@ -177,7 +177,7 @@ material. The PKI generator creates a 3072-bit local root and leaf entirely in
 memory, verifies the apex and wildcard SANs against that root, and returns the
 bundle for a future atomic writer.
 
-Apply-time materialization now produces the complete nine-file bundle in
+Apply-time materialization now produces the complete ten-file bundle in
 memory. The dashboard password uses 256 bits of entropy and URL-safe encoding;
 Traefik receives only a bcrypt users file while the controller receives the
 mode-`0600` raw password file. A reversible file stager writes each target by
@@ -185,9 +185,7 @@ temporary file, file sync, atomic rename, and directory sync. Existing regular
 files receive fingerprinted, mode-preserving backups, and any failure restores
 earlier replacements and removes files created by that transaction. Managed
 rollback first verifies that staged content and permissions have not changed,
-so it will not overwrite a later external edit. Managed host apply remains
-disabled until service, trust-store, and Docker mutations have the same
-recovery coverage.
+so it will not overwrite a later external edit.
 
 The Docker transaction layer now derives strict create requests for the proxy
 and private control networks, probe socket volume, and probe/controller/gateway
@@ -198,6 +196,17 @@ the exact returned object IDs. Failures remove containers, volume, and networks
 in reverse dependency order. Rollback compares current objects with their
 post-create snapshots and refuses deletion after configuration or ownership
 drift; volatile running/health changes do not prevent cleanup.
+
+The Arch Linux host-integration profile is also transactional. Its reviewed
+artifacts include the dnsmasq wildcard rule, p11-kit trust anchor, and an exact
+systemd-resolved route-only domain drop-in (customizable with
+`--managed-resolver-config`). Apply snapshots dnsmasq and systemd-resolved
+state, validates dnsmasq, refreshes p11-kit trust, activates both services,
+flushes caches, then verifies apex/wildcard loopback DNS and the installed CA.
+Rollback refuses service drift, restores files first, refreshes trust, and
+returns both services to their exact prior active/inactive states. Managed
+install remains disabled until the file, Docker, and host transactions are
+composed with manifest journaling and interrupted-install recovery.
 
 `docklane install --token TOKEN` reruns preflight and planning, then
 applies only if the supplied token exactly matches the fresh plan. The current

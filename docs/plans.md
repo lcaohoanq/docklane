@@ -306,6 +306,11 @@ safe and repeatable.
   requests with installation-ID ownership labels and inspected-state checks.
 - [X] Add dependency-ordered Docker apply and reverse rollback with conflict,
   failure-injection, configuration-drift, and retry coverage.
+- [X] Pin the Arch p11-kit/systemd-resolved host profile and render an exact
+  route-only resolver drop-in as a reviewed managed artifact.
+- [X] Add transactional dnsmasq validation, trust refresh/verification,
+  service-state restoration, resolver cache flush, DNS verification, drift
+  refusal, and failure rollback.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.

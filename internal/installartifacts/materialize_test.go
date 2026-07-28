@@ -22,6 +22,7 @@ func TestMaterializeFilesStagesAndRollsBackCompleteBundle(t *testing.T) {
 		StateDirectory:  filepath.Join(root, "state"),
 		DataDirectory:   filepath.Join(root, "state", "data"),
 		DnsmasqConfig:   filepath.Join(root, "dnsmasq", "docklane.conf"),
+		ResolverConfig:  filepath.Join(root, "resolved", "docklane.conf"),
 		TrustAnchorPath: filepath.Join(root, "trust", "docklane-root.crt"),
 		TraefikImage:    "traefik:v3.7",
 		DocklaneImage:   "docklane:local",
@@ -38,8 +39,8 @@ func TestMaterializeFilesStagesAndRollsBackCompleteBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ClearMaterializedFiles(files)
-	if len(files) != 9 {
-		t.Fatalf("materialized files = %d, want 9", len(files))
+	if len(files) != 10 {
+		t.Fatalf("materialized files = %d, want 10", len(files))
 	}
 	byID := map[string]int{}
 	for index, file := range files {
@@ -47,6 +48,7 @@ func TestMaterializeFilesStagesAndRollsBackCompleteBundle(t *testing.T) {
 	}
 	for _, id := range []string{
 		"dnsmasq-domain",
+		"resolver-domain",
 		"traefik-dynamic-config",
 		"pki-root-private-key",
 		"pki-root-certificate",

@@ -38,12 +38,25 @@ func Build(
 			"      keyFile: /certs/local.key\n",
 		specification.BaseDomain,
 	)
+	resolver := fmt.Sprintf(
+		"# Managed by Docklane installation manifest\n"+
+			"[Resolve]\n"+
+			"DNS=127.0.0.1\n"+
+			"Domains=~%s\n",
+		specification.BaseDomain,
+	)
 	artifacts := []domain.InstallationArtifact{
 		configArtifact(
 			"dnsmasq-domain",
 			specification.Paths.DnsmasqConfig,
 			0o644,
 			dnsmasq,
+		),
+		configArtifact(
+			"resolver-domain",
+			specification.Paths.ResolverConfig,
+			0o644,
+			resolver,
 		),
 		configArtifact(
 			"traefik-dynamic-config",

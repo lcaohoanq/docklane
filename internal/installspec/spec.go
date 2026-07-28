@@ -14,6 +14,7 @@ type Config struct {
 	StateDirectory  string
 	DataDirectory   string
 	DnsmasqConfig   string
+	ResolverConfig  string
 	TrustAnchorPath string
 	TraefikImage    string
 	DocklaneImage   string
@@ -24,6 +25,10 @@ func Build(config Config) (domain.InstallationSpecification, error) {
 	data := filepath.Clean(config.DataDirectory)
 	traefikDirectory := filepath.Join(state, "traefik")
 	pkiDirectory := filepath.Join(state, "pki")
+	resolverConfig := config.ResolverConfig
+	if resolverConfig == "" {
+		resolverConfig = "/etc/systemd/resolved.conf.d/docklane.conf"
+	}
 	spec := domain.InstallationSpecification{
 		SchemaVersion:  domain.InstallationSpecificationSchemaVersion,
 		BaseDomain:     config.BaseDomain,
@@ -43,6 +48,13 @@ func Build(config Config) (domain.InstallationSpecification, error) {
 			DashboardPassword:    filepath.Join(state, "secrets", "traefik-dashboard-password"),
 			DashboardUsers:       filepath.Join(state, "secrets", "traefik-dashboard-users"),
 			DnsmasqConfig:        filepath.Clean(config.DnsmasqConfig),
+			ResolverConfig:       filepath.Clean(resolverConfig),
+		},
+		Host: domain.InstallationHostIntegration{
+			DNSService:      "dnsmasq",
+			ResolverService: "systemd-resolved",
+			TrustProfile:    "p11-kit",
+			ResolverProfile: "systemd-resolved",
 		},
 		PKI: domain.InstallationPKI{
 			RootCommonName:      "Docklane Local Root CA",
