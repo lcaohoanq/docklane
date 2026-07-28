@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"docklane.local/docklane/internal/domain"
+	"docklane.local/docklane/internal/installapply"
+	"docklane.local/docklane/internal/installmanifest"
 	"docklane.local/docklane/internal/installplan"
 )
 
@@ -20,16 +22,28 @@ func install(args []string) error {
 		"managed dnsmasq wildcard configuration target",
 	)
 	dryRun := flags.Bool("dry-run", false, "render the plan without applying it")
+	token := flags.String(
+		"token",
+		"",
+		"exact token from the reviewed dry-run plan",
+	)
 	asJSON := flags.Bool("json", false, "print JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("usage: docklane install --dry-run [options]")
-	}
-	if !*dryRun {
 		return errors.New(
-			"installation apply is not implemented yet; review with docklane install --dry-run",
+			"usage: docklane install (--dry-run | --token TOKEN) [options]",
+		)
+	}
+	if *dryRun && *token != "" {
+		return errors.New(
+			"--token cannot be combined with --dry-run",
+		)
+	}
+	if !*dryRun && *token == "" {
+		return errors.New(
+			"installation requires --token from a fresh docklane install --dry-run",
 		)
 	}
 	report, err := options.run(context.Background())
@@ -43,16 +57,43 @@ func install(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *asJSON {
-		if err := printJSON(plan); err != nil {
-			return err
+	if *dryRun {
+		if *asJSON {
+			if err := printJSON(plan); err != nil {
+				return err
+			}
+		} else {
+			printInstallationPlan(plan)
 		}
-	} else {
-		printInstallationPlan(plan)
+		if !plan.Ready {
+			return errors.New("installation plan has blocking conflicts")
+		}
+		return nil
 	}
-	if !plan.Ready {
-		return errors.New("installation plan has blocking conflicts")
+	manifestStore, err := installmanifest.NewStore(*options.manifestPath)
+	if err != nil {
+		return err
 	}
+	runner, err := installapply.New(manifestStore, docklaneVersion)
+	if err != nil {
+		return err
+	}
+	installation, err := runner.Apply(context.Background(), plan, *token)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(installation)
+	}
+	fmt.Printf(
+		"Installed Docklane ownership manifest generation %d at %s\n",
+		installation.Generation,
+		manifestStore.Path(),
+	)
+	fmt.Printf(
+		"Recorded %d verified adopted resources; no running infrastructure was changed.\n",
+		len(installation.Resources),
+	)
 	return nil
 }
 

@@ -108,6 +108,9 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 ./bin/docklane preflight --json
 ./bin/docklane install --dry-run
 ./bin/docklane install --dry-run --json
+# Apply only if the freshly generated token exactly matches the reviewed plan:
+PLAN_TOKEN=copy-the-token-from-the-reviewed-output
+./bin/docklane install --token "$PLAN_TOKEN"
 ./bin/docklane manifest init --path /absolute/path/install-manifest.json
 ./bin/docklane manifest validate --path /absolute/path/install-manifest.json
 ./bin/docklane manifest show --path /absolute/path/install-manifest.json
@@ -153,8 +156,15 @@ resolver behavior, verified TLS/trust ownership, and the complete Docklane
 controller/probe runtime. Existing runtime images and TLS files are
 fingerprinted; containers, networks, the probe socket volume, and the data
 directory receive explicit preserve/remove ownership. The reviewed plan now
-has complete resource coverage, while install apply remains intentionally
-unavailable.
+has complete resource coverage.
+
+`docklane install --token TOKEN` reruns preflight and planning, then
+applies only if the supplied token exactly matches the fresh plan. The current
+apply engine supports safe adoption: it atomically journals `planned`,
+`applying`, and `installed` generations and records all existing resources as
+verified/preserved without restarting or changing them. Plans containing
+managed create/configure operations are rejected before the manifest is
+written until their rollback executors are implemented.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the

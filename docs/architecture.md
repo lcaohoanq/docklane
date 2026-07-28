@@ -354,12 +354,28 @@ operations. Existing compatible resources can only become adopted/preserved;
 missing resources become managed with remove or restore rollback. A SHA-256
 token covers the target, inventory, resources, operations, blockers, and
 pending coverage while excluding observation time, so unchanged machine state
-produces the same review token. The current foundation plan explicitly marks
-every installation resource as covered but still cannot be used for apply.
-A verified existing certificate, private key, trust anchor, controller image,
-and probe image are fingerprinted. Containers, networks, volumes, and the data
-directory are independently recorded as adopted/preserved or
-managed/removable; failure at any ownership boundary prevents adoption.
+produces the same review token. A verified existing certificate, private key,
+trust anchor, controller image, and probe image are fingerprinted. Containers,
+networks, volumes, and the data directory are independently recorded as
+adopted/preserved or managed/removable; failure at any ownership boundary
+prevents adoption.
+
+`docklane install --token TOKEN` always reruns preflight and reconstructs the
+plan. A constant-time exact comparison binds apply to the machine state the
+user reviewed. The adoption executor refuses incomplete, blocked, stale, or
+managed plans before creating state. For a valid adoption it atomically writes
+manifest generations in this order:
+
+```text
+planned → applying → installed
+                   ↘ failed
+```
+
+Every adopted resource is already `verified` and uses `preserve`; therefore
+this path changes no running infrastructure and has nothing destructive to
+roll back. A finalization error is journaled as `failed`. Managed operations
+remain unsupported until each create/configure handler has a corresponding
+remove/restore implementation.
 
 ## 6. Route lifecycle
 

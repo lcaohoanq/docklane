@@ -286,7 +286,9 @@ safe and repeatable.
   adoption. It also covers the controller, restricted probe, private control
   network, shared socket volume, and controller data directory with no pending
   resource classes.
-- [ ] Add `docklane install`.
+- [-] Add `docklane install`. Token-gated adoption is implemented with durable
+  planned/applying/installed state transitions; managed create/configure
+  executors and rollback remain.
 - [ ] Add `docklane uninstall --dry-run`.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
@@ -298,8 +300,8 @@ safe and repeatable.
   permissions, issuing trust anchor, and the exact certificate served on 443.
 - [X] Inventory the controller/probe runtime, image identity, health, network
   isolation, port exposure, security settings, mounts, and related storage.
-- [ ] Support adopting a compatible existing global Traefik deployment.
-- [ ] Refuse unsafe adoption with a precise explanation.
+- [X] Support adopting a compatible existing global Traefik deployment.
+- [X] Refuse unsafe adoption with a precise explanation.
 - [ ] Add `docklane app enable` for opt-in network attachment and routing.
 - [ ] Add `docklane app disable` with safe detach behavior.
 - [ ] Export copy-paste Compose guidance without editing user files.
@@ -311,7 +313,7 @@ Acceptance criteria:
 
 - [ ] A clean machine can install the full local gateway from one reviewed
   plan.
-- [ ] An existing compatible Traefik can be adopted without losing routes.
+- [X] An existing compatible Traefik can be adopted without losing routes.
 - [ ] A failed installation returns the machine to its recorded prior state.
 - [ ] Application projects require no published HTTP port and no Traefik
   labels.

@@ -713,6 +713,7 @@ Usage:
   docklane manifest validate Validate the ownership manifest
   docklane preflight         Inspect host installation compatibility
   docklane install --dry-run Render a reviewed installation plan
+  docklane install --token T  Apply the exact reviewed adoption plan
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route

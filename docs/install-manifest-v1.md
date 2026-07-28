@@ -59,6 +59,18 @@ An applied or verified `restore` resource is invalid without a recorded
 backup. This makes “restore the old state” a verifiable fact rather than an
 unrecorded promise.
 
+## Token-gated adoption
+
+`docklane install --token TOKEN` rebuilds the plan immediately before
+apply and refuses a stale or mismatched token. The adoption-only executor
+creates generation 1 as `planned`, generation 2 as `applying`, and generation
+3 as `installed`. All adopted resources must already be `verified` with
+`preserve` rollback. If finalization fails, the next durable generation is
+`failed`; no running resource is modified or removed.
+
+Plans containing a managed resource are rejected before manifest creation
+until the corresponding create/configure and remove/restore executors exist.
+
 ## Example
 
 ```json
