@@ -12,43 +12,82 @@ import (
 	preflightcheck "docklane.local/docklane/internal/preflight"
 )
 
-func preflight(args []string) error {
-	flags := flag.NewFlagSet("preflight", flag.ContinueOnError)
-	baseDomain := flags.String(
+type preflightOptions struct {
+	baseDomain     *string
+	proxyNetwork   *string
+	dockerSocket   *string
+	manifestPath   *string
+	dnsmasqConfig  *string
+	dnsmasqDir     *string
+	dnsmasqService *string
+}
+
+func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
+	options := preflightOptions{}
+	options.baseDomain = flags.String(
 		"base-domain",
 		"docker.home.arpa",
 		"managed local DNS suffix",
 	)
-	proxyNetwork := flags.String(
+	options.proxyNetwork = flags.String(
 		"proxy-network",
 		"proxy",
 		"shared Docker proxy network",
 	)
-	dockerSocket := flags.String(
+	options.dockerSocket = flags.String(
 		"docker-socket",
 		"/var/run/docker.sock",
 		"Docker Engine Unix socket",
 	)
-	manifestPath := flags.String(
+	options.manifestPath = flags.String(
 		"manifest",
 		defaultManifestPath(),
 		"absolute installation manifest path",
 	)
-	dnsmasqConfig := flags.String(
+	options.dnsmasqConfig = flags.String(
 		"dnsmasq-config",
 		"/etc/dnsmasq.conf",
 		"primary dnsmasq configuration",
 	)
-	dnsmasqDir := flags.String(
+	options.dnsmasqDir = flags.String(
 		"dnsmasq-dir",
 		"/etc/dnsmasq.d",
 		"dnsmasq include directory",
 	)
-	dnsmasqService := flags.String(
+	options.dnsmasqService = flags.String(
 		"dnsmasq-service",
 		"dnsmasq",
 		"dnsmasq system service name",
 	)
+	return options
+}
+
+func (options preflightOptions) run(
+	ctx context.Context,
+) (domain.PreflightReport, error) {
+	dockerClient := docker.NewClient(*options.dockerSocket)
+	runner, err := preflightcheck.New(
+		preflightcheck.Config{
+			BaseDomain:     *options.baseDomain,
+			ProxyNetwork:   *options.proxyNetwork,
+			DockerSocket:   *options.dockerSocket,
+			ManifestPath:   *options.manifestPath,
+			DnsmasqConfig:  *options.dnsmasqConfig,
+			DnsmasqDir:     *options.dnsmasqDir,
+			DnsmasqService: *options.dnsmasqService,
+		},
+		dockerClient,
+		preflightcheck.SystemInspector{},
+	)
+	if err != nil {
+		return domain.PreflightReport{}, err
+	}
+	return runner.Run(ctx), nil
+}
+
+func preflight(args []string) error {
+	flags := flag.NewFlagSet("preflight", flag.ContinueOnError)
+	options := bindPreflightFlags(flags)
 	asJSON := flags.Bool("json", false, "print JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -56,24 +95,10 @@ func preflight(args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("usage: docklane preflight [options]")
 	}
-	dockerClient := docker.NewClient(*dockerSocket)
-	runner, err := preflightcheck.New(
-		preflightcheck.Config{
-			BaseDomain:     *baseDomain,
-			ProxyNetwork:   *proxyNetwork,
-			DockerSocket:   *dockerSocket,
-			ManifestPath:   *manifestPath,
-			DnsmasqConfig:  *dnsmasqConfig,
-			DnsmasqDir:     *dnsmasqDir,
-			DnsmasqService: *dnsmasqService,
-		},
-		dockerClient,
-		preflightcheck.SystemInspector{},
-	)
+	report, err := options.run(context.Background())
 	if err != nil {
 		return err
 	}
-	report := runner.Run(context.Background())
 	if *asJSON {
 		if err := printJSON(report); err != nil {
 			return err

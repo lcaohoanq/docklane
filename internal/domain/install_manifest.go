@@ -30,6 +30,7 @@ const (
 	ResourceDockerVolume    ResourceKind = "docker_volume"
 	ResourceDockerContainer ResourceKind = "docker_container"
 	ResourceSystemService   ResourceKind = "system_service"
+	ResourceResolverRule    ResourceKind = "resolver_rule"
 )
 
 type ResourceOwnership string
@@ -280,7 +281,8 @@ func validResourceKind(kind ResourceKind) bool {
 		ResourceDockerNetwork,
 		ResourceDockerVolume,
 		ResourceDockerContainer,
-		ResourceSystemService:
+		ResourceSystemService,
+		ResourceResolverRule:
 		return true
 	default:
 		return false

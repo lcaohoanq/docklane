@@ -153,6 +153,12 @@ func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	if report.Status != domain.DiagnosticPass {
 		t.Fatalf("report = %#v", report)
 	}
+	if report.Inventory.Gateway.Disposition != domain.PreflightAdopt ||
+		report.Inventory.Network.Disposition != domain.PreflightAdopt ||
+		report.Inventory.DNS.Disposition != domain.PreflightAdopt ||
+		report.Inventory.Resolver.Disposition != domain.PreflightAdopt {
+		t.Fatalf("inventory = %#v", report.Inventory)
+	}
 	assertCheck(t, report, "gateway", domain.DiagnosticPass, "adoption candidate")
 	assertCheck(t, report, "port-80", domain.DiagnosticPass, "existing Traefik")
 	assertCheck(t, report, "dnsmasq-domain", domain.DiagnosticPass, "127.0.0.1")
@@ -181,6 +187,12 @@ func TestRunWarnsForCleanUnconfiguredHost(t *testing.T) {
 	if report.Status != domain.DiagnosticWarn {
 		t.Fatalf("status = %q, checks = %#v", report.Status, report.Checks)
 	}
+	if report.Inventory.Gateway.Disposition != domain.PreflightCreate ||
+		report.Inventory.Network.Disposition != domain.PreflightCreate ||
+		report.Inventory.DNS.Disposition != domain.PreflightCreate ||
+		report.Inventory.Resolver.Disposition != domain.PreflightCreate {
+		t.Fatalf("inventory = %#v", report.Inventory)
+	}
 	assertCheck(t, report, "gateway", domain.DiagnosticPass, "may create")
 	assertCheck(t, report, "port-443", domain.DiagnosticPass, "available")
 	assertCheck(t, report, "proxy-network", domain.DiagnosticWarn, "does not exist")
@@ -207,6 +219,11 @@ func TestRunBlocksConflictingHostState(t *testing.T) {
 	report := runner.Run(context.Background())
 	if report.Status != domain.DiagnosticFail {
 		t.Fatalf("status = %q, checks = %#v", report.Status, report.Checks)
+	}
+	if report.Inventory.Network.Disposition != domain.PreflightConflict ||
+		report.Inventory.DNS.Disposition != domain.PreflightConflict ||
+		report.Inventory.Resolver.Disposition != domain.PreflightConflict {
+		t.Fatalf("inventory = %#v", report.Inventory)
 	}
 	assertCheck(t, report, "port-80", domain.DiagnosticFail, "without one adoptable")
 	assertCheck(t, report, "proxy-network", domain.DiagnosticFail, "incompatible")

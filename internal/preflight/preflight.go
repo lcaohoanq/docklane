@@ -222,17 +222,29 @@ func (runner *Runner) Run(ctx context.Context) domain.PreflightReport {
 		))
 	}
 	gateways := reverseProxies(containers)
+	report.Inventory.Gateway = gatewayInventory(gateways, dockerErr)
 	add(&report, gatewayCheck(gateways, runner.config.ProxyNetwork, dockerErr))
 	for _, port := range []uint16{80, 443} {
 		add(&report, runner.portCheck(ctx, port, gateways, dockerErr))
 	}
-	add(&report, runner.networkCheck(ctx, dockerErr))
+	networkCheck, networkInventory := runner.networkCheck(ctx, dockerErr)
+	report.Inventory.Network = networkInventory
+	add(&report, networkCheck)
 	add(&report, runner.dnsmasqBinaryCheck())
-	add(&report, runner.dnsmasqServiceCheck(ctx))
+	serviceCheck, serviceActive := runner.dnsmasqServiceCheck(ctx)
+	report.Inventory.DNS.ServiceActive = serviceActive
+	add(&report, serviceCheck)
 	add(&report, runner.dnsmasqIncludeCheck())
-	add(&report, runner.dnsmasqMappingCheck())
-	add(&report, runner.resolverCheck(ctx))
-	add(&report, runner.manifestCheck())
+	mappingCheck, dnsInventory := runner.dnsmasqMappingCheck()
+	dnsInventory.ServiceActive = serviceActive
+	report.Inventory.DNS = dnsInventory
+	add(&report, mappingCheck)
+	resolverCheck, resolverInventory := runner.resolverCheck(ctx)
+	report.Inventory.Resolver = resolverInventory
+	add(&report, resolverCheck)
+	manifestCheck, manifestInventory := runner.manifestCheck()
+	report.Inventory.Manifest = manifestInventory
+	add(&report, manifestCheck)
 	return report
 }
 
@@ -257,6 +269,33 @@ func reverseProxies(containers []docker.Container) []docker.Container {
 		return gateways[i].Name < gateways[j].Name
 	})
 	return gateways
+}
+
+func gatewayInventory(
+	gateways []docker.Container,
+	dockerErr error,
+) domain.PreflightGateway {
+	if dockerErr != nil {
+		return domain.PreflightGateway{
+			Disposition: domain.PreflightUnknown,
+		}
+	}
+	if len(gateways) == 0 {
+		return domain.PreflightGateway{
+			Disposition: domain.PreflightCreate,
+		}
+	}
+	if len(gateways) != 1 {
+		return domain.PreflightGateway{
+			Disposition: domain.PreflightConflict,
+		}
+	}
+	return domain.PreflightGateway{
+		Disposition:   domain.PreflightAdopt,
+		ContainerID:   gateways[0].ID,
+		ContainerName: gateways[0].Name,
+		Image:         gateways[0].Image,
+	}
 }
 
 func gatewayCheck(
@@ -365,49 +404,56 @@ func publishesPort(container docker.Container, port uint16) bool {
 func (runner *Runner) networkCheck(
 	ctx context.Context,
 	dockerErr error,
-) domain.DiagnosticCheck {
+) (domain.DiagnosticCheck, domain.PreflightNetwork) {
+	inventory := domain.PreflightNetwork{Name: runner.config.ProxyNetwork}
 	if dockerErr != nil {
+		inventory.Disposition = domain.PreflightUnknown
 		return warn(
 			"proxy-network",
 			"docker",
 			"Proxy network compatibility could not be inspected",
 			"Resolve Docker access and rerun preflight.",
-		)
+		), inventory
 	}
 	network, err := runner.docker.InspectNetwork(ctx, runner.config.ProxyNetwork)
 	if errors.Is(err, docker.ErrNetworkNotFound) {
+		inventory.Disposition = domain.PreflightCreate
 		return warn(
 			"proxy-network",
 			"docker",
 			fmt.Sprintf("Proxy network %s does not exist yet", runner.config.ProxyNetwork),
 			"The reviewed install plan may create a Docklane-owned bridge network.",
-		)
+		), inventory
 	}
 	if err != nil {
+		inventory.Disposition = domain.PreflightUnknown
 		return fail(
 			"proxy-network",
 			"docker",
 			fmt.Sprintf("Proxy network %s could not be inspected", runner.config.ProxyNetwork),
 			err.Error(),
 			"Resolve the Docker network inspection error before installation.",
-		)
+		), inventory
 	}
+	inventory.ID = network.ID
 	if network.Driver != "bridge" ||
 		network.Scope != "local" ||
 		network.Internal {
+		inventory.Disposition = domain.PreflightConflict
 		return fail(
 			"proxy-network",
 			"docker",
 			fmt.Sprintf("Existing network %s is incompatible", network.Name),
 			fmt.Sprintf("driver=%s scope=%s internal=%t", network.Driver, network.Scope, network.Internal),
 			"Choose a local non-internal bridge network or a different network name.",
-		)
+		), inventory
 	}
+	inventory.Disposition = domain.PreflightAdopt
 	return pass(
 		"proxy-network",
 		"docker",
 		fmt.Sprintf("Existing network %s is compatible and will be preserved", network.Name),
-	)
+	), inventory
 }
 
 func (runner *Runner) dnsmasqBinaryCheck() domain.DiagnosticCheck {
@@ -430,7 +476,7 @@ func (runner *Runner) dnsmasqBinaryCheck() domain.DiagnosticCheck {
 
 func (runner *Runner) dnsmasqServiceCheck(
 	ctx context.Context,
-) domain.DiagnosticCheck {
+) (domain.DiagnosticCheck, bool) {
 	checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	active, err := runner.host.ServiceActive(
@@ -443,7 +489,7 @@ func (runner *Runner) dnsmasqServiceCheck(
 			"dns",
 			"dnsmasq service state could not be determined",
 			"Verify the service manager before apply: "+err.Error(),
-		)
+		), false
 	}
 	if !active {
 		return warn(
@@ -451,13 +497,13 @@ func (runner *Runner) dnsmasqServiceCheck(
 			"dns",
 			"dnsmasq is installed but its service is not active",
 			"The reviewed install plan must start it and record the prior service state.",
-		)
+		), false
 	}
 	return pass(
 		"dnsmasq-service",
 		"dns",
 		"dnsmasq service is active",
-	)
+	), true
 }
 
 func (runner *Runner) dnsmasqIncludeCheck() domain.DiagnosticCheck {
@@ -491,19 +537,28 @@ type dnsmasqMapping struct {
 	address string
 }
 
-func (runner *Runner) dnsmasqMappingCheck() domain.DiagnosticCheck {
+func (runner *Runner) dnsmasqMappingCheck() (
+	domain.DiagnosticCheck,
+	domain.PreflightDNS,
+) {
+	inventory := domain.PreflightDNS{
+		MappingPaths: []string{},
+		ConfigPaths:  []string{},
+	}
 	paths, err := runner.host.ListConfigFiles(runner.config.DnsmasqDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		inventory.Disposition = domain.PreflightUnknown
 		return fail(
 			"dnsmasq-domain",
 			"dns",
 			"dnsmasq include directory could not be inspected",
 			err.Error(),
 			"Verify permissions and the configured include directory.",
-		)
+		), inventory
 	}
 	paths = append(paths, runner.config.DnsmasqConfig)
 	sort.Strings(paths)
+	inventory.ConfigPaths = append([]string(nil), paths...)
 	var mappings []dnsmasqMapping
 	var unreadable []string
 	for _, path := range paths {
@@ -522,21 +577,23 @@ func (runner *Runner) dnsmasqMappingCheck() domain.DiagnosticCheck {
 		}
 	}
 	if len(unreadable) > 0 {
+		inventory.Disposition = domain.PreflightUnknown
 		return fail(
 			"dnsmasq-domain",
 			"dns",
 			"One or more dnsmasq configuration files could not be inspected",
 			strings.Join(unreadable, "; "),
 			"Fix file permissions before checking for conflicting local-domain mappings.",
-		)
+		), inventory
 	}
 	if len(mappings) == 0 {
+		inventory.Disposition = domain.PreflightCreate
 		return warn(
 			"dnsmasq-domain",
 			"dns",
 			"No dnsmasq wildcard mapping exists for "+runner.config.BaseDomain,
 			"The installation plan may create a managed mapping to 127.0.0.1.",
-		)
+		), inventory
 	}
 	var correct, conflicting []string
 	for _, mapping := range mappings {
@@ -548,42 +605,53 @@ func (runner *Runner) dnsmasqMappingCheck() domain.DiagnosticCheck {
 		}
 	}
 	if len(conflicting) > 0 {
+		inventory.Disposition = domain.PreflightConflict
 		return fail(
 			"dnsmasq-domain",
 			"dns",
 			"Conflicting dnsmasq mappings exist for "+runner.config.BaseDomain,
 			strings.Join(conflicting, "; "),
 			"Remove or reconcile conflicting mappings before installation.",
-		)
+		), inventory
 	}
 	if len(correct) > 1 {
-		return warn(
+		inventory.Disposition = domain.PreflightConflict
+		return fail(
 			"dnsmasq-domain",
 			"dns",
 			"Duplicate correct dnsmasq mappings exist for "+runner.config.BaseDomain,
+			strings.Join(correct, "; "),
 			"Keep one mapping before Docklane records ownership: "+strings.Join(correct, "; "),
-		)
+		), inventory
 	}
+	inventory.Disposition = domain.PreflightAdopt
+	inventory.MappingPaths = []string{mappings[0].path}
 	return pass(
 		"dnsmasq-domain",
 		"dns",
 		"dnsmasq maps "+runner.config.BaseDomain+" to 127.0.0.1 via "+mappings[0].path,
-	)
+	), inventory
 }
 
-func (runner *Runner) resolverCheck(ctx context.Context) domain.DiagnosticCheck {
+func (runner *Runner) resolverCheck(ctx context.Context) (
+	domain.DiagnosticCheck,
+	domain.PreflightResolver,
+) {
+	inventory := domain.PreflightResolver{Addresses: []string{}}
 	hostname := "docklane-preflight." + runner.config.BaseDomain
 	checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	addresses, err := runner.host.LookupHost(checkCtx, hostname)
 	if err != nil {
+		inventory.Disposition = domain.PreflightCreate
 		return warn(
 			"resolver-domain",
 			"resolver",
 			"The system resolver does not currently resolve "+runner.config.BaseDomain,
 			"The reviewed install plan must configure split DNS before verification.",
-		)
+		), inventory
 	}
+	inventory.Addresses = append([]string(nil), addresses...)
 	var loopback, other []string
 	for _, address := range addresses {
 		ip := net.ParseIP(address)
@@ -594,37 +662,45 @@ func (runner *Runner) resolverCheck(ctx context.Context) domain.DiagnosticCheck 
 		}
 	}
 	if len(loopback) == 0 {
+		inventory.Disposition = domain.PreflightConflict
 		return fail(
 			"resolver-domain",
 			"resolver",
 			"The local domain resolves away from loopback",
 			strings.Join(addresses, ", "),
 			"Remove the conflicting resolver rule before installation.",
-		)
+		), inventory
 	}
 	if len(other) > 0 {
-		return warn(
+		inventory.Disposition = domain.PreflightConflict
+		return fail(
 			"resolver-domain",
 			"resolver",
 			"The local domain has mixed loopback and non-loopback answers",
+			strings.Join(addresses, ", "),
 			"Reconcile resolver sources: "+strings.Join(addresses, ", "),
-		)
+		), inventory
 	}
+	inventory.Disposition = domain.PreflightAdopt
 	return pass(
 		"resolver-domain",
 		"resolver",
 		"System resolver maps "+hostname+" to "+strings.Join(loopback, ", "),
-	)
+	), inventory
 }
 
-func (runner *Runner) manifestCheck() domain.DiagnosticCheck {
+func (runner *Runner) manifestCheck() (
+	domain.DiagnosticCheck,
+	domain.PreflightManifest,
+) {
+	inventory := domain.PreflightManifest{}
 	manifest, err := runner.manifest.Load()
 	if errors.Is(err, installmanifest.ErrNotFound) {
 		return pass(
 			"install-manifest",
 			"state",
 			"No existing installation manifest; a new planned manifest may be created",
-		)
+		), inventory
 	}
 	if err != nil {
 		return fail(
@@ -633,8 +709,12 @@ func (runner *Runner) manifestCheck() domain.DiagnosticCheck {
 			"Existing installation manifest is invalid or unreadable",
 			err.Error(),
 			"Repair or explicitly recover the manifest before installation.",
-		)
+		), inventory
 	}
+	inventory.Exists = true
+	inventory.InstallationID = manifest.InstallationID
+	inventory.State = manifest.State
+	inventory.Generation = manifest.Generation
 	return warn(
 		"install-manifest",
 		"state",
@@ -645,7 +725,7 @@ func (runner *Runner) manifestCheck() domain.DiagnosticCheck {
 			manifest.Generation,
 		),
 		"Use the future upgrade or recovery workflow instead of creating a second installation.",
-	)
+	), inventory
 }
 
 func dnsmasqIncludesDirectory(content string, directory string) bool {

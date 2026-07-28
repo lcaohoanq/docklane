@@ -329,6 +329,16 @@ ambiguous ownership or conflicting DNS/network state blocks installation.
 Checks have stable IDs and support JSON output for the upcoming deterministic
 `install --dry-run` planner.
 
+`docklane install --dry-run` converts structured preflight inventory—not
+human-readable summaries—into validated manifest resources and ordered
+operations. Existing compatible resources can only become adopted/preserved;
+missing resources become managed with remove or restore rollback. A SHA-256
+token covers the target, inventory, resources, operations, blockers, and
+pending coverage while excluding observation time, so unchanged machine state
+produces the same review token. The current foundation plan explicitly marks
+Docklane runtime deployment and TLS/trust inventory as pending and cannot be
+used for apply.
+
 ## 6. Route lifecycle
 
 ### 6.1 Create

@@ -39,6 +39,7 @@ Supported v1 resource kinds are:
 - `docker_volume`
 - `docker_container`
 - `system_service`
+- `resolver_rule`
 
 Every resource has a stable logical ID, exact target, ownership, state, and
 rollback strategy. Optional SHA-256 fingerprints bind records to exact

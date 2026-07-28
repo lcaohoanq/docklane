@@ -106,6 +106,8 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 ./bin/docklane network apply
 ./bin/docklane preflight
 ./bin/docklane preflight --json
+./bin/docklane install --dry-run
+./bin/docklane install --dry-run --json
 ./bin/docklane manifest init --path /absolute/path/install-manifest.json
 ./bin/docklane manifest validate --path /absolute/path/install-manifest.json
 ./bin/docklane manifest show --path /absolute/path/install-manifest.json
@@ -135,6 +137,13 @@ proxy-network compatibility, dnsmasq configuration and service state, the
 system resolver's real wildcard answer, existing Traefik candidates, and
 manifest state. Warnings describe work for a future reviewed install plan;
 blocking conflicts return a non-zero exit status.
+
+`docklane install --dry-run` turns the structured preflight inventory into a
+tokened ownership plan without creating the manifest or changing the host.
+The current foundation planner covers Traefik adoption, the proxy network,
+dnsmasq, and resolver behavior. It reports Docklane runtime deployment and
+TLS/trust inventory as pending until those planners are implemented; install
+apply therefore remains intentionally unavailable.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the

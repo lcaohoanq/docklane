@@ -280,7 +280,10 @@ safe and repeatable.
 
 - [X] Define installation manifest schema v1 with strict ownership, rollback,
   validation, atomic persistence, and read-only inspection.
-- [ ] Add `docklane install --dry-run`.
+- [-] Add `docklane install --dry-run`. The deterministic foundation plan
+  covers manifest creation, Traefik adoption, proxy-network ownership,
+  dnsmasq, and resolver behavior; Docklane runtime and TLS/trust inventory
+  remain explicit pending coverage.
 - [ ] Add `docklane install`.
 - [ ] Add `docklane uninstall --dry-run`.
 - [ ] Add `docklane uninstall`.
