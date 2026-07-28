@@ -144,9 +144,32 @@ completed. Content-and-mode snapshots detect target and backup drift.
 
 Generated private bytes are intentionally absent from this JSON document. The
 adapter therefore refuses recovery when a caller supplies bytes whose intent
-fingerprint differs from the journal. A future private material cache must
-durably rehydrate the exact generated bundle before managed install can be
-enabled across process restarts.
+fingerprint differs from the journal.
+
+## Private material cache
+
+Managed manifests may include a `materialCache` object before their execution
+journal is created. It records schema and lifecycle state, the exact
+installation-bound cache directory, an inventory fingerprint, and ordered
+entries containing:
+
+- artifact ID and final target;
+- intended target mode and sensitivity;
+- private cache path;
+- SHA-256 content fingerprint.
+
+The entry list never contains cached content. On disk, all payloads and the
+strict descriptor are private `0600` files beneath effective-user-owned `0700`
+directories. Cache load requires the selected managed artifacts, descriptor,
+entry order, paths, modes, ownership, and fingerprints to agree. This allows a
+restart to recover the original generated PKI and dashboard credentials
+without consuming new randomness.
+
+Cleanup uses durable `ready`, `clearing`, and `cleared` states. `clearing` and
+`cleared` are valid only after execution is complete, rolled back, or failed.
+The write-ahead clearing generation prevents a deleted cache from appearing
+ready if the final manifest save is interrupted. Unknown or drifted cache
+entries are preserved and reported rather than recursively deleted.
 
 ## Reverse planning
 

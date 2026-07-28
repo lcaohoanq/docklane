@@ -430,11 +430,44 @@ snapshot. Rollback refuses target, type, mode, content, or backup drift.
 
 Sensitive material is cloned into the adapter, and its caller explicitly
 clears that clone at the terminal boundary. A restarted workflow must
-rehydrate the exact same bytes:
-the journal rejects a changed fingerprint before another file is touched. A
-private durable material cache is still required before generated PKI and
-credentials can resume across a real process restart; until then the live
-managed command remains disabled rather than mixing generations.
+rehydrate the exact same bytes: the journal rejects a changed fingerprint
+before another file is touched.
+
+The private material cache now provides that rehydration boundary. Before any
+target file step, selected materialization is published atomically under:
+
+```text
+STATE/.material-cache/INSTALLATION_ID/
+```
+
+Every cached payload and its strict JSON descriptor use mode `0600`; the cache
+directories use `0700`. State, cache, staging, lock, descriptor, and payload
+ownership must match the effective installer user. The descriptor contains
+only artifact IDs, final targets, intended modes, sensitivity flags, and
+SHA-256 fingerprints. It contains no certificate keys, passwords, or rendered
+content. Its inventory fingerprint and installation-bound absolute paths are
+then saved into the installation manifest before execution journaling begins.
+
+Cache publication uses a private deterministic staging directory, file fsync,
+directory fsync, atomic directory rename, and parent fsync under an exclusive
+per-installation lock. A cache published before a failed manifest checkpoint
+is recognized and reused on restart without regenerating secrets. Partial
+staging is replaceable only before an execution journal exists. Reload rejects
+unknown entries, symlinks, non-regular files, broad permissions, wrong
+ownership, changed fingerprints, a changed artifact selection, or a different
+installation path.
+
+Terminal cleanup is also journaled:
+
+```text
+ready → clearing → cleared
+```
+
+The `clearing` checkpoint is durable before any payload is unlinked. Cleanup
+removes only the exact fingerprinted entries and descriptor; unknown or
+modified entries stop deletion. If the process exits after removal but before
+the `cleared` checkpoint, restart observes the absent directory and safely
+finishes the manifest transition.
 
 Hybrid plans select artifacts by resource ownership. An adopted DNS, resolver,
 TLS, gateway, or runtime component never receives its managed replacement

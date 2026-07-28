@@ -106,6 +106,7 @@ type InstallationManifest struct {
 	Settings             InstallationSettings       `json:"settings"`
 	ManagedSpecification *InstallationSpecification `json:"managedSpecification,omitempty"`
 	ManagedArtifacts     []InstallationArtifact     `json:"managedArtifacts,omitempty"`
+	MaterialCache        *InstallationMaterialCache `json:"materialCache,omitempty"`
 	Execution            *InstallationExecution     `json:"execution,omitempty"`
 	Resources            []InstallationResource     `json:"resources"`
 }
@@ -162,6 +163,33 @@ func (manifest InstallationManifest) Validate() error {
 	if manifest.ManagedSpecification == nil && len(manifest.ManagedArtifacts) != 0 {
 		return fmt.Errorf("managed artifacts require a managed specification")
 	}
+	if manifest.MaterialCache != nil {
+		if manifest.ManagedSpecification == nil {
+			return fmt.Errorf("material cache requires a managed specification")
+		}
+		if err := manifest.MaterialCache.Validate(
+			manifest.InstallationID,
+			manifest.ManagedSpecification.Paths.StateDirectory,
+		); err != nil {
+			return fmt.Errorf("material cache: %w", err)
+		}
+		if err := manifest.MaterialCache.ValidateArtifacts(
+			manifest.ManagedArtifacts,
+		); err != nil {
+			return fmt.Errorf("material cache: %w", err)
+		}
+		if manifest.MaterialCache.State == MaterialCacheClearing ||
+			manifest.MaterialCache.State == MaterialCacheCleared {
+			if manifest.Execution == nil ||
+				(manifest.Execution.Phase != ExecutionComplete &&
+					manifest.Execution.Phase != ExecutionRolledBack &&
+					manifest.Execution.Phase != ExecutionFailed) {
+				return fmt.Errorf(
+					"clearing or cleared material cache requires terminal execution",
+				)
+			}
+		}
+	}
 	if manifest.Resources == nil {
 		return fmt.Errorf("installation resources must be an array")
 	}
@@ -191,6 +219,13 @@ func (manifest InstallationManifest) Validate() error {
 		}
 		if err := manifest.Execution.Validate(manifest.Resources); err != nil {
 			return fmt.Errorf("execution journal: %w", err)
+		}
+		if manifest.MaterialCache != nil {
+			if err := manifest.MaterialCache.ValidateExecution(
+				*manifest.Execution,
+			); err != nil {
+				return fmt.Errorf("material cache: %w", err)
+			}
 		}
 		expectedState := map[InstallationExecutionPhase]InstallationState{
 			ExecutionForward:    InstallationApplying,

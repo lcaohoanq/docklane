@@ -317,8 +317,10 @@ safe and repeatable.
 - [X] Journal every materialized managed file and add content/mode-bound file
   adapters with deterministic backups, restart inspection, remove/restore
   preconditions, sensitive-buffer clearing, and drift-safe retry/rollback.
-- [ ] Persist generated PKI and credential material in a private recoverable
-  cache so a restarted process can rehydrate the journaled file intent.
+- [X] Persist generated PKI and credential material in an atomic,
+  installation-bound private cache with strict descriptor/inventory
+  validation, effective-user ownership checks, restart rehydration, and
+  write-ahead terminal cleanup.
 - [ ] Add `docklane uninstall`.
 - [-] Record every file, trust entry, Docker network, container, and service
   created by Docklane. File and trust-anchor ownership are complete; Docker,

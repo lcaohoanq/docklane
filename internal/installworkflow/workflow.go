@@ -642,6 +642,46 @@ func validateSteps(
 			len(managed),
 		)
 	}
+	if manifest.MaterialCache != nil {
+		if err := validateMaterialCacheSteps(
+			*manifest.MaterialCache,
+			steps,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMaterialCacheSteps(
+	cache domain.InstallationMaterialCache,
+	steps []Step,
+) error {
+	fileSteps := map[string]Step{}
+	for _, step := range steps {
+		if step.Stage == domain.ExecutionFiles {
+			fileSteps[step.ResourceID] = step
+		}
+	}
+	if len(fileSteps) != len(cache.Entries) {
+		return fmt.Errorf(
+			"workflow covers %d of %d cached file entries",
+			len(fileSteps),
+			len(cache.Entries),
+		)
+	}
+	for _, entry := range cache.Entries {
+		step, exists := fileSteps[entry.ArtifactID]
+		if !exists ||
+			step.Target != entry.Target ||
+			step.IntentFingerprint != entry.Fingerprint ||
+			step.IntentMode != entry.Mode {
+			return fmt.Errorf(
+				"cached material %s does not match file workflow intent",
+				entry.ArtifactID,
+			)
+		}
+	}
 	return nil
 }
 
