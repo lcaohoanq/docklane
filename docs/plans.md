@@ -302,6 +302,10 @@ safe and repeatable.
 - [X] Add reversible atomic file staging with mode-preserving fingerprinted
   backups, symlink refusal, failure rollback, backup-integrity checks, and
   target-drift refusal.
+- [X] Derive strict managed Docker network, volume, and container create
+  requests with installation-ID ownership labels and inspected-state checks.
+- [X] Add dependency-ordered Docker apply and reverse rollback with conflict,
+  failure-injection, configuration-drift, and retry coverage.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.

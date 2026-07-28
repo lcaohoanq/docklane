@@ -411,6 +411,32 @@ This executor is not connected to
 `docklane install` yet; service, trust-store, resolver, and Docker operations
 must join the same recovery boundary first.
 
+Managed Docker execution follows a separate reversible transaction. The
+installation specification expands into strict Engine API requests in this
+dependency order:
+
+```text
+proxy network → private control network → probe socket volume
+              → probe → controller → gateway
+```
+
+The control network is internal, the probe is capability-free, the controller
+publishes only its loopback port, and the gateway alone publishes 80/443.
+Every resource is labeled with the managed schema, role, and immutable
+installation ID. The installation-ID label closes Docker's named-volume race:
+volume creation may return an already-existing name, but that object cannot
+be deleted by this transaction unless its ownership label matches.
+
+Each create is followed by inspection. Networks verify driver, scope,
+internal/attachable state, and ownership. Volumes verify driver, scope, and
+ownership. Containers verify image reference, command, network set, mounts,
+published ports, read-only root filesystem, privilege state, security options,
+capability drops, restart policy, and labels both before and after startup.
+Rollback walks the graph in reverse, re-inspects the exact returned ID, and
+removes it only if its configuration and ownership still match the recorded
+post-create snapshot. Running and health are treated as volatile; topology and
+ownership drift stop deletion and permit a later retry.
+
 `docklane install --token TOKEN` always reruns preflight and reconstructs the
 plan. A constant-time exact comparison binds apply to the machine state the
 user reviewed. The adoption executor refuses incomplete, blocked, stale, or

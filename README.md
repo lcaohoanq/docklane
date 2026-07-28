@@ -189,6 +189,16 @@ so it will not overwrite a later external edit. Managed host apply remains
 disabled until service, trust-store, and Docker mutations have the same
 recovery coverage.
 
+The Docker transaction layer now derives strict create requests for the proxy
+and private control networks, probe socket volume, and probe/controller/gateway
+containers. Every object receives managed, schema, role, and installation-ID
+labels. It refuses pre-existing names, verifies inspected topology, mounts,
+ports, commands, and security settings after creation and startup, and records
+the exact returned object IDs. Failures remove containers, volume, and networks
+in reverse dependency order. Rollback compares current objects with their
+post-create snapshots and refuses deletion after configuration or ownership
+drift; volatile running/health changes do not prevent cleanup.
+
 `docklane install --token TOKEN` reruns preflight and planning, then
 applies only if the supplied token exactly matches the fresh plan. The current
 apply engine supports safe adoption: it atomically journals `planned`,

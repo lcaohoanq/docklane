@@ -98,6 +98,9 @@ func (spec InstallationSpecification) Validate() error {
 			return fmt.Errorf("invalid %s %q", label, name)
 		}
 	}
+	if spec.ProxyNetwork == spec.ControlNetwork {
+		return fmt.Errorf("proxy and control networks must be distinct")
+	}
 	if strings.TrimSpace(spec.Images.Traefik) == "" ||
 		strings.TrimSpace(spec.Images.Docklane) == "" {
 		return fmt.Errorf("managed image references are required")

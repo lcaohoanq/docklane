@@ -54,3 +54,11 @@ func TestBuildRejectsRootStateDirectory(t *testing.T) {
 		t.Fatal("expected root state directory to be rejected")
 	}
 }
+
+func TestBuildRejectsSharedProxyAndControlNetwork(t *testing.T) {
+	config := testConfig()
+	config.ProxyNetwork = "docklane-control"
+	if _, err := Build(config); err == nil {
+		t.Fatal("expected shared proxy and control network to be rejected")
+	}
+}

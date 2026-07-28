@@ -87,6 +87,14 @@ contract below; newly created files require no backup. Managed apply remains
 blocked until these results are journaled into manifest generations together
 with the non-file host and Docker operations.
 
+The Docker executor likewise remains disconnected from the command while its
+transaction is tested independently. It injects the manifest installation ID
+as an ownership label on both networks, the volume, and all three containers;
+records Docker's exact returned IDs and inspected state; and rolls back in
+reverse dependency order. This identity is necessary because Docker named
+volume creation is idempotent and does not provide an atomic
+create-if-absent operation.
+
 ## Reverse planning
 
 `docklane uninstall --dry-run` accepts only an `installed` manifest and walks
