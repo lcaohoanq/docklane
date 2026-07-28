@@ -12,8 +12,9 @@ import (
 )
 
 type Options struct {
-	DnsmasqTarget  string
-	DnsmasqService string
+	DnsmasqTarget        string
+	DnsmasqService       string
+	ManagedSpecification domain.InstallationSpecification
 }
 
 func Build(
@@ -55,6 +56,16 @@ func Build(
 	addTLS(&plan)
 	addRuntime(&plan)
 	addManifestOperation(&plan)
+	if hasManagedResources(plan.Resources) {
+		if err := options.ManagedSpecification.Validate(); err != nil {
+			return domain.InstallationPlan{}, fmt.Errorf(
+				"managed installation specification: %w",
+				err,
+			)
+		}
+		specification := options.ManagedSpecification
+		plan.ManagedSpecification = &specification
+	}
 	sort.Strings(plan.Blockers)
 	plan.Blockers = unique(plan.Blockers)
 	plan.Ready = len(plan.Blockers) == 0
@@ -77,6 +88,15 @@ func Build(
 	}
 	plan.Token = token
 	return plan, nil
+}
+
+func hasManagedResources(resources []domain.InstallationResource) bool {
+	for _, resource := range resources {
+		if resource.Ownership == domain.ResourceManaged {
+			return true
+		}
+	}
+	return false
 }
 
 func addGateway(plan *domain.InstallationPlan) {

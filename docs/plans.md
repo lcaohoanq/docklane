@@ -291,6 +291,8 @@ safe and repeatable.
   executors and rollback remain.
 - [X] Add `docklane uninstall --dry-run` with reverse dependency ordering,
   adopted-resource preservation, and managed remove/restore contracts.
+- [X] Define managed installation specification v1 for canonical state/PKI
+  paths, image references, TLS policy, and gateway/controller/probe topology.
 - [ ] Add `docklane uninstall`.
 - [ ] Record every file, trust entry, Docker network, container, and service
   created by Docklane.

@@ -93,6 +93,10 @@ func (runner *Runner) Apply(
 		[]domain.InstallationResource(nil),
 		plan.Resources...,
 	)
+	if plan.ManagedSpecification != nil {
+		specification := *plan.ManagedSpecification
+		manifest.ManagedSpecification = &specification
+	}
 	if err := manifest.Validate(); err != nil {
 		return domain.InstallationManifest{}, fmt.Errorf(
 			"construct planned installation manifest: %w",

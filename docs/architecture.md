@@ -360,6 +360,16 @@ networks, volumes, and the data directory are independently recorded as
 adopted/preserved or managed/removable; failure at any ownership boundary
 prevents adoption.
 
+Any plan containing a managed resource must include installation specification
+schema v1. It pins canonical state/data/PKI/Traefik paths, image references,
+certificate SAN and lifetime policy, Docker networks and volume names, and
+three complete container roles. Validation rejects `/` as a state root,
+requires every mutable PKI/runtime path below the dedicated state directory,
+limits leaf validity to 397 days, requires RSA keys of at least 3072 bits, and
+enforces the gateway ports, loopback controller port, and capability-free
+probe. Pure adoption plans omit the managed specification because their exact
+external resources are already recorded by inventory.
+
 `docklane install --token TOKEN` always reruns preflight and reconstructs the
 plan. A constant-time exact comparison binds apply to the machine state the
 user reviewed. The adoption executor refuses incomplete, blocked, stale, or

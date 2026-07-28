@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"docklane.local/docklane/internal/domain"
+	"docklane.local/docklane/internal/installspec"
 )
 
 func adoptionReport() domain.PreflightReport {
@@ -78,8 +79,9 @@ func adoptionReport() domain.PreflightReport {
 func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	report := adoptionReport()
 	plan, err := Build(report, Options{
-		DnsmasqTarget:  "/etc/dnsmasq.d/docklane.conf",
-		DnsmasqService: "dnsmasq",
+		DnsmasqTarget:        "/etc/dnsmasq.d/docklane.conf",
+		DnsmasqService:       "dnsmasq",
+		ManagedSpecification: testManagedSpecification(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +91,9 @@ func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	}
 	if !plan.Complete || len(plan.Pending) != 0 {
 		t.Fatalf("coverage = complete:%t pending:%v", plan.Complete, plan.Pending)
+	}
+	if plan.ManagedSpecification != nil {
+		t.Fatalf("adoption plan claimed managed specification: %#v", plan.ManagedSpecification)
 	}
 	if len(plan.Resources) != 13 || len(plan.Operations) != 14 {
 		t.Fatalf(
@@ -129,6 +134,25 @@ func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	}
 }
 
+func testManagedSpecification(t *testing.T) domain.InstallationSpecification {
+	t.Helper()
+	specification, err := installspec.Build(installspec.Config{
+		BaseDomain:      "docker.home.arpa",
+		ProxyNetwork:    "proxy",
+		DockerSocket:    "/var/run/docker.sock",
+		StateDirectory:  "/var/lib/docklane",
+		DataDirectory:   "/var/lib/docklane/data",
+		DnsmasqConfig:   "/etc/dnsmasq.d/docklane.conf",
+		TrustAnchorPath: "/etc/ca-certificates/trust-source/anchors/docklane-local-root-ca.crt",
+		TraefikImage:    "traefik:v3.7",
+		DocklaneImage:   "docklane:local",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return specification
+}
+
 func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	report := adoptionReport()
 	report.Status = domain.DiagnosticWarn
@@ -163,17 +187,39 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 			Name:        "docklane-probe-run",
 		},
 		DataDisposition: domain.PreflightCreate,
-		DataPath:        "/var/lib/docklane",
+		DataPath:        "/var/lib/docklane/data",
 	}
 	plan, err := Build(report, Options{
-		DnsmasqTarget:  "/etc/dnsmasq.d/docklane.conf",
-		DnsmasqService: "dnsmasq",
+		DnsmasqTarget:        "/etc/dnsmasq.d/docklane.conf",
+		DnsmasqService:       "dnsmasq",
+		ManagedSpecification: testManagedSpecification(t),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !plan.Ready || plan.Status != domain.DiagnosticWarn {
 		t.Fatalf("plan = %#v", plan)
+	}
+	if plan.ManagedSpecification == nil {
+		t.Fatal("managed specification is missing")
+	}
+	changedSpecification := testManagedSpecification(t)
+	changedSpecification.Images.Traefik = "traefik:v3.8"
+	for index := range changedSpecification.Containers {
+		if changedSpecification.Containers[index].Role == "gateway" {
+			changedSpecification.Containers[index].Image = "traefik:v3.8"
+		}
+	}
+	changed, err := Build(report, Options{
+		DnsmasqTarget:        "/etc/dnsmasq.d/docklane.conf",
+		DnsmasqService:       "dnsmasq",
+		ManagedSpecification: changedSpecification,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.Token == plan.Token {
+		t.Fatal("managed image change did not change plan token")
 	}
 	assertResource(
 		t,

@@ -96,15 +96,16 @@ type InstallationResource struct {
 }
 
 type InstallationManifest struct {
-	SchemaVersion  int                    `json:"schemaVersion"`
-	InstallationID string                 `json:"installationId"`
-	Generation     uint64                 `json:"generation"`
-	ProductVersion string                 `json:"productVersion"`
-	State          InstallationState      `json:"state"`
-	CreatedAt      time.Time              `json:"createdAt"`
-	UpdatedAt      time.Time              `json:"updatedAt"`
-	Settings       InstallationSettings   `json:"settings"`
-	Resources      []InstallationResource `json:"resources"`
+	SchemaVersion        int                        `json:"schemaVersion"`
+	InstallationID       string                     `json:"installationId"`
+	Generation           uint64                     `json:"generation"`
+	ProductVersion       string                     `json:"productVersion"`
+	State                InstallationState          `json:"state"`
+	CreatedAt            time.Time                  `json:"createdAt"`
+	UpdatedAt            time.Time                  `json:"updatedAt"`
+	Settings             InstallationSettings       `json:"settings"`
+	ManagedSpecification *InstallationSpecification `json:"managedSpecification,omitempty"`
+	Resources            []InstallationResource     `json:"resources"`
 }
 
 var (
@@ -147,6 +148,11 @@ func (manifest InstallationManifest) Validate() error {
 	}
 	if err := manifest.Settings.Validate(); err != nil {
 		return err
+	}
+	if manifest.ManagedSpecification != nil {
+		if err := manifest.ManagedSpecification.Validate(); err != nil {
+			return fmt.Errorf("managed specification: %w", err)
+		}
 	}
 	if manifest.Resources == nil {
 		return fmt.Errorf("installation resources must be an array")

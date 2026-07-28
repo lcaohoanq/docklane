@@ -38,15 +38,16 @@ type UninstallationPlan struct {
 }
 
 type InstallationPlan struct {
-	SchemaVersion int                     `json:"schemaVersion"`
-	Token         string                  `json:"token"`
-	Ready         bool                    `json:"ready"`
-	Complete      bool                    `json:"complete"`
-	Status        DiagnosticStatus        `json:"status"`
-	Target        PreflightTarget         `json:"target"`
-	Inventory     PreflightInventory      `json:"inventory"`
-	Resources     []InstallationResource  `json:"resources"`
-	Operations    []InstallationOperation `json:"operations"`
-	Blockers      []string                `json:"blockers"`
-	Pending       []string                `json:"pending"`
+	SchemaVersion        int                        `json:"schemaVersion"`
+	Token                string                     `json:"token"`
+	Ready                bool                       `json:"ready"`
+	Complete             bool                       `json:"complete"`
+	Status               DiagnosticStatus           `json:"status"`
+	Target               PreflightTarget            `json:"target"`
+	Inventory            PreflightInventory         `json:"inventory"`
+	ManagedSpecification *InstallationSpecification `json:"managedSpecification,omitempty"`
+	Resources            []InstallationResource     `json:"resources"`
+	Operations           []InstallationOperation    `json:"operations"`
+	Blockers             []string                   `json:"blockers"`
+	Pending              []string                   `json:"pending"`
 }

@@ -27,6 +27,7 @@ ownership/rollback combinations.
 | `state` | `planned`, `applying`, `installed`, `rolling_back`, `rolled_back`, or `failed` |
 | `createdAt`, `updatedAt` | UTC lifecycle timestamps |
 | `settings` | Installation-wide base domain and proxy network |
+| `managedSpecification` | Optional validated clean-install contract; omitted for pure adoption |
 | `resources` | Exact owned or adopted machine resources |
 
 ## Resource contract
@@ -70,6 +71,9 @@ creates generation 1 as `planned`, generation 2 as `applying`, and generation
 
 Plans containing a managed resource are rejected before manifest creation
 until the corresponding create/configure and remove/restore executors exist.
+Future managed apply copies the reviewed `managedSpecification` into the
+manifest so recovery does not depend on ambient Compose files or legacy host
+paths.
 
 ## Reverse planning
 

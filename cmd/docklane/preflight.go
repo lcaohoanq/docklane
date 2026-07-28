@@ -68,7 +68,7 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 	)
 	options.runtimeDataPath = flags.String(
 		"runtime-data",
-		"/var/lib/docklane",
+		"/var/lib/docklane/data",
 		"Docklane controller data directory for a clean installation",
 	)
 	return options

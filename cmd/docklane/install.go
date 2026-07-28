@@ -11,6 +11,7 @@ import (
 	"docklane.local/docklane/internal/installapply"
 	"docklane.local/docklane/internal/installmanifest"
 	"docklane.local/docklane/internal/installplan"
+	"docklane.local/docklane/internal/installspec"
 )
 
 func install(args []string) error {
@@ -20,6 +21,26 @@ func install(args []string) error {
 		"dnsmasq-target",
 		"/etc/dnsmasq.d/docklane.conf",
 		"managed dnsmasq wildcard configuration target",
+	)
+	managedStateDirectory := flags.String(
+		"managed-state-dir",
+		"/var/lib/docklane",
+		"dedicated state directory for Docklane-managed resources",
+	)
+	managedTrustAnchor := flags.String(
+		"managed-trust-anchor",
+		"/etc/ca-certificates/trust-source/anchors/docklane-local-root-ca.crt",
+		"clean-install system trust-anchor target",
+	)
+	traefikImage := flags.String(
+		"traefik-image",
+		"traefik:v3.7",
+		"clean-install Traefik image reference",
+	)
+	docklaneImage := flags.String(
+		"docklane-image",
+		"docklane:local",
+		"clean-install Docklane image reference",
 	)
 	dryRun := flags.Bool("dry-run", false, "render the plan without applying it")
 	token := flags.String(
@@ -50,9 +71,24 @@ func install(args []string) error {
 	if err != nil {
 		return err
 	}
+	specification, err := installspec.Build(installspec.Config{
+		BaseDomain:      *options.baseDomain,
+		ProxyNetwork:    *options.proxyNetwork,
+		DockerSocket:    *options.dockerSocket,
+		StateDirectory:  *managedStateDirectory,
+		DataDirectory:   *options.runtimeDataPath,
+		DnsmasqConfig:   *dnsmasqTarget,
+		TrustAnchorPath: *managedTrustAnchor,
+		TraefikImage:    *traefikImage,
+		DocklaneImage:   *docklaneImage,
+	})
+	if err != nil {
+		return err
+	}
 	plan, err := installplan.Build(report, installplan.Options{
-		DnsmasqTarget:  *dnsmasqTarget,
-		DnsmasqService: *options.dnsmasqService,
+		DnsmasqTarget:        *dnsmasqTarget,
+		DnsmasqService:       *options.dnsmasqService,
+		ManagedSpecification: specification,
 	})
 	if err != nil {
 		return err
@@ -122,6 +158,21 @@ func printInstallationPlan(plan domain.InstallationPlan) {
 		managed,
 		adopted,
 	)
+	if plan.ManagedSpecification != nil {
+		specification := plan.ManagedSpecification
+		fmt.Printf(
+			"Managed contract: state %s · images %s / %s\n",
+			specification.Paths.StateDirectory,
+			specification.Images.Traefik,
+			specification.Images.Docklane,
+		)
+		fmt.Printf(
+			"Managed PKI: %s and *.%s · root key %s\n",
+			specification.BaseDomain,
+			specification.BaseDomain,
+			specification.PKI.RootPrivateKeyPath,
+		)
+	}
 	for _, operation := range plan.Operations {
 		marker := "record"
 		if operation.Mutating {

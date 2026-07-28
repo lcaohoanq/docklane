@@ -160,6 +160,14 @@ fingerprinted; containers, networks, the probe socket volume, and the data
 directory receive explicit preserve/remove ownership. The reviewed plan now
 has complete resource coverage.
 
+When a plan contains managed resources, it also carries a validated clean
+installation specification. The specification pins the state, data, PKI,
+Traefik, dnsmasq, and trust-anchor paths; explicit Traefik and Docklane image
+references; certificate SAN/lifetime/key settings; and the full
+gateway/controller/probe topology. Mutable state is constrained below the
+dedicated `--managed-state-dir` (default `/var/lib/docklane`). Pure adoption
+plans omit this managed contract.
+
 `docklane install --token TOKEN` reruns preflight and planning, then
 applies only if the supplied token exactly matches the fresh plan. The current
 apply engine supports safe adoption: it atomically journals `planned`,
