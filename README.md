@@ -6,6 +6,7 @@ stable HTTPS names such as `excalidraw.docker.home.arpa`.
 Project documentation:
 
 - [Architecture](./docs/architecture.md)
+- [Installation manifest schema v1](./docs/install-manifest-v1.md)
 - [Implementation plan and task tracker](./docs/plans.md)
 
 The Phase 1 prototype provides:
@@ -103,6 +104,9 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 ./bin/docklane doctor --json excalidraw
 ./bin/docklane network plan
 ./bin/docklane network apply
+./bin/docklane manifest init --path /absolute/path/install-manifest.json
+./bin/docklane manifest validate --path /absolute/path/install-manifest.json
+./bin/docklane manifest show --path /absolute/path/install-manifest.json
 ./bin/docklane route add excalidraw \
   --project excalidraw \
   --service excalidraw \
@@ -117,6 +121,12 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 Use `--dry-run` on `route add` to validate and print the route without saving
 it. Set `DOCKLANE_URL` when the controller is not at
 `http://127.0.0.1:4646`.
+
+The installation manifest defaults to
+`/var/lib/docklane/install-manifest.json`; override it with
+`DOCKLANE_MANIFEST` or `--path`. `manifest init` creates only the ownership
+record and never changes DNS, certificates, trust, Docker, Traefik, or system
+services. It refuses to overwrite an existing manifest.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the

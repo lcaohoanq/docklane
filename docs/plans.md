@@ -31,7 +31,7 @@ A task is complete only when:
 | 2     | Route lifecycle and reconciliation reliability | In progress                    |
 | 3     | Managed Docker network and Traefik integration | In progress                    |
 | 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
-| 5     | Installer, migration, and rollback             | Planned                        |
+| 5     | Installer, migration, and rollback             | In progress                    |
 | 6     | Diagnostics and observability                  | Complete                       |
 | 7     | UX/DX hardening and first release              | Planned                        |
 
@@ -278,7 +278,8 @@ Acceptance criteria:
 Goal: construct the global reverse proxy first, then make application opt-in
 safe and repeatable.
 
-- [ ] Define a versioned installation manifest.
+- [X] Define installation manifest schema v1 with strict ownership, rollback,
+  validation, atomic persistence, and read-only inspection.
 - [ ] Add `docklane install --dry-run`.
 - [ ] Add `docklane install`.
 - [ ] Add `docklane uninstall --dry-run`.

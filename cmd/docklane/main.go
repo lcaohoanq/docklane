@@ -27,6 +27,8 @@ import (
 	"docklane.local/docklane/internal/upstreamprobe"
 )
 
+const docklaneVersion = "dev"
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "docklane:", err)
@@ -51,10 +53,12 @@ func run(args []string) error {
 		return probe(args[1:])
 	case "network":
 		return network(args[1:])
+	case "manifest":
+		return manifest(args[1:])
 	case "route":
 		return route(args[1:])
 	case "version":
-		fmt.Println("docklane dev")
+		fmt.Println("docklane " + docklaneVersion)
 		return nil
 	case "help", "-h", "--help":
 		printUsage()
@@ -700,6 +704,9 @@ Usage:
   docklane doctor [ROUTE]    Diagnose controller or route layers
   docklane network plan      Preview network operations
   docklane network apply     Apply the reviewed network plan
+  docklane manifest init     Create an empty ownership manifest
+  docklane manifest show     Inspect the ownership manifest
+  docklane manifest validate Validate the ownership manifest
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route
@@ -711,6 +718,7 @@ Usage:
 
 Environment:
   DOCKLANE_URL               Controller URL (default http://127.0.0.1:4646)
+  DOCKLANE_MANIFEST          Manifest path (default /var/lib/docklane/install-manifest.json)
 `)
 }
 

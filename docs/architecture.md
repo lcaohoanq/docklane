@@ -200,6 +200,14 @@ from the pre-versioning prototype are recognized from their route-table shape,
 backed up, and stamped without replaying changes they already contain.
 Docklane refuses to open a schema newer than the binary supports.
 
+Machine-level installation ownership is intentionally stored outside SQLite
+in a standalone, versioned, mode-`0600` JSON manifest. Installation and
+rollback must remain possible before the controller database exists and after
+the controller has stopped. Manifest writes use generation checks, an advisory
+lock, atomic replacement, file and directory sync, strict JSON decoding, and
+explicit managed-versus-adopted rollback rules. Schema v1 is documented in
+[install-manifest-v1.md](./install-manifest-v1.md).
+
 ### 5.5 Docker adapter
 
 The Docker adapter discovers:
@@ -531,6 +539,7 @@ docklane/
 │   ├── config/            Runtime configuration
 │   ├── docker/            Docker discovery and reconciliation adapter
 │   ├── domain/            Route model and validation
+│   ├── installmanifest/   Atomic installation ownership manifest
 │   ├── store/             SQLite persistence
 │   ├── traefik/           Dynamic configuration renderer
 │   ├── traefikruntime/    Authenticated Traefik runtime client
@@ -539,6 +548,7 @@ docklane/
 ├── web/                   Svelte source
 ├── docs/
 │   ├── architecture.md    This document
+│   ├── install-manifest-v1.md
 │   └── plans.md           Phase and task tracker
 ├── Makefile
 └── README.md
