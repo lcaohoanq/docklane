@@ -37,6 +37,31 @@
     observed: Observation;
   };
 
+  type DiagnosticStatus = "pass" | "warn" | "fail";
+
+  type DiagnosticCheck = {
+    id: string;
+    layer: string;
+    status: DiagnosticStatus;
+    summary: string;
+    detail?: string;
+    suggestion?: string;
+  };
+
+  type DiagnosticReport = {
+    status: DiagnosticStatus;
+    target: string;
+    hostname: string;
+    generatedAt: string;
+    checks: DiagnosticCheck[];
+  };
+
+  type BrowserProbe = {
+    status: "idle" | "pending" | DiagnosticStatus;
+    summary: string;
+    detail?: string;
+  };
+
   let containers: Container[] = [];
   let routes: Route[] = [];
   let baseDomain = "docker.home.arpa";
@@ -50,6 +75,14 @@
   let routePort = 80;
   let routeScheme = "http";
   let saving = false;
+  let diagnosticRoute: Route | null = null;
+  let diagnosticReport: DiagnosticReport | null = null;
+  let diagnosticLoading = false;
+  let diagnosticError = "";
+  let browserProbe: BrowserProbe = {
+    status: "idle",
+    summary: "Browser probe has not run",
+  };
 
   async function refresh(showLoading = true) {
     if (showLoading) loading = true;
@@ -221,8 +254,110 @@
       return;
     }
     if (editing?.id === route.id) closeEditor();
+    if (diagnosticRoute?.id === route.id) closeDiagnostics();
     notice = `Deleted ${route.name}.${baseDomain}`;
     await refresh(false);
+  }
+
+  async function diagnose(route: Route) {
+    diagnosticRoute = route;
+    diagnosticReport = null;
+    diagnosticError = "";
+    diagnosticLoading = true;
+    browserProbe = {
+      status: "pending",
+      summary: "Connecting from this browser…",
+    };
+    await Promise.allSettled([
+      loadControllerDiagnostics(route),
+      probeFromBrowser(route),
+    ]);
+    diagnosticLoading = false;
+  }
+
+  async function loadControllerDiagnostics(route: Route) {
+    try {
+      const response = await fetch(`/api/v1/diagnostics/routes/${route.id}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json();
+      if (!response.ok)
+        throw new Error(
+          payload.error || `Diagnostics failed (${response.status})`,
+        );
+      diagnosticReport = payload;
+    } catch (cause) {
+      diagnosticError =
+        cause instanceof Error ? cause.message : "Diagnostics failed";
+    }
+  }
+
+  async function probeFromBrowser(route: Route) {
+    const hostname = `${route.name}.${baseDomain}`;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 7000);
+    try {
+      await fetch(`https://${hostname}/`, {
+        method: "GET",
+        mode: "no-cors",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      browserProbe = {
+        status: "pass",
+        summary: "Browser accepted HTTPS and reached the route",
+        detail:
+          "This opaque probe verifies connection and certificate acceptance; application status remains controller-observed.",
+      };
+    } catch (cause) {
+      browserProbe = {
+        status: "fail",
+        summary: "Browser could not reach the HTTPS route",
+        detail:
+          cause instanceof Error
+            ? cause.message
+            : "Check local DNS and certificate trust in this browser.",
+      };
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function groupedChecks(checks: DiagnosticCheck[]) {
+    const groups = new Map<string, DiagnosticCheck[]>();
+    for (const check of checks) {
+      const entries = groups.get(check.layer) || [];
+      entries.push(check);
+      groups.set(check.layer, entries);
+    }
+    return Array.from(groups, ([layer, entries]) => ({ layer, entries }));
+  }
+
+  async function copyDiagnostics() {
+    if (!diagnosticRoute) return;
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(
+          { controller: diagnosticReport, browser: browserProbe },
+          null,
+          2,
+        ),
+      );
+      notice = `Copied diagnostics for ${diagnosticRoute.name}`;
+    } catch {
+      diagnosticError = "Clipboard access was unavailable";
+    }
+  }
+
+  function closeDiagnostics() {
+    diagnosticRoute = null;
+    diagnosticReport = null;
+    diagnosticError = "";
+    browserProbe = { status: "idle", summary: "Browser probe has not run" };
+  }
+
+  function refreshDiagnostics() {
+    if (diagnosticRoute) diagnose(diagnosticRoute);
   }
 
   onMount(() => {
@@ -348,6 +483,9 @@
             </div>
             <code>{route.scheme} · :{route.port}</code>
             <div class="route-actions">
+              <button class="ghost small" onclick={() => diagnose(route)}>
+                Diagnose
+              </button>
               <button class="ghost small" onclick={() => edit(route)}>Edit</button>
               <button class="ghost small" onclick={() => toggle(route)}>
                 {route.enabled ? "Disable" : "Enable"}
@@ -361,6 +499,88 @@
       </div>
     {/if}
   </section>
+
+  {#if diagnosticRoute}
+    <section class="diagnostics" aria-labelledby="diagnostics-title">
+      <div class="diagnostics-header">
+        <div>
+          <p class="eyebrow">ROUTE DIAGNOSTICS</p>
+          <h2 id="diagnostics-title">
+            {diagnosticRoute.name}.{baseDomain}
+          </h2>
+          <p>
+            Controller and browser checks are separate because they use
+            different DNS, network, and certificate trust contexts.
+          </p>
+        </div>
+        <div class="diagnostics-actions">
+          <button
+            class="secondary small"
+            onclick={refreshDiagnostics}
+            disabled={diagnosticLoading}
+          >
+            {diagnosticLoading ? "Checking…" : "Refresh checks"}
+          </button>
+          <button class="ghost small" onclick={copyDiagnostics}>Copy JSON</button>
+          <button class="ghost small" onclick={closeDiagnostics}>Close</button>
+        </div>
+      </div>
+
+      {#if diagnosticError}
+        <div class="diagnostic-error">{diagnosticError}</div>
+      {/if}
+
+      <div class="perspective browser-perspective">
+        <div>
+          <span class="perspective-label">Browser perspective</span>
+          <strong>{browserProbe.summary}</strong>
+          {#if browserProbe.detail}<small>{browserProbe.detail}</small>{/if}
+        </div>
+        <span class={`status-pill ${browserProbe.status}`}>
+          {browserProbe.status}
+        </span>
+      </div>
+
+      {#if diagnosticReport}
+        <div class="diagnostic-summary">
+          <span class={`status-pill ${diagnosticReport.status}`}>
+            {diagnosticReport.status}
+          </span>
+          <span>
+            Controller perspective ·
+            {new Date(diagnosticReport.generatedAt).toLocaleTimeString()}
+          </span>
+        </div>
+        <div class="diagnostic-groups">
+          {#each groupedChecks(diagnosticReport.checks) as group}
+            <div class="diagnostic-group">
+              <h3>{group.layer}</h3>
+              {#each group.entries as check}
+                <div class="diagnostic-check">
+                  <span class={`check-mark ${check.status}`}>
+                    {check.status === "pass"
+                      ? "✓"
+                      : check.status === "warn"
+                        ? "!"
+                        : "×"}
+                  </span>
+                  <div>
+                    <strong>{check.summary}</strong>
+                    {#if check.detail}<p>{check.detail}</p>{/if}
+                    {#if check.suggestion}
+                      <p class="repair">Repair: {check.suggestion}</p>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/each}
+        </div>
+      {:else if diagnosticLoading}
+        <div class="empty compact">Inspecting route layers…</div>
+      {/if}
+    </section>
+  {/if}
 
   <section aria-labelledby="containers-title">
     <div class="section-title">

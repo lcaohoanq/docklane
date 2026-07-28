@@ -152,6 +152,18 @@ func Run(
 	prober Prober,
 	target string,
 ) domain.DiagnosticReport {
+	report := diagnosticReport(RunController(ctx, controller, target))
+	if report.Hostname != "" {
+		report.addHostChecks(ctx, prober)
+	}
+	return domain.DiagnosticReport(report)
+}
+
+func RunController(
+	ctx context.Context,
+	controller Controller,
+	target string,
+) domain.DiagnosticReport {
 	report := diagnosticReport{
 		Status:      domain.DiagnosticPass,
 		Target:      target,
@@ -255,7 +267,6 @@ func Run(
 		result, probeErr := controller.ProbeUpstream(ctx, route.ID)
 		report.add(upstreamProbeCheck(result, probeErr))
 	}
-	report.addHostChecks(ctx, prober)
 	return domain.DiagnosticReport(report)
 }
 

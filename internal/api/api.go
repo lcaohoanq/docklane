@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"docklane.local/docklane/internal/client"
 	"docklane.local/docklane/internal/config"
+	"docklane.local/docklane/internal/diagnostics"
 	"docklane.local/docklane/internal/docker"
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/reconcile"
@@ -84,9 +86,108 @@ func New(
 	mux.HandleFunc("DELETE /api/v1/routes/{id}", api.deleteRoute)
 	mux.HandleFunc("GET /api/v1/routes/{id}/upstream-probe", api.upstreamProbe)
 	mux.HandleFunc("GET /api/v1/routes/{id}/traefik-runtime", api.traefikRuntime)
+	mux.HandleFunc("GET /api/v1/diagnostics/routes/{id}", api.routeDiagnostics)
 	mux.HandleFunc("GET /internal/traefik", api.traefik)
 	mux.Handle("/", webui.Handler())
 	return requestLog(mux)
+}
+
+type localDiagnosticsController struct {
+	api *API
+}
+
+func (controller localDiagnosticsController) Health(
+	context.Context,
+) (domain.ControllerHealth, error) {
+	return controller.api.controllerHealth(), nil
+}
+
+func (controller localDiagnosticsController) ListContainersWithNetworkAliases(
+	ctx context.Context,
+) ([]docker.Container, error) {
+	return controller.api.listContainers(ctx, true)
+}
+
+func (controller localDiagnosticsController) ListRoutes(
+	ctx context.Context,
+) (client.Routes, error) {
+	routes, err := controller.api.store.ListRoutes(ctx)
+	if err != nil {
+		return client.Routes{}, err
+	}
+	return client.Routes{
+		Routes:     controller.api.reconciler.Enrich(routes),
+		BaseDomain: controller.api.config.BaseDomain,
+	}, nil
+}
+
+func (controller localDiagnosticsController) InspectTraefikRuntime(
+	ctx context.Context,
+	id int64,
+) (domain.TraefikRouteRuntime, error) {
+	route, err := controller.api.readyRoute(ctx, id)
+	if err != nil {
+		return domain.TraefikRouteRuntime{}, err
+	}
+	if controller.api.runtime == nil {
+		return domain.TraefikRouteRuntime{}, errors.New(
+			"Traefik runtime inspection is not configured",
+		)
+	}
+	return controller.api.runtime.InspectRoute(ctx, route.Name)
+}
+
+func (controller localDiagnosticsController) ProbeUpstream(
+	ctx context.Context,
+	id int64,
+) (domain.UpstreamProbe, error) {
+	route, err := controller.api.readyRoute(ctx, id)
+	if err != nil {
+		return domain.UpstreamProbe{}, err
+	}
+	if controller.api.upstream == nil {
+		return domain.UpstreamProbe{}, errors.New(
+			"proxy-network upstream probe is not configured",
+		)
+	}
+	return controller.api.upstream.Probe(ctx, route.Observed.UpstreamURL)
+}
+
+func (a *API) routeDiagnostics(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	id, err := routeID(request)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	if _, err := a.store.GetRoute(request.Context(), id); err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	report := diagnostics.RunController(
+		request.Context(),
+		localDiagnosticsController{api: a},
+		strconv.FormatInt(id, 10),
+	)
+	writeJSON(response, http.StatusOK, report)
+}
+
+func (a *API) readyRoute(
+	ctx context.Context,
+	id int64,
+) (domain.Route, error) {
+	route, err := a.store.GetRoute(ctx, id)
+	if err != nil {
+		return domain.Route{}, err
+	}
+	route = a.reconciler.Enrich([]domain.Route{route})[0]
+	if route.Observed.State != domain.RouteStateReady ||
+		route.Observed.UpstreamURL == "" {
+		return domain.Route{}, fmt.Errorf("route is not ready: %s", route.Observed.State)
+	}
+	return route, nil
 }
 
 func (a *API) traefikRuntime(response http.ResponseWriter, request *http.Request) {
@@ -193,6 +294,10 @@ func (a *API) applyNetworkPlan(response http.ResponseWriter, request *http.Reque
 }
 
 func (a *API) health(response http.ResponseWriter, _ *http.Request) {
+	writeJSON(response, http.StatusOK, a.controllerHealth())
+}
+
+func (a *API) controllerHealth() domain.ControllerHealth {
 	lastRefresh, reconcileErr := a.reconciler.LastResult()
 	providerStatus := a.getProviderStatus()
 	status := "ok"
@@ -206,7 +311,7 @@ func (a *API) health(response http.ResponseWriter, _ *http.Request) {
 		providerStatus.LastError != "" {
 		status = "degraded"
 	}
-	writeJSON(response, http.StatusOK, domain.ControllerHealth{
+	return domain.ControllerHealth{
 		Status:              status,
 		BaseDomain:          a.config.BaseDomain,
 		ProxyNetwork:        a.config.ProxyNetwork,
@@ -214,30 +319,41 @@ func (a *API) health(response http.ResponseWriter, _ *http.Request) {
 		LastReconcileError:  lastError,
 		ReconcileIntervalMS: a.config.ReconcileEvery.Milliseconds(),
 		Provider:            providerStatus,
-	})
+	}
 }
 
 func (a *API) containers(response http.ResponseWriter, request *http.Request) {
-	containers, err := a.discovery.ListContainers(request.Context())
+	withAliases := request.URL.Query().Get("networkAliases") == "true"
+	containers, err := a.listContainers(request.Context(), withAliases)
 	if err != nil {
 		writeError(response, http.StatusBadGateway, err)
 		return
 	}
+	writeJSON(response, http.StatusOK, map[string]any{"containers": containers})
+}
+
+func (a *API) listContainers(
+	ctx context.Context,
+	withAliases bool,
+) ([]docker.Container, error) {
+	containers, err := a.discovery.ListContainers(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if aliases, ok := a.discovery.(docker.NetworkAliasDiscovery); ok &&
-		request.URL.Query().Get("networkAliases") == "true" &&
+		withAliases &&
 		a.config.ProxyNetwork != "" {
 		for index := range containers {
 			if !containers[index].HasNetwork(a.config.ProxyNetwork) {
 				continue
 			}
 			networkAliases, err := aliases.NetworkAliases(
-				request.Context(),
+				ctx,
 				containers[index].ID,
 				a.config.ProxyNetwork,
 			)
 			if err != nil {
-				writeError(response, http.StatusBadGateway, err)
-				return
+				return nil, err
 			}
 			if containers[index].NetworkAliases == nil {
 				containers[index].NetworkAliases = map[string][]string{}
@@ -245,7 +361,7 @@ func (a *API) containers(response http.ResponseWriter, request *http.Request) {
 			containers[index].NetworkAliases[a.config.ProxyNetwork] = networkAliases
 		}
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"containers": containers})
+	return containers, nil
 }
 
 func (a *API) routes(response http.ResponseWriter, request *http.Request) {

@@ -40,6 +40,8 @@ The current integrated checkpoint additionally provides:
   reachability diagnostics over a shared Unix socket;
 - authenticated, route-scoped Traefik runtime inspection for provider, router,
   service, and backend status;
+- an in-browser diagnostics view with grouped controller checks, repair
+  guidance, copyable JSON, and a separately labeled browser HTTPS probe;
 - a managed Docklane container on a private `docklane-control` network shared
   only with Traefik;
 - Traefik HTTP-provider polling every two seconds;
@@ -135,6 +137,7 @@ Current API endpoints:
 - `GET /api/v1/routes/{id}`
 - `GET /api/v1/routes/{id}/upstream-probe`
 - `GET /api/v1/routes/{id}/traefik-runtime`
+- `GET /api/v1/diagnostics/routes/{id}`
 - `PUT /api/v1/routes/{id}`
 - `DELETE /api/v1/routes/{id}`
 - `GET /internal/traefik`

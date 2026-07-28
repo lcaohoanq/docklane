@@ -361,6 +361,21 @@ func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
 	}
 	inspector := &fakeRuntimeInspector{result: domain.TraefikRouteRuntime{
 		Providers: []string{"HTTP"},
+		Router: domain.TraefikRuntimeComponent{
+			Name:    "draw@http",
+			Present: true,
+			Status:  "enabled",
+		},
+		Service: domain.TraefikRuntimeComponent{
+			Name:    "draw@http",
+			Present: true,
+			Status:  "enabled",
+		},
+		ServerStatus: map[string]string{"http://draw:80": "UP"},
+	}}
+	prober := &fakeUpstreamProber{result: domain.UpstreamProbe{
+		Reachable:  true,
+		HTTPStatus: http.StatusOK,
 	}}
 	handler := New(
 		config.Config{
@@ -372,6 +387,7 @@ func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
 		discovery,
 		reconciler,
 		WithTraefikRuntimeInspector(inspector),
+		WithUpstreamProber(prober),
 	)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
@@ -387,6 +403,44 @@ func TestRouteTraefikRuntimeUsesSavedRouteName(t *testing.T) {
 	}
 	if inspector.routeName != "draw" {
 		t.Fatalf("inspected route = %q", inspector.routeName)
+	}
+
+	diagnosticResponse := httptest.NewRecorder()
+	handler.ServeHTTP(
+		diagnosticResponse,
+		httptest.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf("/api/v1/diagnostics/routes/%d", route.ID),
+			nil,
+		),
+	)
+	if diagnosticResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"diagnostic status = %d, body = %s",
+			diagnosticResponse.Code,
+			diagnosticResponse.Body,
+		)
+	}
+	var report domain.DiagnosticReport
+	if err := json.NewDecoder(diagnosticResponse.Body).Decode(&report); err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]bool{}
+	for _, check := range report.Checks {
+		checks[check.ID] = true
+		if check.Layer == "dns" || check.Layer == "tls" || check.Layer == "http" {
+			t.Fatalf("host-perspective check leaked into controller report: %#v", check)
+		}
+	}
+	for _, id := range []string{
+		"traefik-provider-runtime",
+		"traefik-router-runtime",
+		"traefik-service-runtime",
+		"upstream-reachability",
+	} {
+		if !checks[id] {
+			t.Fatalf("diagnostic report missing %q: %#v", id, report)
+		}
 	}
 }
 

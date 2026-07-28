@@ -101,6 +101,11 @@ The controller also reads Traefik's authenticated API over the private control
 network and returns only route-scoped provider, router, service, and backend
 status. Dashboard credentials and raw runtime configuration never cross the
 Docklane administration API.
+The UI consumes a controller-only diagnostic report and runs a separate
+browser `no-cors` HTTPS probe. A successful browser probe means DNS, connection,
+and certificate acceptance succeeded in that browser; it does not claim access
+to the opaque HTTP response status. The UI labels both perspectives instead of
+merging them into a misleading single probe.
 Network aliases are hydrated only when diagnostics explicitly request them;
 ordinary UI discovery does not perform per-container Docker inspect calls.
 
@@ -437,6 +442,7 @@ Current endpoints:
 | `GET` | `/api/v1/routes/{id}` | Read a route and its observed state |
 | `GET` | `/api/v1/routes/{id}/upstream-probe` | Probe the reconciled upstream from the proxy network |
 | `GET` | `/api/v1/routes/{id}/traefik-runtime` | Inspect summarized provider/router/service runtime state |
+| `GET` | `/api/v1/diagnostics/routes/{id}` | Run read-only controller-perspective route diagnostics |
 | `PUT` | `/api/v1/routes/{id}` | Revision-checked replacement of writable route configuration |
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |

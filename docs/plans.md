@@ -320,7 +320,7 @@ Goal: explain failures by layer instead of presenting a generic browser error.
 - [X] Check final HTTPS response and redirect behavior.
 - [X] Provide one actionable repair suggestion per failed layer.
 - [X] Add machine-readable `--json` diagnostic output.
-- [ ] Add a UI diagnostics view.
+- [X] Add a UI diagnostics view.
 - [ ] Add health history with bounded retention.
 
 Acceptance criteria:

@@ -379,6 +379,186 @@ form > code {
   gap: 0.1rem;
 }
 
+.diagnostics {
+  overflow: hidden;
+  border: 1px solid #315b43;
+  border-radius: 1rem;
+  background: rgba(17, 25, 20, 0.94);
+}
+
+.diagnostics-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.5rem;
+  border-bottom: 1px solid #27322b;
+}
+
+.diagnostics-header h2,
+.diagnostics-header p {
+  margin: 0;
+}
+
+.diagnostics-header p:not(.eyebrow) {
+  max-width: 44rem;
+  margin-top: 0.55rem;
+  color: #89958d;
+  line-height: 1.5;
+}
+
+.diagnostics-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+
+.diagnostic-error {
+  padding: 0.9rem 1.5rem;
+  color: #ffb0b0;
+  background: rgba(105, 34, 34, 0.3);
+}
+
+.perspective {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.5rem;
+  border: 1px solid #35423a;
+  border-radius: 0.8rem;
+  padding: 1rem;
+  background: #111914;
+}
+
+.perspective > div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.perspective small {
+  max-width: 48rem;
+  color: #89958d;
+  line-height: 1.45;
+}
+
+.perspective-label {
+  color: #72e3a6;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.status-pill {
+  border-radius: 999px;
+  padding: 0.3rem 0.6rem;
+  color: #aab7ae;
+  background: #27322b;
+  font-family: ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.status-pill.pass {
+  color: #a9edc6;
+  background: #193d29;
+}
+
+.status-pill.warn,
+.status-pill.pending {
+  color: #f2d29a;
+  background: #44351e;
+}
+
+.status-pill.fail {
+  color: #ffb0b0;
+  background: #482526;
+}
+
+.diagnostic-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 1.5rem 1rem;
+  color: #89958d;
+  font-size: 0.78rem;
+}
+
+.diagnostic-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.diagnostic-group {
+  overflow: hidden;
+  align-self: start;
+  border: 1px solid #27322b;
+  border-radius: 0.8rem;
+}
+
+.diagnostic-group h3 {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  color: #89958d;
+  background: #151e18;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.diagnostic-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.7rem;
+  padding: 0.85rem 0.9rem;
+}
+
+.diagnostic-check + .diagnostic-check {
+  border-top: 1px solid #27322b;
+}
+
+.diagnostic-check strong {
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.diagnostic-check p {
+  margin: 0.35rem 0 0;
+  color: #89958d;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.diagnostic-check p.repair {
+  color: #e2c58f;
+}
+
+.check-mark {
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border-radius: 50%;
+  color: #a9edc6;
+  background: #193d29;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.check-mark.warn {
+  color: #f2d29a;
+  background: #44351e;
+}
+
+.check-mark.fail {
+  color: #ffb0b0;
+  background: #482526;
+}
+
 .empty {
   margin-top: 1.2rem;
   padding: 4rem 1rem;
@@ -432,6 +612,18 @@ form > code {
 
   .route-actions {
     flex-wrap: wrap;
+  }
+
+  .diagnostics-header {
+    display: grid;
+  }
+
+  .diagnostics-actions {
+    flex-wrap: wrap;
+  }
+
+  .diagnostic-groups {
+    grid-template-columns: 1fr;
   }
 
   .field-row {
