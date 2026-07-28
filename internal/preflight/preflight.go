@@ -1,7 +1,14 @@
 package preflight
 
 import (
+	"bytes"
 	"context"
+	"crypto"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -28,18 +35,24 @@ const (
 )
 
 type Config struct {
-	BaseDomain     string
-	ProxyNetwork   string
-	DockerSocket   string
-	ManifestPath   string
-	DnsmasqConfig  string
-	DnsmasqDir     string
-	DnsmasqService string
+	BaseDomain      string
+	ProxyNetwork    string
+	DockerSocket    string
+	ManifestPath    string
+	DnsmasqConfig   string
+	DnsmasqDir      string
+	DnsmasqService  string
+	TrustAnchorPath string
 }
 
 type DockerInspector interface {
 	ListContainers(context.Context) ([]docker.Container, error)
 	InspectNetwork(context.Context, string) (docker.Network, error)
+	InspectContainerRuntime(context.Context, string) (docker.ContainerRuntime, error)
+}
+
+type HostFileInfo struct {
+	Mode os.FileMode
 }
 
 type HostInspector interface {
@@ -49,6 +62,8 @@ type HostInspector interface {
 	ReadFile(string) ([]byte, error)
 	ListConfigFiles(string) ([]string, error)
 	ServiceActive(context.Context, string) (bool, error)
+	Stat(string) (HostFileInfo, error)
+	ProbeTLSCertificate(context.Context, string) ([]byte, error)
 }
 
 type SystemInspector struct{}
@@ -146,6 +161,45 @@ func (SystemInspector) ServiceActive(
 	return serviceActive(ctx, service)
 }
 
+func (SystemInspector) Stat(path string) (HostFileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return HostFileInfo{}, err
+	}
+	return HostFileInfo{Mode: info.Mode()}, nil
+}
+
+func (SystemInspector) ProbeTLSCertificate(
+	ctx context.Context,
+	hostname string,
+) ([]byte, error) {
+	dialer := tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: checkTimeout},
+		Config: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: hostname,
+		},
+	}
+	connection, err := dialer.DialContext(
+		ctx,
+		"tcp",
+		net.JoinHostPort(hostname, "443"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer connection.Close()
+	tlsConnection, ok := connection.(*tls.Conn)
+	if !ok {
+		return nil, fmt.Errorf("TLS probe returned non-TLS connection")
+	}
+	certificates := tlsConnection.ConnectionState().PeerCertificates
+	if len(certificates) == 0 {
+		return nil, fmt.Errorf("TLS server returned no certificate")
+	}
+	return append([]byte(nil), certificates[0].Raw...), nil
+}
+
 type Runner struct {
 	config   Config
 	docker   DockerInspector
@@ -175,6 +229,9 @@ func New(
 		strings.TrimSpace(config.DnsmasqDir) == "" ||
 		strings.TrimSpace(config.DnsmasqService) == "" {
 		return nil, fmt.Errorf("preflight dnsmasq settings are required")
+	}
+	if !filepath.IsAbs(config.TrustAnchorPath) {
+		return nil, fmt.Errorf("preflight trust anchor path must be absolute")
 	}
 	if !filepath.IsAbs(config.DnsmasqConfig) ||
 		!filepath.IsAbs(config.DnsmasqDir) {
@@ -245,6 +302,11 @@ func (runner *Runner) Run(ctx context.Context) domain.PreflightReport {
 	manifestCheck, manifestInventory := runner.manifestCheck()
 	report.Inventory.Manifest = manifestInventory
 	add(&report, manifestCheck)
+	tlsChecks, tlsInventory := runner.tlsChecks(ctx, gateways, dockerErr)
+	report.Inventory.TLS = tlsInventory
+	for _, check := range tlsChecks {
+		add(&report, check)
+	}
 	return report
 }
 
@@ -726,6 +788,345 @@ func (runner *Runner) manifestCheck() (
 		),
 		"Use the future upgrade or recovery workflow instead of creating a second installation.",
 	), inventory
+}
+
+func (runner *Runner) tlsChecks(
+	ctx context.Context,
+	gateways []docker.Container,
+	dockerErr error,
+) ([]domain.DiagnosticCheck, domain.PreflightTLS) {
+	inventory := domain.PreflightTLS{
+		Disposition:     domain.PreflightUnknown,
+		TrustAnchorPath: runner.config.TrustAnchorPath,
+		DNSNames:        []string{},
+	}
+	if dockerErr != nil || len(gateways) != 1 {
+		if dockerErr == nil && len(gateways) == 0 {
+			inventory.Disposition = domain.PreflightCreate
+			return []domain.DiagnosticCheck{warn(
+				"tls-inventory",
+				"tls",
+				"No adopted Traefik certificate can be inventoried yet",
+				"The clean-install TLS planner must generate and wire a local certificate.",
+			)}, inventory
+		}
+		return []domain.DiagnosticCheck{fail(
+			"tls-inventory",
+			"tls",
+			"Traefik TLS ownership cannot be determined",
+			"",
+			"Resolve gateway ownership before inventorying TLS.",
+		)}, inventory
+	}
+	runtime, err := runner.docker.InspectContainerRuntime(
+		ctx,
+		gateways[0].ID,
+	)
+	if err != nil {
+		return []domain.DiagnosticCheck{fail(
+			"tls-wiring",
+			"tls",
+			"Traefik runtime mounts could not be inspected",
+			err.Error(),
+			"Verify Docker inspect access before adopting TLS files.",
+		)}, inventory
+	}
+	dynamicContainerPath := traefikDynamicConfigPath(runtime.Command)
+	dynamicHostPath, dynamicReadOnly, ok := mapContainerPath(
+		runtime.Mounts,
+		dynamicContainerPath,
+	)
+	if !ok || !dynamicReadOnly {
+		return []domain.DiagnosticCheck{fail(
+			"tls-wiring",
+			"tls",
+			"Traefik file-provider configuration is not read-only host-mounted",
+			dynamicContainerPath,
+			"Use an explicit read-only file-provider mount before adoption.",
+		)}, inventory
+	}
+	dynamicConfig, err := runner.host.ReadFile(dynamicHostPath)
+	if err != nil {
+		return []domain.DiagnosticCheck{fail(
+			"tls-wiring",
+			"tls",
+			"Traefik TLS configuration is not readable",
+			err.Error(),
+			"Verify the adopted file-provider configuration path.",
+		)}, inventory
+	}
+	certContainerPath, keyContainerPath := tlsFilePaths(string(dynamicConfig))
+	certPath, certReadOnly, certMapped := mapContainerPath(
+		runtime.Mounts,
+		certContainerPath,
+	)
+	keyPath, keyReadOnly, keyMapped := mapContainerPath(
+		runtime.Mounts,
+		keyContainerPath,
+	)
+	if !certMapped || !keyMapped || !certReadOnly || !keyReadOnly {
+		return []domain.DiagnosticCheck{fail(
+			"tls-wiring",
+			"tls",
+			"Traefik certificate and key are not both read-only host-mounted",
+			fmt.Sprintf("cert=%s key=%s", certContainerPath, keyContainerPath),
+			"Use explicit read-only certificate mounts before adoption.",
+		)}, inventory
+	}
+	inventory.CertificatePath = certPath
+	inventory.PrivateKeyPath = keyPath
+	checks := []domain.DiagnosticCheck{pass(
+		"tls-wiring",
+		"tls",
+		fmt.Sprintf("Traefik loads %s and %s through read-only mounts", certPath, keyPath),
+	)}
+	certificate, certFingerprint, err := runner.readLeafCertificate(certPath)
+	if err != nil {
+		checks = append(checks, fail(
+			"tls-certificate",
+			"tls",
+			"Configured TLS certificate is invalid",
+			err.Error(),
+			"Replace it with a valid local leaf certificate.",
+		))
+		return checks, inventory
+	}
+	inventory.CertificateFingerprint = certFingerprint
+	inventory.NotAfter = certificate.NotAfter.UTC()
+	inventory.DNSNames = append([]string(nil), certificate.DNSNames...)
+	sort.Strings(inventory.DNSNames)
+	requiredNames := []string{
+		runner.config.BaseDomain,
+		"*." + runner.config.BaseDomain,
+	}
+	for _, hostname := range requiredNames {
+		if err := certificate.VerifyHostname(hostname); err != nil {
+			checks = append(checks, fail(
+				"tls-certificate",
+				"tls",
+				"Certificate SANs do not cover "+hostname,
+				err.Error(),
+				"Rotate the leaf certificate with explicit base-domain and wildcard SANs.",
+			))
+			return checks, inventory
+		}
+	}
+	now := runner.now().UTC()
+	if now.Before(certificate.NotBefore) ||
+		!certificate.NotAfter.After(now.Add(30*24*time.Hour)) {
+		checks = append(checks, fail(
+			"tls-certificate",
+			"tls",
+			"Certificate is not currently valid for at least 30 days",
+			fmt.Sprintf("valid %s through %s", certificate.NotBefore, certificate.NotAfter),
+			"Rotate the certificate before installation adoption.",
+		))
+		return checks, inventory
+	}
+	checks = append(checks, pass(
+		"tls-certificate",
+		"tls",
+		"Certificate SANs cover the base domain and wildcard through "+
+			certificate.NotAfter.UTC().Format(time.DateOnly),
+	))
+	keyContent, err := runner.host.ReadFile(keyPath)
+	if err != nil {
+		checks = append(checks, fail(
+			"tls-private-key", "tls", "TLS private key is not readable",
+			err.Error(), "Verify the configured key path and permissions.",
+		))
+		return checks, inventory
+	}
+	keyInfo, err := runner.host.Stat(keyPath)
+	if err != nil || keyInfo.Mode.Perm()&0o077 != 0 {
+		detail := fmt.Sprintf("mode=%o", keyInfo.Mode.Perm())
+		if err != nil {
+			detail = err.Error()
+		}
+		checks = append(checks, fail(
+			"tls-private-key",
+			"tls",
+			"TLS private key permissions are too broad or unreadable",
+			detail,
+			"Restrict the key to its owner, normally mode 0600.",
+		))
+		return checks, inventory
+	}
+	if err := privateKeyMatches(certificate, keyContent); err != nil {
+		checks = append(checks, fail(
+			"tls-private-key", "tls", "TLS private key does not match the certificate",
+			err.Error(), "Install the matching private key before adoption.",
+		))
+		return checks, inventory
+	}
+	inventory.PrivateKeyFingerprint = sha256Hex(keyContent)
+	checks = append(checks, pass(
+		"tls-private-key", "tls",
+		fmt.Sprintf("TLS private key matches the certificate with mode %o", keyInfo.Mode.Perm()),
+	))
+	trustCertificate, trustFingerprint, err := runner.readLeafCertificate(
+		runner.config.TrustAnchorPath,
+	)
+	if err != nil {
+		checks = append(checks, fail(
+			"tls-trust-anchor", "tls", "Configured trust anchor is invalid",
+			err.Error(), "Install the issuing local root CA in the system trust store.",
+		))
+		return checks, inventory
+	}
+	if err := certificate.CheckSignatureFrom(trustCertificate); err != nil {
+		checks = append(checks, fail(
+			"tls-trust-anchor", "tls", "Trust anchor did not issue the leaf certificate",
+			err.Error(), "Select the exact issuing root CA before adoption.",
+		))
+		return checks, inventory
+	}
+	inventory.TrustFingerprint = trustFingerprint
+	checks = append(checks, pass(
+		"tls-trust-anchor", "tls",
+		"Configured trust anchor issued the Traefik leaf certificate",
+	))
+	probeCtx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+	servedDER, err := runner.host.ProbeTLSCertificate(
+		probeCtx,
+		"docklane-preflight."+runner.config.BaseDomain,
+	)
+	if err != nil {
+		checks = append(checks, fail(
+			"tls-served-certificate", "tls", "Traefik served certificate could not be inspected",
+			err.Error(), "Verify DNS, port 443, and Traefik TLS wiring.",
+		))
+		return checks, inventory
+	}
+	servedFingerprint := sha256Hex(servedDER)
+	if servedFingerprint != certFingerprint {
+		checks = append(checks, fail(
+			"tls-served-certificate", "tls", "Traefik is serving a different certificate",
+			"configured="+certFingerprint+" served="+servedFingerprint,
+			"Reload the adopted TLS configuration before installation.",
+		))
+		return checks, inventory
+	}
+	checks = append(checks, pass(
+		"tls-served-certificate", "tls",
+		"Traefik serves the exact inventoried certificate",
+	))
+	inventory.Disposition = domain.PreflightAdopt
+	return checks, inventory
+}
+
+func (runner *Runner) readLeafCertificate(
+	path string,
+) (*x509.Certificate, string, error) {
+	content, err := runner.host.ReadFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+	block, _ := pem.Decode(content)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, "", fmt.Errorf("%s contains no PEM certificate", path)
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, "", err
+	}
+	return certificate, sha256Hex(certificate.Raw), nil
+}
+
+func privateKeyMatches(certificate *x509.Certificate, content []byte) error {
+	block, _ := pem.Decode(content)
+	if block == nil {
+		return fmt.Errorf("private key contains no PEM block")
+	}
+	var value any
+	var err error
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		value, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		value, err = x509.ParseECPrivateKey(block.Bytes)
+	default:
+		value, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+	}
+	if err != nil {
+		return err
+	}
+	signer, ok := value.(crypto.Signer)
+	if !ok {
+		return fmt.Errorf("PEM block is not a supported private key")
+	}
+	got, err := x509.MarshalPKIXPublicKey(signer.Public())
+	if err != nil {
+		return err
+	}
+	want, err := x509.MarshalPKIXPublicKey(certificate.PublicKey)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("public keys differ")
+	}
+	return nil
+}
+
+func traefikDynamicConfigPath(command []string) string {
+	const prefix = "--providers.file.filename="
+	for _, argument := range command {
+		if strings.HasPrefix(argument, prefix) {
+			return strings.TrimPrefix(argument, prefix)
+		}
+	}
+	return ""
+}
+
+func tlsFilePaths(content string) (string, string) {
+	var certificate, key string
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "-"))
+		if strings.HasPrefix(line, "certFile:") {
+			certificate = strings.Trim(strings.TrimSpace(
+				strings.TrimPrefix(line, "certFile:"),
+			), `"'`)
+		}
+		if strings.HasPrefix(line, "keyFile:") {
+			key = strings.Trim(strings.TrimSpace(
+				strings.TrimPrefix(line, "keyFile:"),
+			), `"'`)
+		}
+	}
+	return certificate, key
+}
+
+func mapContainerPath(
+	mounts []docker.ContainerMount,
+	containerPath string,
+) (string, bool, bool) {
+	best := docker.ContainerMount{}
+	for _, mount := range mounts {
+		destination := strings.TrimSuffix(mount.Destination, "/")
+		if containerPath == destination ||
+			strings.HasPrefix(containerPath, destination+"/") {
+			if len(destination) > len(best.Destination) {
+				best = mount
+			}
+		}
+	}
+	if best.Destination == "" {
+		return "", false, false
+	}
+	relative := strings.TrimPrefix(
+		containerPath,
+		strings.TrimSuffix(best.Destination, "/"),
+	)
+	relative = strings.TrimPrefix(relative, "/")
+	return filepath.Join(best.Source, relative), best.ReadOnly, true
+}
+
+func sha256Hex(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
 
 func dnsmasqIncludesDirectory(content string, directory string) bool {

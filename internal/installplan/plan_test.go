@@ -1,6 +1,7 @@
 package installplan
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,15 @@ func adoptionReport() domain.PreflightReport {
 				Disposition: domain.PreflightAdopt,
 				Addresses:   []string{"127.0.0.1"},
 			},
+			TLS: domain.PreflightTLS{
+				Disposition:            domain.PreflightAdopt,
+				CertificatePath:        "/opt/traefik/certs/local.crt",
+				PrivateKeyPath:         "/opt/traefik/certs/local.key",
+				TrustAnchorPath:        "/etc/ssl/certs/local-root.crt",
+				CertificateFingerprint: strings.Repeat("a", 64),
+				PrivateKeyFingerprint:  strings.Repeat("b", 64),
+				TrustFingerprint:       strings.Repeat("c", 64),
+			},
 		},
 		Checks: []domain.DiagnosticCheck{},
 	}
@@ -55,10 +65,10 @@ func TestBuildAdoptionPlanPreservesExistingResources(t *testing.T) {
 	if !plan.Ready || plan.Status != domain.DiagnosticPass {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if plan.Complete || len(plan.Pending) != 3 {
+	if plan.Complete || len(plan.Pending) != 1 {
 		t.Fatalf("coverage = complete:%t pending:%v", plan.Complete, plan.Pending)
 	}
-	if len(plan.Resources) != 5 || len(plan.Operations) != 6 {
+	if len(plan.Resources) != 8 || len(plan.Operations) != 9 {
 		t.Fatalf(
 			"resources = %d, operations = %d",
 			len(plan.Resources),
@@ -110,6 +120,9 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	report.Inventory.Resolver = domain.PreflightResolver{
 		Disposition: domain.PreflightCreate,
 		Addresses:   []string{},
+	}
+	report.Inventory.TLS = domain.PreflightTLS{
+		Disposition: domain.PreflightCreate,
 	}
 	plan, err := Build(report, Options{
 		DnsmasqTarget:  "/etc/dnsmasq.d/docklane.conf",

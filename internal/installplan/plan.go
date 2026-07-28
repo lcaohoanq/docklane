@@ -40,8 +40,6 @@ func Build(
 		Blockers:      []string{},
 		Pending: []string{
 			"docklane-runtime",
-			"local-tls-certificate",
-			"local-trust-anchor",
 		},
 	}
 	for _, check := range report.Checks {
@@ -56,6 +54,7 @@ func Build(
 	addNetwork(&plan)
 	addDNS(&plan, options)
 	addResolver(&plan)
+	addTLS(&plan)
 	addManifestOperation(&plan)
 	sort.Strings(plan.Blockers)
 	plan.Blockers = unique(plan.Blockers)
@@ -252,6 +251,61 @@ func addResolver(plan *domain.InstallationPlan) {
 		)
 	default:
 		plan.Blockers = append(plan.Blockers, "resolver-domain-ownership")
+	}
+}
+
+func addTLS(plan *domain.InstallationPlan) {
+	fact := plan.Inventory.TLS
+	switch fact.Disposition {
+	case domain.PreflightAdopt:
+		for _, resource := range []domain.InstallationResource{
+			{
+				ID:          "tls-certificate",
+				Kind:        domain.ResourceFile,
+				Target:      fact.CertificatePath,
+				Ownership:   domain.ResourceAdopted,
+				State:       domain.ResourceVerified,
+				Rollback:    domain.RollbackPreserve,
+				Fingerprint: fact.CertificateFingerprint,
+			},
+			{
+				ID:          "tls-private-key",
+				Kind:        domain.ResourceFile,
+				Target:      fact.PrivateKeyPath,
+				Ownership:   domain.ResourceAdopted,
+				State:       domain.ResourceVerified,
+				Rollback:    domain.RollbackPreserve,
+				Fingerprint: fact.PrivateKeyFingerprint,
+			},
+			{
+				ID:          "tls-trust-anchor",
+				Kind:        domain.ResourceTrustAnchor,
+				Target:      fact.TrustAnchorPath,
+				Ownership:   domain.ResourceAdopted,
+				State:       domain.ResourceVerified,
+				Rollback:    domain.RollbackPreserve,
+				Fingerprint: fact.TrustFingerprint,
+			},
+		} {
+			addResource(
+				plan,
+				resource,
+				"Verified TLS ownership will be recorded and preserved.",
+			)
+		}
+	case domain.PreflightCreate:
+		plan.Pending = append(
+			plan.Pending,
+			"local-tls-certificate",
+			"local-trust-anchor",
+		)
+	default:
+		plan.Pending = append(
+			plan.Pending,
+			"local-tls-certificate",
+			"local-trust-anchor",
+		)
+		plan.Blockers = append(plan.Blockers, "tls-ownership")
 	}
 }
 

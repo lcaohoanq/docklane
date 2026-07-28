@@ -13,13 +13,14 @@ import (
 )
 
 type preflightOptions struct {
-	baseDomain     *string
-	proxyNetwork   *string
-	dockerSocket   *string
-	manifestPath   *string
-	dnsmasqConfig  *string
-	dnsmasqDir     *string
-	dnsmasqService *string
+	baseDomain      *string
+	proxyNetwork    *string
+	dockerSocket    *string
+	manifestPath    *string
+	dnsmasqConfig   *string
+	dnsmasqDir      *string
+	dnsmasqService  *string
+	trustAnchorPath *string
 }
 
 func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
@@ -59,6 +60,11 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 		"dnsmasq",
 		"dnsmasq system service name",
 	)
+	options.trustAnchorPath = flags.String(
+		"trust-anchor",
+		"/etc/ca-certificates/trust-source/anchors/traefik-lab-root-ca.crt",
+		"local root CA trust-anchor path",
+	)
 	return options
 }
 
@@ -68,13 +74,14 @@ func (options preflightOptions) run(
 	dockerClient := docker.NewClient(*options.dockerSocket)
 	runner, err := preflightcheck.New(
 		preflightcheck.Config{
-			BaseDomain:     *options.baseDomain,
-			ProxyNetwork:   *options.proxyNetwork,
-			DockerSocket:   *options.dockerSocket,
-			ManifestPath:   *options.manifestPath,
-			DnsmasqConfig:  *options.dnsmasqConfig,
-			DnsmasqDir:     *options.dnsmasqDir,
-			DnsmasqService: *options.dnsmasqService,
+			BaseDomain:      *options.baseDomain,
+			ProxyNetwork:    *options.proxyNetwork,
+			DockerSocket:    *options.dockerSocket,
+			ManifestPath:    *options.manifestPath,
+			DnsmasqConfig:   *options.dnsmasqConfig,
+			DnsmasqDir:      *options.dnsmasqDir,
+			DnsmasqService:  *options.dnsmasqService,
+			TrustAnchorPath: *options.trustAnchorPath,
 		},
 		dockerClient,
 		preflightcheck.SystemInspector{},

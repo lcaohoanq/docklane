@@ -282,8 +282,8 @@ safe and repeatable.
   validation, atomic persistence, and read-only inspection.
 - [-] Add `docklane install --dry-run`. The deterministic foundation plan
   covers manifest creation, Traefik adoption, proxy-network ownership,
-  dnsmasq, and resolver behavior; Docklane runtime and TLS/trust inventory
-  remain explicit pending coverage.
+  dnsmasq, resolver behavior, and fingerprinted TLS certificate/key/trust
+  adoption; Docklane runtime deployment remains explicit pending coverage.
 - [ ] Add `docklane install`.
 - [ ] Add `docklane uninstall --dry-run`.
 - [ ] Add `docklane uninstall`.
@@ -292,6 +292,8 @@ safe and repeatable.
 - [X] Add read-only preflight checks for ports 80/443, Docker access and proxy
   network compatibility, dnsmasq, resolver conflicts, manifest state, and
   existing Traefik.
+- [X] Inventory Traefik certificate wiring, SANs, expiry, private-key
+  permissions, issuing trust anchor, and the exact certificate served on 443.
 - [ ] Support adopting a compatible existing global Traefik deployment.
 - [ ] Refuse unsafe adoption with a precise explanation.
 - [ ] Add `docklane app enable` for opt-in network attachment and routing.

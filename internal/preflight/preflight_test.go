@@ -2,7 +2,13 @@ package preflight
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +24,15 @@ type fakeDockerInspector struct {
 	listErr    error
 	network    docker.Network
 	networkErr error
+	runtime    docker.ContainerRuntime
+	runtimeErr error
+}
+
+func (inspector fakeDockerInspector) InspectContainerRuntime(
+	context.Context,
+	string,
+) (docker.ContainerRuntime, error) {
+	return inspector.runtime, inspector.runtimeErr
 }
 
 func (inspector fakeDockerInspector) ListContainers(
@@ -45,6 +60,24 @@ type fakeHostInspector struct {
 	listErr     error
 	active      bool
 	serviceErr  error
+	fileModes   map[string]os.FileMode
+	servedCert  []byte
+	tlsErr      error
+}
+
+func (inspector fakeHostInspector) Stat(path string) (HostFileInfo, error) {
+	mode, exists := inspector.fileModes[path]
+	if !exists {
+		return HostFileInfo{}, os.ErrNotExist
+	}
+	return HostFileInfo{Mode: mode}, nil
+}
+
+func (inspector fakeHostInspector) ProbeTLSCertificate(
+	context.Context,
+	string,
+) ([]byte, error) {
+	return inspector.servedCert, inspector.tlsErr
 }
 
 func (inspector fakeHostInspector) ProbePort(
@@ -103,13 +136,14 @@ func (inspector portAwareHost) ProbePort(
 func testConfig(t *testing.T) Config {
 	t.Helper()
 	return Config{
-		BaseDomain:     "docker.home.arpa",
-		ProxyNetwork:   "proxy",
-		DockerSocket:   "/var/run/docker.sock",
-		ManifestPath:   filepath.Join(t.TempDir(), "install-manifest.json"),
-		DnsmasqConfig:  "/etc/dnsmasq.conf",
-		DnsmasqDir:     "/etc/dnsmasq.d",
-		DnsmasqService: "dnsmasq",
+		BaseDomain:      "docker.home.arpa",
+		ProxyNetwork:    "proxy",
+		DockerSocket:    "/var/run/docker.sock",
+		ManifestPath:    filepath.Join(t.TempDir(), "install-manifest.json"),
+		DnsmasqConfig:   "/etc/dnsmasq.conf",
+		DnsmasqDir:      "/etc/dnsmasq.d",
+		DnsmasqService:  "dnsmasq",
+		TrustAnchorPath: "/trust/root.crt",
 	}
 }
 
@@ -127,6 +161,90 @@ func healthyHost() portAwareHost {
 	}}
 }
 
+func configureHealthyTLS(
+	t *testing.T,
+	host *portAwareHost,
+	dockerInspector *fakeDockerInspector,
+) {
+	t.Helper()
+	rootKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notBefore := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	rootTemplate := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test Root"},
+		NotBefore:             notBefore,
+		NotAfter:              notBefore.AddDate(10, 0, 0),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	rootDER, err := x509.CreateCertificate(
+		rand.Reader,
+		&rootTemplate,
+		&rootTemplate,
+		&rootKey.PublicKey,
+		rootKey,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafTemplate := x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "*.docker.home.arpa"},
+		NotBefore:    notBefore,
+		NotAfter:     notBefore.AddDate(1, 0, 0),
+		DNSNames: []string{
+			"docker.home.arpa",
+			"*.docker.home.arpa",
+		},
+		KeyUsage:    x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	leafDER, err := x509.CreateCertificate(
+		rand.Reader,
+		&leafTemplate,
+		root,
+		&leafKey.PublicKey,
+		rootKey,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.files["/host/dynamic/tls.yml"] =
+		"tls:\n  certificates:\n    - certFile: /certs/local.crt\n      keyFile: /certs/local.key\n"
+	host.files["/host/certs/local.crt"] = string(pem.EncodeToMemory(
+		&pem.Block{Type: "CERTIFICATE", Bytes: leafDER},
+	))
+	host.files["/host/certs/local.key"] = string(pem.EncodeToMemory(
+		&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(leafKey)},
+	))
+	host.files["/trust/root.crt"] = string(pem.EncodeToMemory(
+		&pem.Block{Type: "CERTIFICATE", Bytes: rootDER},
+	))
+	host.fileModes = map[string]os.FileMode{
+		"/host/certs/local.key": 0o600,
+	}
+	host.servedCert = leafDER
+	dockerInspector.runtime = docker.ContainerRuntime{
+		Command: []string{"--providers.file.filename=/dynamic/tls.yml"},
+		Mounts: []docker.ContainerMount{
+			{Source: "/host/dynamic", Destination: "/dynamic", ReadOnly: true},
+			{Source: "/host/certs", Destination: "/certs", ReadOnly: true},
+		},
+	}
+}
+
 func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	config := testConfig(t)
 	dockerInspector := fakeDockerInspector{
@@ -142,7 +260,9 @@ func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 			ID: "network123", Name: "proxy", Driver: "bridge", Scope: "local",
 		},
 	}
-	runner, err := New(config, dockerInspector, healthyHost())
+	host := healthyHost()
+	configureHealthyTLS(t, &host, &dockerInspector)
+	runner, err := New(config, dockerInspector, host)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +283,64 @@ func TestRunPassesForCompatibleExistingGateway(t *testing.T) {
 	assertCheck(t, report, "port-80", domain.DiagnosticPass, "existing Traefik")
 	assertCheck(t, report, "dnsmasq-domain", domain.DiagnosticPass, "127.0.0.1")
 	assertCheck(t, report, "resolver-domain", domain.DiagnosticPass, "127.0.0.1")
+	assertCheck(t, report, "tls-served-certificate", domain.DiagnosticPass, "exact")
+}
+
+func TestRunRejectsBroadTLSPrivateKeyPermissions(t *testing.T) {
+	config := testConfig(t)
+	dockerInspector := healthyGatewayInspector()
+	host := healthyHost()
+	configureHealthyTLS(t, &host, &dockerInspector)
+	host.fileModes["/host/certs/local.key"] = 0o644
+	runner, err := New(config, dockerInspector, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.now = func() time.Time {
+		return time.Date(2026, time.July, 28, 5, 0, 0, 0, time.UTC)
+	}
+	report := runner.Run(context.Background())
+	assertCheck(t, report, "tls-private-key", domain.DiagnosticFail, "too broad")
+	if report.Inventory.TLS.Disposition == domain.PreflightAdopt {
+		t.Fatalf("unsafe TLS inventory was adopted: %#v", report.Inventory.TLS)
+	}
+}
+
+func TestRunRejectsDifferentCertificateServedByTraefik(t *testing.T) {
+	config := testConfig(t)
+	dockerInspector := healthyGatewayInspector()
+	host := healthyHost()
+	configureHealthyTLS(t, &host, &dockerInspector)
+	host.servedCert = append([]byte(nil), host.servedCert...)
+	host.servedCert[len(host.servedCert)-1] ^= 0xff
+	runner, err := New(config, dockerInspector, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.now = func() time.Time {
+		return time.Date(2026, time.July, 28, 5, 0, 0, 0, time.UTC)
+	}
+	report := runner.Run(context.Background())
+	assertCheck(t, report, "tls-served-certificate", domain.DiagnosticFail, "configured=")
+	if report.Inventory.TLS.Disposition == domain.PreflightAdopt {
+		t.Fatalf("unserved TLS inventory was adopted: %#v", report.Inventory.TLS)
+	}
+}
+
+func healthyGatewayInspector() fakeDockerInspector {
+	return fakeDockerInspector{
+		containers: []docker.Container{{
+			ID:             "traefik123",
+			Name:           "traefik",
+			Image:          "traefik:v3.7",
+			SystemRole:     docker.SystemRoleReverseProxy,
+			PublishedPorts: []uint16{80, 443},
+			Networks:       []string{"proxy"},
+		}},
+		network: docker.Network{
+			ID: "network123", Name: "proxy", Driver: "bridge", Scope: "local",
+		},
+	}
 }
 
 func TestRunWarnsForCleanUnconfiguredHost(t *testing.T) {

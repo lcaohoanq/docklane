@@ -164,6 +164,43 @@ func TestNetworkAliasesInspectsContainerEndpoint(t *testing.T) {
 	}
 }
 
+func TestInspectContainerRuntimeReturnsCommandAndMountOwnership(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet ||
+				request.URL.Path != "/containers/traefik123/json" {
+				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			}
+			body := `{
+				"Config":{"Cmd":["--providers.file.filename=/dynamic/tls.yml"]},
+				"Mounts":[
+					{"Source":"/host/dynamic","Destination":"/dynamic","RW":false},
+					{"Source":"/host/certs","Destination":"/certs","RW":true}
+				]
+			}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		},
+	)}}
+	runtime, err := client.InspectContainerRuntime(context.Background(), "traefik123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.Command) != 1 ||
+		runtime.Command[0] != "--providers.file.filename=/dynamic/tls.yml" {
+		t.Fatalf("command = %#v", runtime.Command)
+	}
+	if len(runtime.Mounts) != 2 ||
+		!runtime.Mounts[0].ReadOnly ||
+		runtime.Mounts[1].ReadOnly {
+		t.Fatalf("mounts = %#v", runtime.Mounts)
+	}
+}
+
 func TestDetectActiveTraefikGateway(t *testing.T) {
 	if role := detectSystemRole(
 		"traefik:v3.7",

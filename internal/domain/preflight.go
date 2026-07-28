@@ -50,12 +50,25 @@ type PreflightManifest struct {
 	Generation     uint64            `json:"generation,omitempty"`
 }
 
+type PreflightTLS struct {
+	Disposition            PreflightDisposition `json:"disposition"`
+	CertificatePath        string               `json:"certificatePath,omitempty"`
+	PrivateKeyPath         string               `json:"privateKeyPath,omitempty"`
+	TrustAnchorPath        string               `json:"trustAnchorPath,omitempty"`
+	CertificateFingerprint string               `json:"certificateFingerprint,omitempty"`
+	PrivateKeyFingerprint  string               `json:"privateKeyFingerprint,omitempty"`
+	TrustFingerprint       string               `json:"trustFingerprint,omitempty"`
+	NotAfter               time.Time            `json:"notAfter,omitempty"`
+	DNSNames               []string             `json:"dnsNames"`
+}
+
 type PreflightInventory struct {
 	Gateway  PreflightGateway  `json:"gateway"`
 	Network  PreflightNetwork  `json:"network"`
 	DNS      PreflightDNS      `json:"dns"`
 	Resolver PreflightResolver `json:"resolver"`
 	Manifest PreflightManifest `json:"manifest"`
+	TLS      PreflightTLS      `json:"tls"`
 }
 
 type PreflightReport struct {

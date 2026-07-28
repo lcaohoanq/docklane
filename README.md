@@ -135,15 +135,20 @@ services. It refuses to overwrite an existing manifest.
 `docklane preflight` is read-only. It checks gateway ports, Docker access,
 proxy-network compatibility, dnsmasq configuration and service state, the
 system resolver's real wildcard answer, existing Traefik candidates, and
-manifest state. Warnings describe work for a future reviewed install plan;
-blocking conflicts return a non-zero exit status.
+manifest state. For an existing gateway it also follows Traefik's file-provider
+wiring through read-only mounts, inventories the leaf certificate and key,
+checks SANs and expiry, rejects broad private-key permissions, verifies the
+issuing trust anchor, and confirms that port 443 serves that exact certificate.
+Warnings describe work for a future reviewed install plan; blocking conflicts
+return a non-zero exit status.
 
 `docklane install --dry-run` turns the structured preflight inventory into a
 tokened ownership plan without creating the manifest or changing the host.
 The current foundation planner covers Traefik adoption, the proxy network,
-dnsmasq, and resolver behavior. It reports Docklane runtime deployment and
-TLS/trust inventory as pending until those planners are implemented; install
-apply therefore remains intentionally unavailable.
+dnsmasq, resolver behavior, and verified TLS/trust ownership. It records the
+certificate, matching private key, and trust anchor as separately fingerprinted
+adopted resources. Docklane runtime deployment remains pending; install apply
+therefore remains intentionally unavailable.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the

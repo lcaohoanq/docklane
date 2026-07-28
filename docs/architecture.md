@@ -323,11 +323,19 @@ listener belongs to Traefik merely because a Traefik container also exists.
 Preflight also verifies Docker socket access, proxy-network compatibility,
 dnsmasq installation/service/include configuration, every readable wildcard
 mapping for the base domain, the system resolver's actual wildcard answer, and
-the installation manifest. Existing compatible infrastructure is reported as
-an adoption candidate; missing state is a warning for the future install plan;
-ambiguous ownership or conflicting DNS/network state blocks installation.
-Checks have stable IDs and support JSON output for the upcoming deterministic
-`install --dry-run` planner.
+the installation manifest. For an existing Traefik candidate, it inspects the
+container command and read-only mounts to locate the dynamic TLS configuration,
+maps its certificate and key back to host paths, and verifies:
+
+- explicit base-domain and wildcard SAN coverage plus the validity window;
+- owner-only private-key permissions and certificate/key correspondence;
+- that the configured host trust anchor issued the leaf certificate; and
+- that the certificate served on port 443 has the inventoried fingerprint.
+
+Existing compatible infrastructure is reported as an adoption candidate;
+missing state is a warning for the future install plan; ambiguous ownership or
+conflicting DNS, network, or TLS state blocks installation. Checks have stable
+IDs and support JSON output for the deterministic `install --dry-run` planner.
 
 `docklane install --dry-run` converts structured preflight inventory—not
 human-readable summaries—into validated manifest resources and ordered
@@ -336,8 +344,10 @@ missing resources become managed with remove or restore rollback. A SHA-256
 token covers the target, inventory, resources, operations, blockers, and
 pending coverage while excluding observation time, so unchanged machine state
 produces the same review token. The current foundation plan explicitly marks
-Docklane runtime deployment and TLS/trust inventory as pending and cannot be
-used for apply.
+Docklane runtime deployment as pending and cannot be used for apply. A verified
+existing certificate, private key, and trust anchor are each fingerprinted and
+recorded as adopted/preserved resources; failure at any TLS ownership boundary
+prevents adoption.
 
 ## 6. Route lifecycle
 
