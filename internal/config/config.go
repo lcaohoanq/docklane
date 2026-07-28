@@ -13,6 +13,7 @@ type Config struct {
 	BaseDomain     string
 	DockerSocket   string
 	ProxyNetwork   string
+	ProbeSocket    string
 	ManageNetworks bool
 	ReconcileEvery time.Duration
 }

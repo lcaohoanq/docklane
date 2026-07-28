@@ -17,6 +17,8 @@ type fakeController struct {
 	healthErr  error
 	containers []docker.Container
 	routes     client.Routes
+	probe      domain.UpstreamProbe
+	probeErr   error
 }
 
 func (controller fakeController) Health(
@@ -33,6 +35,13 @@ func (controller fakeController) ListContainersWithNetworkAliases(
 
 func (controller fakeController) ListRoutes(context.Context) (client.Routes, error) {
 	return controller.routes, nil
+}
+
+func (controller fakeController) ProbeUpstream(
+	context.Context,
+	int64,
+) (domain.UpstreamProbe, error) {
+	return controller.probe, controller.probeErr
 }
 
 type fakeProber struct {
@@ -111,6 +120,11 @@ func TestRunHealthyRoute(t *testing.T) {
 			routes: client.Routes{
 				BaseDomain: "docker.home.arpa",
 				Routes:     []domain.Route{route},
+			},
+			probe: domain.UpstreamProbe{
+				Reachable:  true,
+				HTTPStatus: 200,
+				DurationMS: 2,
 			},
 		},
 		fakeProber{

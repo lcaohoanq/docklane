@@ -23,6 +23,7 @@ import (
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/reconcile"
 	"docklane.local/docklane/internal/store"
+	"docklane.local/docklane/internal/upstreamprobe"
 )
 
 func main() {
@@ -45,6 +46,8 @@ func run(args []string) error {
 		return discover(args[1:])
 	case "doctor":
 		return doctor(args[1:])
+	case "probe":
+		return probe(args[1:])
 	case "network":
 		return network(args[1:])
 	case "route":
@@ -57,6 +60,33 @@ func run(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func probe(args []string) error {
+	if len(args) == 0 {
+		return errors.New("probe requires a subcommand: serve or check")
+	}
+	flags := flag.NewFlagSet("probe "+args[0], flag.ContinueOnError)
+	socketPath := flags.String("socket", "", "Unix socket path")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	switch args[0] {
+	case "serve":
+		ctx, stop := signal.NotifyContext(
+			context.Background(),
+			syscall.SIGINT,
+			syscall.SIGTERM,
+		)
+		defer stop()
+		return upstreamprobe.Serve(ctx, *socketPath)
+	case "check":
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		return upstreamprobe.NewClient(*socketPath).Check(ctx)
+	default:
+		return fmt.Errorf("unknown probe command %q", args[0])
 	}
 }
 
@@ -506,6 +536,11 @@ func serve(args []string) error {
 	baseDomain := flags.String("base-domain", "docker.home.arpa", "local route base domain")
 	dockerSocket := flags.String("docker-socket", "/var/run/docker.sock", "Docker Engine Unix socket")
 	proxyNetwork := flags.String("proxy-network", "", "required shared Traefik network")
+	probeSocket := flags.String(
+		"probe-socket",
+		"",
+		"proxy-network probe Unix socket",
+	)
 	manageNetworks := flags.Bool(
 		"manage-network-attachments",
 		false,
@@ -522,6 +557,7 @@ func serve(args []string) error {
 		BaseDomain:     *baseDomain,
 		DockerSocket:   *dockerSocket,
 		ProxyNetwork:   *proxyNetwork,
+		ProbeSocket:    *probeSocket,
 		ManageNetworks: *manageNetworks,
 		ReconcileEvery: *reconcileEvery,
 	}
@@ -555,7 +591,20 @@ func serve(args []string) error {
 		cfg.ReconcileEvery,
 		reconcileOptions...,
 	)
-	handler := api.New(cfg, repository, dockerClient, reconciler)
+	apiOptions := []api.Option{}
+	if cfg.ProbeSocket != "" {
+		apiOptions = append(
+			apiOptions,
+			api.WithUpstreamProber(upstreamprobe.NewClient(cfg.ProbeSocket)),
+		)
+	}
+	handler := api.New(
+		cfg,
+		repository,
+		dockerClient,
+		reconciler,
+		apiOptions...,
+	)
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler,

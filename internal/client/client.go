@@ -94,6 +94,21 @@ func (c *Client) GetRoute(ctx context.Context, id int64) (domain.Route, error) {
 	return route, err
 }
 
+func (c *Client) ProbeUpstream(
+	ctx context.Context,
+	id int64,
+) (domain.UpstreamProbe, error) {
+	var result domain.UpstreamProbe
+	err := c.do(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/routes/%d/upstream-probe", id),
+		nil,
+		&result,
+	)
+	return result, err
+}
+
 func (c *Client) CreateRoute(ctx context.Context, route domain.Route) (domain.Route, error) {
 	var created domain.Route
 	err := c.do(ctx, http.MethodPost, "/api/v1/routes", writableRoute(route), &created)

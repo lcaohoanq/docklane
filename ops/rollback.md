@@ -35,6 +35,16 @@ docker compose down
 Both forms use the same database at
 `/home/lch/docker/docklane/data/docklane.db`.
 
+Compose shutdown also removes the restricted `docklane-probe` container.
+Running the controller without `--probe-socket` preserves routing, but
+`docklane doctor` reports direct upstream probing as unavailable. The
+`docklane-probe-run` volume contains only the shared Unix socket and can be
+removed after both Docklane services are stopped:
+
+```sh
+docker volume rm docklane-probe-run
+```
+
 After both Compose projects no longer reference it, the private control
 network can be removed with:
 

@@ -36,6 +36,8 @@ The current integrated checkpoint additionally provides:
 - controller reconciliation health and last-error reporting;
 - validated Traefik provider documents with a persisted last-known-good
   snapshot and provider source/error reporting in controller health;
+- a restricted proxy-network-only probe sidecar for direct upstream
+  reachability diagnostics over a shared Unix socket;
 - a managed Docklane container on a private `docklane-control` network shared
   only with Traefik;
 - Traefik HTTP-provider polling every two seconds;
@@ -107,8 +109,8 @@ discovery health. Supplying a route ID, name, or full hostname also checks the
 saved route, workload selector, declared upstream port, shared network, local
 network alias, local DNS, TCP 80/443, HTTP-to-HTTPS redirect, trusted
 certificate/SAN/expiry, and final HTTPS response. The probes are read-only and
-run from the CLI machine so their network and trust perspective matches the
-browser.
+use the relevant perspective: browser-facing checks run from the CLI machine,
+while direct upstream checks run from the shared proxy network.
 
 Current API endpoints:
 
@@ -119,6 +121,7 @@ Current API endpoints:
 - `GET /api/v1/routes`
 - `POST /api/v1/routes`
 - `GET /api/v1/routes/{id}`
+- `GET /api/v1/routes/{id}/upstream-probe`
 - `PUT /api/v1/routes/{id}`
 - `DELETE /api/v1/routes/{id}`
 - `GET /internal/traefik`

@@ -24,9 +24,22 @@ type API struct {
 	store      *store.Store
 	discovery  docker.Discovery
 	reconciler *reconcile.Reconciler
+	upstream   UpstreamProber
 
 	providerMu     sync.RWMutex
 	providerStatus domain.ProviderStatus
+}
+
+type UpstreamProber interface {
+	Probe(context.Context, string) (domain.UpstreamProbe, error)
+}
+
+type Option func(*API)
+
+func WithUpstreamProber(prober UpstreamProber) Option {
+	return func(api *API) {
+		api.upstream = prober
+	}
 }
 
 func New(
@@ -34,6 +47,7 @@ func New(
 	repository *store.Store,
 	discovery docker.Discovery,
 	reconciler *reconcile.Reconciler,
+	options ...Option,
 ) http.Handler {
 	api := &API{
 		config:     cfg,
@@ -43,6 +57,9 @@ func New(
 		providerStatus: domain.ProviderStatus{
 			Source: domain.ProviderSourceAwaiting,
 		},
+	}
+	for _, option := range options {
+		option(api)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", api.health)
@@ -54,9 +71,50 @@ func New(
 	mux.HandleFunc("GET /api/v1/routes/{id}", api.getRoute)
 	mux.HandleFunc("PUT /api/v1/routes/{id}", api.updateRoute)
 	mux.HandleFunc("DELETE /api/v1/routes/{id}", api.deleteRoute)
+	mux.HandleFunc("GET /api/v1/routes/{id}/upstream-probe", api.upstreamProbe)
 	mux.HandleFunc("GET /internal/traefik", api.traefik)
 	mux.Handle("/", webui.Handler())
 	return requestLog(mux)
+}
+
+func (a *API) upstreamProbe(response http.ResponseWriter, request *http.Request) {
+	id, err := routeID(request)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err)
+		return
+	}
+	route, err := a.store.GetRoute(request.Context(), id)
+	if err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	route = a.reconciler.Enrich([]domain.Route{route})[0]
+	if route.Observed.State != domain.RouteStateReady ||
+		route.Observed.UpstreamURL == "" {
+		writeError(
+			response,
+			http.StatusConflict,
+			fmt.Errorf("route is not ready for an upstream probe: %s", route.Observed.State),
+		)
+		return
+	}
+	if a.upstream == nil {
+		writeError(
+			response,
+			http.StatusServiceUnavailable,
+			errors.New("proxy-network upstream probe is not configured"),
+		)
+		return
+	}
+	result, err := a.upstream.Probe(
+		request.Context(),
+		route.Observed.UpstreamURL,
+	)
+	if err != nil {
+		writeError(response, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, result)
 }
 
 func (a *API) networkPlan(response http.ResponseWriter, request *http.Request) {

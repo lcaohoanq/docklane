@@ -431,12 +431,14 @@ Current endpoints:
 | `GET` | `/api/v1/routes` | List desired routes |
 | `POST` | `/api/v1/routes` | Create a route |
 | `GET` | `/api/v1/routes/{id}` | Read a route and its observed state |
+| `GET` | `/api/v1/routes/{id}/upstream-probe` | Probe the reconciled upstream from the proxy network |
 | `PUT` | `/api/v1/routes/{id}` | Revision-checked replacement of writable route configuration |
 | `DELETE` | `/api/v1/routes/{id}` | Delete a route |
 | `GET` | `/internal/traefik` | Full Traefik dynamic configuration |
 
-Planned endpoints add event streaming and diagnostics. `/internal/*` endpoints
-are for private component integration, not the public administration API.
+Planned endpoints add event streaming and Traefik runtime inspection.
+`/internal/*` endpoints are for private component integration, not the public
+administration API.
 
 Network plans include every currently expected Docker network operation and a
 deterministic token over network state, operations, and warnings. Apply
@@ -452,6 +454,9 @@ Docklane is local-only, but local-only does not mean permission-free.
   minimum practical privileges and never exposes that capability remotely.
 - Administrative API access is limited to loopback or a Unix socket.
 - The Traefik provider endpoint is reachable only on a private Docker network.
+- The upstream probe sidecar joins only the proxy network, has no Docker
+  socket or published port, and accepts route-scoped probes only through a
+  Unix socket shared with the controller.
 - State-changing browser requests require origin/CSRF protection.
 - CA private keys are never returned through the API or UI.
 - Logs redact secrets and avoid dumping arbitrary container environment values.
@@ -474,6 +479,7 @@ Host
 └── Docker
     ├── proxy network
     │   ├── traefik        publishes 80/443
+    │   ├── docklane-probe no published port or Docker socket
     │   └── selected apps  attached by explicit Docklane operation
     ├── docklane-control network
     │   ├── traefik
@@ -497,6 +503,7 @@ docklane/
 │   ├── domain/            Route model and validation
 │   ├── store/             SQLite persistence
 │   ├── traefik/           Dynamic configuration renderer
+│   ├── upstreamprobe/     Restricted proxy-network reachability probe
 │   └── webui/             Embedded production UI assets
 ├── web/                   Svelte source
 ├── docs/

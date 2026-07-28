@@ -23,6 +23,7 @@ type Controller interface {
 	Health(context.Context) (domain.ControllerHealth, error)
 	ListContainersWithNetworkAliases(context.Context) ([]docker.Container, error)
 	ListRoutes(context.Context) (client.Routes, error)
+	ProbeUpstream(context.Context, int64) (domain.UpstreamProbe, error)
 }
 
 type Prober interface {
@@ -246,6 +247,10 @@ func Run(
 	report.add(observationCheck(route))
 	if discoveryErr == nil {
 		report.addWorkloadChecks(route, containers, health.ProxyNetwork)
+	}
+	if route.Observed.State == domain.RouteStateReady {
+		result, probeErr := controller.ProbeUpstream(ctx, route.ID)
+		report.add(upstreamProbeCheck(result, probeErr))
 	}
 	report.addHostChecks(ctx, prober)
 	return domain.DiagnosticReport(report)
@@ -477,6 +482,50 @@ func (report *diagnosticReport) addHostChecks(
 			fmt.Sprintf("HTTPS returned %d", statusCode),
 		))
 	}
+}
+
+func upstreamProbeCheck(
+	result domain.UpstreamProbe,
+	err error,
+) domain.DiagnosticCheck {
+	if err != nil {
+		return warn(
+			"upstream-reachability",
+			"upstream",
+			"Proxy-network upstream probe is unavailable",
+			"Start the restricted Docklane probe sidecar and verify its shared Unix socket.",
+		)
+	}
+	if !result.Reachable {
+		return fail(
+			"upstream-reachability",
+			"upstream",
+			"Upstream is unreachable from the proxy network",
+			result.Error,
+			"Verify the proxy alias, application listener, and configured internal port.",
+		)
+	}
+	if result.HTTPStatus >= 500 {
+		return warn(
+			"upstream-reachability",
+			"upstream",
+			fmt.Sprintf(
+				"Upstream is reachable but returned HTTP %d in %dms",
+				result.HTTPStatus,
+				result.DurationMS,
+			),
+			"Inspect the application logs for the upstream error.",
+		)
+	}
+	return pass(
+		"upstream-reachability",
+		"upstream",
+		fmt.Sprintf(
+			"Upstream returned HTTP %d from the proxy network in %dms",
+			result.HTTPStatus,
+			result.DurationMS,
+		),
+	)
 }
 
 func aliasCheck(

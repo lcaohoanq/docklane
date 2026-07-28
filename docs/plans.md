@@ -316,7 +316,7 @@ Goal: explain failures by layer instead of presenting a generic browser error.
 - [ ] Check Traefik router and provider state.
 - [X] Check workload selector resolution.
 - [X] Check shared-network membership and alias resolution.
-- [ ] Check upstream port reachability from Traefik's network.
+- [X] Check upstream port reachability from Traefik's network.
 - [X] Check final HTTPS response and redirect behavior.
 - [X] Provide one actionable repair suggestion per failed layer.
 - [X] Add machine-readable `--json` diagnostic output.

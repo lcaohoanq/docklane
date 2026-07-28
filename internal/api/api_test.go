@@ -39,6 +39,19 @@ type aliasDiscovery struct {
 	aliases map[string][]string
 }
 
+type fakeUpstreamProber struct {
+	result domain.UpstreamProbe
+	url    string
+}
+
+func (prober *fakeUpstreamProber) Probe(
+	_ context.Context,
+	upstreamURL string,
+) (domain.UpstreamProbe, error) {
+	prober.url = upstreamURL
+	return prober.result, nil
+}
+
 func (discovery aliasDiscovery) NetworkAliases(
 	_ context.Context,
 	containerID string,
@@ -232,6 +245,72 @@ func TestCreateRouteAndRenderTraefikConfiguration(t *testing.T) {
 	server := configuration.HTTP.Services["draw"].LoadBalancer.Servers[0]
 	if server.URL != "http://draw-web-7:80" {
 		t.Fatalf("server URL = %q", server.URL)
+	}
+}
+
+func TestRouteUpstreamProbeUsesObservedURL(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	route, err := repository.CreateRoute(context.Background(), domain.Route{
+		Name:     "draw",
+		Selector: domain.ContainerSelector{ContainerID: "abc"},
+		Port:     80,
+		Scheme:   "http",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery := fakeDiscovery{containers: []docker.Container{{
+		ID:           "abc123",
+		Name:         "draw",
+		ExposedPorts: []uint16{80},
+		Networks:     []string{"proxy"},
+	}}}
+	reconciler := reconcile.New(
+		repository,
+		discovery,
+		time.Second,
+		reconcile.WithBaseDomain("docker.home.arpa"),
+		reconcile.WithNetworkAttachments("proxy", nil),
+	)
+	if err := reconciler.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	prober := &fakeUpstreamProber{result: domain.UpstreamProbe{
+		Reachable:  true,
+		HTTPStatus: http.StatusOK,
+		DurationMS: 3,
+	}}
+	handler := New(
+		config.Config{
+			BaseDomain:     "docker.home.arpa",
+			ProxyNetwork:   "proxy",
+			ReconcileEvery: time.Second,
+		},
+		repository,
+		discovery,
+		reconciler,
+		WithUpstreamProber(prober),
+	)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf("/api/v1/routes/%d/upstream-probe", route.ID),
+			nil,
+		),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if prober.url != "http://draw:80" {
+		t.Fatalf("probed URL = %q", prober.url)
 	}
 }
 

@@ -12,6 +12,7 @@ services:
       - --base-domain=docker.home.arpa
       - --docker-socket=/var/run/docker.sock
       - --proxy-network=proxy
+      - --probe-socket=/run/docklane-probe/probe.sock
       - --manage-network-attachments
       - --reconcile-interval=5s
     ports:
@@ -19,8 +20,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./data:/data
+      - probe-run:/run/docklane-probe
     networks:
       - control
+    depends_on:
+      probe:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
@@ -33,7 +38,45 @@ services:
       retries: 5
       start_period: 5s
 
+  probe:
+    image: docklane:local
+    container_name: docklane-probe
+    restart: unless-stopped
+    command:
+      - probe
+      - serve
+      - --socket=/run/docklane-probe/probe.sock
+    volumes:
+      - probe-run:/run/docklane-probe
+    networks:
+      - proxy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/docklane
+        - probe
+        - check
+        - --socket=/run/docklane-probe/probe.sock
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 2s
+
 networks:
   control:
     name: docklane-control
     external: true
+  proxy:
+    name: proxy
+    external: true
+
+volumes:
+  probe-run:
+    name: docklane-probe-run
