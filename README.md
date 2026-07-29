@@ -80,6 +80,10 @@ make build
 
 The binary is written to `bin/docklane`.
 
+`make ci` reproduces the pull-request gate locally: formatting, Svelte build
+and type checks, Go tests and vet, the final binary build, and verification
+that the committed embedded UI matches a clean rebuild.
+
 ## Run Docklane
 
 For isolated source development:

@@ -483,7 +483,9 @@ Goal: make Docklane pleasant, predictable, and distributable.
 - [ ] Add deterministic release builds.
 - [ ] Add Linux package or installer artifact.
 - [ ] Add checksums and release provenance.
-- [ ] Add CI for Go, Svelte, integration tests, and packaging.
+- [-] Add CI for Go, Svelte, integration tests, and packaging. The source,
+  Svelte, Go, embedded-asset, and binary-build gate runs on pull requests and
+  `main`; release packaging is tracked by the next milestone.
 - [ ] Document supported Linux resolver/trust-store combinations.
 - [ ] Write upgrade, backup, restore, and uninstall guides.
 - [X] License the project under Apache License 2.0.
