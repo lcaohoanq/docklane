@@ -488,8 +488,12 @@ Goal: make Docklane pleasant, predictable, and distributable.
   signed provenance remains a post-alpha hardening option.
 - [X] Add CI for Go, Svelte, integration tests, binary builds, embedded assets,
   and reproducible release packaging.
-- [ ] Document supported Linux resolver/trust-store combinations.
-- [ ] Write upgrade, backup, restore, and uninstall guides.
+- [X] Document the supported Debian/Arch systemd-resolved, dnsmasq, and
+  platform trust-store combinations in the first-alpha guide.
+- [-] Write upgrade, backup, restore, and uninstall guides. First-alpha
+  backup, schema-upgrade boundaries, interruption recovery, and reviewed
+  uninstall are documented; a general product upgrade path is not supported
+  yet.
 - [X] License the project under Apache License 2.0.
 - [ ] Tag the first alpha release.
 

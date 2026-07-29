@@ -12,6 +12,7 @@ on:
       - "internal/**"
       - "ops/build-release.sh"
       - "ops/check-release-reproducibility.sh"
+      - "ops/release.Dockerfile"
       - "web/**"
       - "go.mod"
       - "go.sum"
@@ -104,8 +105,9 @@ jobs:
           for architecture in amd64 arm64; do
             archive="dist/docklane_${release_version}_linux_${architecture}.tar.gz"
             tar -tzf "$archive" >"package-${architecture}.txt"
-            test "$(wc -l <"package-${architecture}.txt")" -eq 4
+            test "$(wc -l <"package-${architecture}.txt")" -eq 5
             grep -Fx "docklane_${release_version}_linux_${architecture}/" "package-${architecture}.txt"
+            grep -Fx "docklane_${release_version}_linux_${architecture}/Dockerfile" "package-${architecture}.txt"
             grep -Fx "docklane_${release_version}_linux_${architecture}/LICENSE" "package-${architecture}.txt"
             grep -Fx "docklane_${release_version}_linux_${architecture}/README.md" "package-${architecture}.txt"
             grep -Fx "docklane_${release_version}_linux_${architecture}/docklane" "package-${architecture}.txt"

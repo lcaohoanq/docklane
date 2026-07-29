@@ -73,6 +73,7 @@ for architecture in amd64 arm64; do
 
   install -d -m 0755 "$package_directory"
   install -m 0755 "$binary_path" "${package_directory}/docklane"
+  install -m 0644 ops/release.Dockerfile "${package_directory}/Dockerfile"
   install -m 0644 LICENSE "${package_directory}/LICENSE"
   install -m 0644 README.md "${package_directory}/README.md"
 

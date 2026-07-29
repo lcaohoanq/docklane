@@ -5,6 +5,7 @@ stable HTTPS names such as `excalidraw.docker.home.arpa`.
 
 Project documentation:
 
+- [First-alpha installation guide](./docs/first-alpha.md)
 - [Architecture](./docs/architecture.md)
 - [Installation manifest schema v2](./docs/install-manifest-v2.md)
 - [Legacy installation manifest schema v1](./docs/install-manifest-v1.md)
@@ -105,9 +106,10 @@ checksums.txt
 Run `make release-repro-check VERSION=v0.1.0-alpha.1` to build both
 architectures twice and require byte-for-byte identical archives and checksum
 manifests. Each archive contains the versioned `docklane` binary, `LICENSE`,
-and `README.md`. The `Release build` GitHub workflow pins Go 1.26.5, performs
-the same proof, and uploads 14-day workflow artifacts; it does not create a
-GitHub Release.
+`README.md`, and a minimal `Dockerfile` that packages the downloaded binary as
+the managed `docklane:local` controller/probe image. The `Release build`
+GitHub workflow pins Go 1.26.5, performs the same proof, and uploads 14-day
+workflow artifacts; it does not create a GitHub Release.
 
 ## Run Docklane
 
