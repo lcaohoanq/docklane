@@ -33,19 +33,28 @@ A task is complete only when:
 | 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
 | 5     | Installer, migration, and rollback             | In progress                    |
 | 6     | Diagnostics and observability                  | Complete                       |
-| 7     | UX/DX hardening and first release              | Planned                        |
+| 7     | UX/DX hardening and first release              | In progress                    |
 
 ## Next execution order
 
-The disposable-VM lifecycle gate, application opt-in workflow, and installation
-schema migration are complete. Implementation proceeds in this order:
+The disposable-VM lifecycle gate, application opt-in workflow, installation
+schema migration, and route readiness gate are complete. The first-alpha
+priority is the shortest reliable path from a running container to a usable
+local URL:
 
-1. **Lifecycle maintenance**
-   - add expiry tracking and safe certificate rotation.
-2. **First-alpha readiness**
-   - finish onboarding and accessibility work;
+1. **Create a route and use it**
+   - recommend a route name and likely internal HTTP port;
+   - explain workload, hostname, and port conflicts at the point of action;
+   - keep the URL disabled until DNS, Traefik, and the backend are reachable;
+   - show the equivalent CLI command for every UI route mutation.
+2. **First-alpha distribution**
+   - finish guided onboarding and accessibility work;
    - freeze public configuration and API schemas;
    - add CI, deterministic release artifacts, provenance, and operator guides.
+
+Automatic certificate lifecycle maintenance is intentionally deferred until
+after the first alpha. Existing diagnostics still report certificate expiry,
+and the installer preserves certificate backups.
 
 The Debian and Arch reference harnesses remain available for regression and
 release-candidate qualification.
@@ -279,7 +288,9 @@ certificate.
 - [X] Preserve the existing explicitly installed system trust anchor.
 - [X] Verify Chromium trust with a fresh browser profile.
 - [X] Configure Traefik to serve the wildcard certificate.
-- [ ] Track expiry and add safe certificate rotation.
+- [ ] Post-alpha: add reviewed certificate rotation. Expiry is already reported
+  by `docklane doctor`; automated lifecycle work is not on the first-alpha
+  critical path.
 - [X] Add certificate rollback from the timestamped backup.
 
 Acceptance criteria:

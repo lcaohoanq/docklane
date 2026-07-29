@@ -41,6 +41,7 @@ Docklane manages the control plane around this arrangement:
 - Multi-user authorization or remote administration.
 - Editing application Compose files automatically.
 - Replacing Docker Compose.
+- Automated local-CA or leaf-certificate rotation in the first alpha.
 
 ## 3. Architectural principles
 
