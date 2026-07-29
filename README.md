@@ -7,6 +7,7 @@ Project documentation:
 
 - [First-alpha installation guide](./docs/first-alpha.md)
 - [v0.1.0-alpha.1 clean-VM release test](./docs/release-test-v0.1.0-alpha.1.md)
+- [v0.1.0-alpha.2 release notes](./docs/releases/v0.1.0-alpha.2.md)
 - [v0.1.0-alpha.1 release notes](./docs/releases/v0.1.0-alpha.1.md)
 - [Architecture](./docs/architecture.md)
 - [Installation manifest schema v2](./docs/install-manifest-v2.md)
@@ -92,7 +93,7 @@ that the committed embedded UI matches a clean rebuild.
 Build the Linux release candidates and their SHA-256 manifest with:
 
 ```sh
-make release VERSION=v0.1.0-alpha.1
+make release VERSION=v0.1.0-alpha.2
 cd dist
 sha256sum --check checksums.txt
 ```
@@ -100,12 +101,12 @@ sha256sum --check checksums.txt
 The output contains:
 
 ```text
-docklane_0.1.0-alpha.1_linux_amd64.tar.gz
-docklane_0.1.0-alpha.1_linux_arm64.tar.gz
+docklane_0.1.0-alpha.2_linux_amd64.tar.gz
+docklane_0.1.0-alpha.2_linux_arm64.tar.gz
 checksums.txt
 ```
 
-Run `make release-repro-check VERSION=v0.1.0-alpha.1` to build both
+Run `make release-repro-check VERSION=v0.1.0-alpha.2` to build both
 architectures twice and require byte-for-byte identical archives and checksum
 manifests. Each archive contains the versioned `docklane` binary, `LICENSE`,
 `README.md`, and a minimal `Dockerfile` that packages the downloaded binary as

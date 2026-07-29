@@ -73,13 +73,13 @@ configuration.
 
 ## 2. Download and verify the release
 
-The commands below become available after the `v0.1.0-alpha.1` GitHub Release
+The commands below become available after the `v0.1.0-alpha.2` GitHub Release
 is published.
 
 ```sh
 set -euo pipefail
 
-VERSION=v0.1.0-alpha.1
+VERSION=v0.1.0-alpha.2
 RELEASE_VERSION="${VERSION#v}"
 
 case "$(uname -m)" in
@@ -106,38 +106,41 @@ cd "docklane_${RELEASE_VERSION}_linux_${ARCH}"
 Expected version output:
 
 ```text
-docklane v0.1.0-alpha.1
+docklane v0.1.0-alpha.2
 ```
 
 Do not install an archive when its checksum fails.
 
-## 3. Install the binary and local runtime image
+## 3. Install the binary
 
-The release directory includes a minimal Dockerfile. It packages the same
-verified binary as the controller and probe image expected by the managed
-installer:
+Install the verified binary:
 
 ```sh
-sudo docker build --tag docklane:local .
 sudo install -m 0755 docklane /usr/local/bin/docklane
 
 docklane version
-sudo docker image inspect docklane:local >/dev/null
 ```
 
 No Go, Node.js, pnpm, or source checkout is required on the target machine.
+The release binary selects its matching multi-platform controller and probe
+image automatically:
 
-The same image is also published at
-`lcaohoanq/docklane:v0.1.0-alpha.1`. Because this first release still defaults
-to `docklane:local`, users who prefer the prebuilt image can pull and retag it
-instead of building:
-
-```sh
-sudo docker pull lcaohoanq/docklane:v0.1.0-alpha.1
-sudo docker tag lcaohoanq/docklane:v0.1.0-alpha.1 docklane:local
+```text
+lcaohoanq/docklane:v0.1.0-alpha.2
 ```
 
-Future release binaries select their matching versioned image directly.
+The reviewed installation step pulls that image from Docker Hub. To verify
+access before making machine-level changes:
+
+```sh
+sudo docker pull lcaohoanq/docklane:v0.1.0-alpha.2
+sudo docker run --rm lcaohoanq/docklane:v0.1.0-alpha.2 version
+```
+
+The release directory still includes a minimal Dockerfile for an explicit
+local-image fallback. Build it as `docklane:local` and pass
+`--docklane-image docklane:local` to both the dry run and apply commands when
+you intentionally do not want the published image.
 
 ## 4. Inspect before changing the machine
 
