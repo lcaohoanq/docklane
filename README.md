@@ -104,6 +104,9 @@ Open <http://127.0.0.1:4646> for the UI, or use the same API through the CLI:
 ./bin/docklane doctor --json excalidraw
 ./bin/docklane network plan
 ./bin/docklane network apply
+./bin/docklane app guide excalidraw/excalidraw
+./bin/docklane app enable excalidraw/excalidraw
+./bin/docklane app disable excalidraw
 ./bin/docklane preflight
 ./bin/docklane preflight --json
 ./bin/docklane install --dry-run
@@ -132,6 +135,21 @@ ROLLBACK_TOKEN=copy-the-token-from-the-reviewed-uninstall-output
 Use `--dry-run` on `route add` to validate and print the route without saving
 it. Set `DOCKLANE_URL` when the controller is not at
 `http://127.0.0.1:4646`.
+
+`docklane app enable TARGET` is the preferred application workflow. `TARGET`
+can be a displayed `project/service`, a unique Compose service, a container
+name, or a container-ID prefix. Docklane stores a stable Compose selector when
+available, derives the local name, infers a port only when exactly one is
+declared, attaches the workload to the proxy network, and waits up to 30
+seconds for Traefik readiness. Use `--name`, `--port`, `--scheme`, `--wait`,
+or `--dry-run` when the defaults are not appropriate. Repeating the same
+command is a no-op; an existing name with a different target is refused.
+
+`docklane app disable ROUTE` disables by local name or route ID. Repeating it
+is also a no-op. Reconciliation removes the endpoint only when Docklane owns
+the attachment and no other enabled route needs it. `docklane app guide
+TARGET` prints a copy-paste command and, when needed, an `expose` override; it
+never edits Compose files, publishes a host port, or adds Traefik labels.
 
 The installation manifest defaults to
 `/var/lib/docklane/install-manifest.json`; override it with

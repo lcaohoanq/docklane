@@ -37,18 +37,13 @@ A task is complete only when:
 
 ## Next execution order
 
-The disposable-VM lifecycle gate is complete. Implementation proceeds in this
-order:
+The disposable-VM lifecycle gate and application opt-in workflow are complete.
+Implementation proceeds in this order:
 
-1. **Application opt-in workflow**
-   - add `docklane app enable` and `docklane app disable`;
-   - generate copy-paste Compose guidance without editing project files;
-   - prove an application needs neither a published HTTP port nor Traefik
-     labels.
-2. **Lifecycle maintenance**
+1. **Lifecycle maintenance**
    - add installation upgrade/schema migration;
    - add expiry tracking and safe certificate rotation.
-3. **First-alpha readiness**
+2. **First-alpha readiness**
    - finish onboarding and accessibility work;
    - freeze public configuration and API schemas;
    - add CI, deterministic release artifacts, provenance, and operator guides.
@@ -382,9 +377,11 @@ safe and repeatable.
   isolation, port exposure, security settings, mounts, and related storage.
 - [X] Support adopting a compatible existing global Traefik deployment.
 - [X] Refuse unsafe adoption with a precise explanation.
-- [ ] Add `docklane app enable` for opt-in network attachment and routing.
-- [ ] Add `docklane app disable` with safe detach behavior.
-- [ ] Export copy-paste Compose guidance without editing user files.
+- [X] Add `docklane app enable` with deterministic workload selection,
+  duplicate-domain refusal, idempotent re-enable, and bounded readiness wait.
+- [X] Add `docklane app disable` with idempotent route disable and
+  ownership-safe attachment cleanup.
+- [X] Export copy-paste Compose guidance without editing user files.
 - [X] Add interrupted-install recovery across private material, filesystem,
   host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.

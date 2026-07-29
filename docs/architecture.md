@@ -704,7 +704,29 @@ attachment only after confirming no other Docklane route still needs it.
 Docklane does not stop the application container, remove its Compose network,
 or edit its Compose file.
 
-### 6.4 Concurrent updates
+### 6.4 Application opt-in commands
+
+`docklane app enable TARGET` composes discovery, route desired state,
+ownership-tracked attachment, and route readiness into one idempotent
+operation. Targets may be stable `project/service` identities, unique Compose
+services, container names, or unambiguous ID prefixes. A Compose selector is
+stored whenever available so container recreation does not change the route.
+Port inference succeeds only when the container declares exactly one TCP port;
+ambiguous ports require an explicit choice.
+
+The command refuses to retarget an existing local name, re-enables an
+identical disabled route, and waits for the route-scoped Traefik readiness
+contract before reporting the HTTPS URL as ready. `docklane app disable`
+changes desired route state but relies on the existing ownership ledger for
+cleanup: externally attached endpoints remain untouched, and owned endpoints
+remain while another enabled route needs them.
+
+`docklane app guide` is read-only. It prints the equivalent enable command and
+an `expose` fragment only when the selected port is not already declared. It
+does not write Compose files, add Traefik labels, publish a host port, or attach
+the container itself.
+
+### 6.5 Concurrent updates
 
 Every stored route has a revision beginning at 1. A client reads that revision
 with the route and must return it in `PUT /api/v1/routes/{id}`. SQLite updates

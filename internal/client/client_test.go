@@ -103,3 +103,37 @@ func TestUpdateRouteSendsRevision(t *testing.T) {
 		t.Fatalf("updated revision = %d, want 8", updated.Revision)
 	}
 }
+
+func TestRouteReadinessUsesRouteScopedEndpoint(t *testing.T) {
+	httpClient := &http.Client{Transport: roundTripFunc(func(
+		request *http.Request,
+	) (*http.Response, error) {
+		if request.Method != http.MethodGet ||
+			request.URL.Path != "/api/v1/routes/42/readiness" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`{
+				"routeId": 42,
+				"revision": 3,
+				"state": "ready",
+				"ready": true,
+				"message": "ready",
+				"checkedAt": "2026-07-29T00:00:00Z"
+			}`)),
+		}, nil
+	})}
+	apiClient := New("http://docklane.test")
+	apiClient.http = httpClient
+
+	readiness, err := apiClient.RouteReadiness(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !readiness.Ready || readiness.RouteID != 42 {
+		t.Fatalf("readiness = %#v", readiness)
+	}
+}

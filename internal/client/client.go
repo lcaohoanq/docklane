@@ -94,6 +94,21 @@ func (c *Client) GetRoute(ctx context.Context, id int64) (domain.Route, error) {
 	return route, err
 }
 
+func (c *Client) RouteReadiness(
+	ctx context.Context,
+	id int64,
+) (domain.RouteReadiness, error) {
+	var readiness domain.RouteReadiness
+	err := c.do(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/routes/%d/readiness", id),
+		nil,
+		&readiness,
+	)
+	return readiness, err
+}
+
 func (c *Client) ProbeUpstream(
 	ctx context.Context,
 	id int64,
