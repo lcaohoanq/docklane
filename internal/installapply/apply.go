@@ -89,6 +89,7 @@ func (runner *Runner) Apply(
 	if err != nil {
 		return domain.InstallationManifest{}, err
 	}
+	manifest.ReviewedToken = plan.Token
 	manifest.Resources = append(
 		[]domain.InstallationResource(nil),
 		plan.Resources...,

@@ -24,6 +24,7 @@ ownership/rollback combinations.
 | `installationId` | Immutable UUID v4 for one installation |
 | `generation` | Monotonic revision used to reject concurrent stale writes |
 | `productVersion` | Docklane version that last wrote the manifest |
+| `reviewedToken` | Original managed/adoption plan token required for recovery |
 | `state` | `planned`, `applying`, `installed`, `rolling_back`, `rolled_back`, or `failed` |
 | `createdAt`, `updatedAt` | UTC lifecycle timestamps |
 | `settings` | Installation-wide base domain and proxy network |
@@ -46,22 +47,24 @@ Supported v1 resource kinds are:
 
 Every resource has a stable logical ID, exact target, ownership, state, and
 rollback strategy. Optional SHA-256 fingerprints bind records to exact
-contents. A restore record captures an absolute backup path and its SHA-256
-fingerprint before mutation.
+contents or a reviewed prior service state. A file restore record captures an
+absolute backup path and its SHA-256 fingerprint before mutation.
 
 The safety matrix is strict:
 
 | Ownership | Allowed rollback | Meaning |
 | --- | --- | --- |
 | `managed` | `remove` | Docklane created it and may delete it |
-| `managed` | `restore` | Docklane replaced prior state and must restore its recorded backup |
+| `managed` | `restore` | Docklane changed prior state and must restore its recorded snapshot or file backup |
 | `adopted` | `preserve` | It existed before Docklane and must never be removed by uninstall |
 
-An applied or verified `restore` resource is invalid without a recorded
-backup. This makes “restore the old state” a verifiable fact rather than an
-unrecorded promise.
+An applied or verified file/trust-anchor `restore` resource is invalid without
+a recorded backup. Service and resolver restore operations instead retain the
+reviewed active/inactive snapshot in their resource and execution observation.
+This makes “restore the old state” a verifiable fact rather than an unrecorded
+promise.
 
-## Token-gated adoption
+## Token-gated apply and recovery
 
 `docklane install --token TOKEN` rebuilds the plan immediately before
 apply and refuses a stale or mismatched token. The adoption-only executor
@@ -70,39 +73,33 @@ creates generation 1 as `planned`, generation 2 as `applying`, and generation
 `preserve` rollback. If finalization fails, the next durable generation is
 `failed`; no running resource is modified or removed.
 
-Plans containing a managed resource are rejected before manifest creation
-until the corresponding create/configure and remove/restore executors exist.
-Future managed apply copies the reviewed `managedSpecification` into the
-manifest together with `managedArtifacts`, so recovery does not depend on
-ambient Compose files or legacy host paths. Rendered artifacts contain their
-exact content and SHA-256 fingerprint. Generated PKI and secret artifacts
-contain no content or fingerprint in the plan; they declare only the target,
-mode, sensitivity, and that material is generated during apply.
+Managed apply copies the reviewed token, `managedSpecification`, and
+`managedArtifacts` into the manifest before mutation, so recovery does not
+depend on ambient Compose files or legacy host paths. Rendered artifacts
+contain their exact content and SHA-256 fingerprint. Generated PKI and secret
+artifacts contain no content or fingerprint in the plan; they declare only the
+target, mode, sensitivity, and that material is generated during apply.
 
-The apply-time materializer now exists but is not enabled by the install
-command. It generates all PKI and dashboard credentials in memory and passes
-the resulting file bundle to a reversible atomic stager. Replaced files receive
-mode-preserving backups whose SHA-256 fingerprints fit the resource backup
-contract below; newly created files require no backup. Managed apply remains
-blocked until these results are journaled into manifest generations together
-with the independently tested host and Docker transactions.
+The apply-time materializer generates PKI and dashboard credentials in memory
+and publishes them to the private recovery cache before the execution journal
+is created. Replaced files receive mode-preserving backups whose SHA-256
+fingerprints fit the resource backup contract; newly created files require no
+backup.
 
-The Docker executor likewise remains disconnected from the command while its
-transaction is tested independently. It injects the manifest installation ID
-as an ownership label on both networks, the volume, and all three containers;
-records Docker's exact returned IDs and inspected state; and rolls back in
-reverse dependency order. This identity is necessary because Docker named
-volume creation is idempotent and does not provide an atomic
-create-if-absent operation.
+The Docker workflow injects the manifest installation ID as an ownership label
+on both networks, the volume, and all three containers. Each resource has its
+own journal operation with Docker's exact returned ID and a normalized
+inspected-state fingerprint, and rolls back in reverse dependency order. This
+identity is necessary because Docker named volume creation is idempotent and
+does not provide an atomic create-if-absent operation.
 
-The Arch host transaction pins p11-kit and systemd-resolved capabilities,
-snapshots dnsmasq/resolver service state, validates and activates the staged
-configuration, refreshes and verifies the trust anchor, and probes both apex
-and wildcard DNS. Its rollback restores the file transaction before refreshing
-trust and returning services to their prior state. Service drift blocks file
-rollback, while a failed file restore blocks service reload. This transaction
-also remains disconnected until each successful step and rollback contract is
-journaled durably.
+The Arch host workflow pins p11-kit and systemd-resolved capabilities.
+Preflight records whether dnsmasq and systemd-resolved were active, and that
+reviewed state is fingerprinted into their restore contracts. Apply validates
+and activates staged configuration, refreshes and verifies the trust anchor,
+and probes both apex and wildcard DNS. Rollback restores journaled files before
+refreshing trust and returning services to their prior states. A failed file
+restore blocks service reload.
 
 ## Managed execution journal
 
@@ -132,11 +129,11 @@ handles the two ambiguous crash windows by inspecting first:
 All compare-and-swap generation conflicts stop before the associated mutation.
 An apply error is also inspected because the external API may have completed
 the action before its response was lost. Any observed success is journaled and
-then included in reverse rollback. This coordinator is currently an
-independently tested composition boundary; managed command wiring still waits
-for concrete operation adapters.
+then included in reverse rollback. The install command uses this coordinator
+for every managed resource. An incomplete manifest can resume only with its
+persisted reviewed token; terminal installed state is idempotent.
 
-The file and directory adapters are the first concrete operation adapters.
+File, directory, host, and Docker adapters provide the concrete operations.
 Every materialized file and every required parent below the managed state root
 has an explicit resource. Directories carry private ownership markers and use
 atomic no-replace publication. Deterministic backup paths let an `applying`

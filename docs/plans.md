@@ -286,9 +286,9 @@ safe and repeatable.
   adoption. It also covers the controller, restricted probe, private control
   network, shared socket volume, and controller data directory with no pending
   resource classes.
-- [-] Add `docklane install`. Token-gated adoption is implemented with durable
-  planned/applying/installed state transitions; managed create/configure
-  executors and rollback remain.
+- [X] Add `docklane install` with token-gated adoption and managed execution,
+  durable material/execution checkpoints, automatic same-token resume, and
+  terminal private-material cleanup.
 - [X] Add `docklane uninstall --dry-run` with reverse dependency ordering,
   adopted-resource preservation, and managed remove/restore contracts.
 - [X] Define managed installation specification v1 for canonical state/PKI
@@ -327,10 +327,13 @@ safe and repeatable.
 - [X] Enforce complete managed workflow composition in dependency order:
   directories, files, host activation, Docker runtime, then verification.
   Integration coverage proves cached-file rollback precedes directory cleanup.
+- [X] Add per-resource journal adapters for host service/resolver activation
+  and all managed Docker networks, volume, and containers with exact prior
+  state/Engine identity, drift refusal, and reverse rollback.
 - [ ] Add `docklane uninstall`.
-- [-] Record every file, trust entry, Docker network, container, and service
-  created by Docklane. File, directory, and trust-anchor ownership are
-  complete; Docker, resolver behavior, and service observations remain.
+- [X] Record every file, directory, trust entry, Docker network, volume,
+  container, resolver behavior, and service state created or changed by
+  Docklane.
 - [X] Add read-only preflight checks for ports 80/443, Docker access and proxy
   network compatibility, dnsmasq, resolver conflicts, manifest state, and
   existing Traefik.
@@ -343,9 +346,8 @@ safe and repeatable.
 - [ ] Add `docklane app enable` for opt-in network attachment and routing.
 - [ ] Add `docklane app disable` with safe detach behavior.
 - [ ] Export copy-paste Compose guidance without editing user files.
-- [-] Add interrupted-install recovery. The generic journal and recovery state
-  machine are complete; concrete managed resource adapters and command resume
-  wiring remain.
+- [X] Add interrupted-install recovery across private material, filesystem,
+  host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.
 - [ ] Exercise install/rollback in a disposable VM before host rollout.
 

@@ -82,14 +82,15 @@ func reverseOperation(
 		operation.Reason = "Docklane created this resource; uninstall may remove it."
 		operation.Mutating = true
 	case resource.Ownership == domain.ResourceManaged &&
-		resource.Rollback == domain.RollbackRestore &&
-		resource.Backup != nil:
+		resource.Rollback == domain.RollbackRestore:
 		operation.ID = "restore-" + resource.ID
 		operation.Action = domain.InstallationRestore
-		operation.Reason = "Restore the exact backup recorded before installation."
+		operation.Reason = "Restore the exact prior state recorded before installation."
 		operation.Mutating = true
-		backup := *resource.Backup
-		operation.Backup = &backup
+		if resource.Backup != nil {
+			backup := *resource.Backup
+			operation.Backup = &backup
+		}
 	default:
 		return domain.InstallationOperation{}, fmt.Errorf(
 			"resource %s has no executable rollback contract",

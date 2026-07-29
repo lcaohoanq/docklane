@@ -409,8 +409,8 @@ fingerprint is revalidated. Rollback also requires the current target's
 fingerprint and mode to still match the staged result, preventing it from
 overwriting an external edit. Backup corruption or target drift stops that
 step, preserves the backup, and permits a retry after the conflict is repaired.
-This executor is not connected to `docklane install` yet; all independent
-transactions must first be composed with durable manifest journaling.
+The install command connects this executor only after private material has
+been durably cached and the complete operation topology has been validated.
 
 The file composition adapter makes each of the ten materialized files an
 explicit managed resource. Resolver configuration has a separate
@@ -456,9 +456,11 @@ directories → files → host activation → Docker runtime → verification
 
 Files below a managed directory tree require their direct parent to be an
 explicit directory step. Rollback uses the exact reverse order, ensuring files
-and runtime consumers are removed before their directories. The directory and
-cached-file adapters are integration-tested through this composition boundary;
-host activation, Docker runtime, and command wiring remain to be connected.
+and runtime consumers are removed before their directories. Host rollback
+restores the journaled file steps before refreshing trust or services; the
+later file-stage rollback checkpoints then reconcile those already-restored
+targets. Directory, cached-file, host, and Docker adapters are integration
+tested through this composition boundary and used by managed install.
 
 The private material cache now provides that rehydration boundary. Before any
 target file step, selected materialization is published atomically under:
@@ -569,15 +571,23 @@ same immutable operation list in reverse. The operation list must match the
 recovering workflow exactly, preventing a changed binary or specification from
 guessing how to resume old state.
 
-The composition coordinator and its crash-window recovery are implemented and
-tested independently. Concrete per-resource adapters are not connected to
-`docklane install` yet, so managed install remains deliberately blocked.
+The composition coordinator and its crash-window recovery are implemented for
+managed directories, files, host services/resolver behavior, Docker networks,
+the shared volume, and all three containers. Docker observations bind exact
+Engine IDs and normalized inspected-state fingerprints. Host observations bind
+the service state captured by the reviewed preflight, avoiding ambiguity when
+a restart does not change an already-active service.
 
-`docklane install --token TOKEN` always reruns preflight and reconstructs the
-plan. A constant-time exact comparison binds apply to the machine state the
-user reviewed. The adoption executor refuses incomplete, blocked, stale, or
-managed plans before creating state. For a valid adoption it atomically writes
-manifest generations in this order:
+For a new installation, `docklane install --token TOKEN` reruns preflight and
+reconstructs the plan. A constant-time exact comparison binds apply to the
+machine state the user reviewed. The reviewed token is then persisted in the
+private manifest before mutation. If an incomplete managed manifest already
+exists, the same command requires that original token and resumes from its
+material-cache and execution checkpoints without rebuilding a plan from
+changed ambient state.
+
+The adoption executor refuses incomplete, blocked, stale, or mutating plans.
+For a valid adoption it atomically writes manifest generations in this order:
 
 ```text
 planned → applying → installed
@@ -586,9 +596,10 @@ planned → applying → installed
 
 Every adopted resource is already `verified` and uses `preserve`; therefore
 this path changes no running infrastructure and has nothing destructive to
-roll back. A finalization error is journaled as `failed`. Managed operations
-remain unsupported until each create/configure handler has a corresponding
-remove/restore implementation.
+roll back. Managed install materializes its private cache, composes every
+managed resource exactly once, runs the durable workflow, and clears generated
+PKI/password payloads only after an installed, rolled-back, or failed terminal
+checkpoint. A finalization error is journaled as `failed`.
 
 `docklane uninstall --dry-run` is generated only from a valid installed
 manifest, never from live-state guesses. Resources are traversed in reverse

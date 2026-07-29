@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"strings"
 
+	"docklane.local/docklane/internal/docker"
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/installapply"
+	"docklane.local/docklane/internal/installhost"
+	"docklane.local/docklane/internal/installmanaged"
 	"docklane.local/docklane/internal/installmanifest"
 	"docklane.local/docklane/internal/installplan"
 	"docklane.local/docklane/internal/installspec"
@@ -72,6 +75,37 @@ func install(args []string) error {
 			"installation requires --token from a fresh docklane install --dry-run",
 		)
 	}
+	manifestStore, err := installmanifest.NewStore(*options.manifestPath)
+	if err != nil {
+		return err
+	}
+	if !*dryRun {
+		existing, loadErr := manifestStore.Load()
+		switch {
+		case loadErr == nil && existing.ManagedSpecification != nil:
+			runner, err := newManagedInstallRunner(
+				manifestStore,
+				*existing.ManagedSpecification,
+			)
+			if err != nil {
+				return err
+			}
+			installation, err := runner.Resume(
+				context.Background(),
+				*token,
+			)
+			if err != nil {
+				return err
+			}
+			return printInstalled(manifestStore, installation, *asJSON)
+		case loadErr == nil:
+			return errors.New(
+				"Docklane is already installed with an adoption-only manifest",
+			)
+		case !errors.Is(loadErr, installmanifest.ErrNotFound):
+			return loadErr
+		}
+	}
 	report, err := options.run(context.Background())
 	if err != nil {
 		return err
@@ -112,9 +146,23 @@ func install(args []string) error {
 		}
 		return nil
 	}
-	manifestStore, err := installmanifest.NewStore(*options.manifestPath)
-	if err != nil {
-		return err
+	if plan.ManagedSpecification != nil {
+		runner, err := newManagedInstallRunner(
+			manifestStore,
+			*plan.ManagedSpecification,
+		)
+		if err != nil {
+			return err
+		}
+		installation, err := runner.Apply(
+			context.Background(),
+			plan,
+			*token,
+		)
+		if err != nil {
+			return err
+		}
+		return printInstalled(manifestStore, installation, *asJSON)
 	}
 	runner, err := installapply.New(manifestStore, docklaneVersion)
 	if err != nil {
@@ -124,7 +172,33 @@ func install(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *asJSON {
+	return printInstalled(manifestStore, installation, *asJSON)
+}
+
+func newManagedInstallRunner(
+	manifestStore *installmanifest.Store,
+	specification domain.InstallationSpecification,
+) (*installmanaged.Runner, error) {
+	hostBackend, err := installhost.NewSystemBackend(
+		installhost.ArchSystemdProfile(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return installmanaged.New(
+		manifestStore,
+		docklaneVersion,
+		docker.NewClient(specification.DockerSocket),
+		hostBackend,
+	)
+}
+
+func printInstalled(
+	manifestStore *installmanifest.Store,
+	installation domain.InstallationManifest,
+	asJSON bool,
+) error {
+	if asJSON {
 		return printJSON(installation)
 	}
 	fmt.Printf(
@@ -132,9 +206,17 @@ func install(args []string) error {
 		installation.Generation,
 		manifestStore.Path(),
 	)
+	managed := 0
+	for _, resource := range installation.Resources {
+		if resource.Ownership == domain.ResourceManaged {
+			managed++
+		}
+	}
 	fmt.Printf(
-		"Recorded %d verified adopted resources; no running infrastructure was changed.\n",
+		"Recorded %d verified resources (%d managed, %d adopted).\n",
 		len(installation.Resources),
+		managed,
+		len(installation.Resources)-managed,
 	)
 	return nil
 }

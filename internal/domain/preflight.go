@@ -39,8 +39,10 @@ type PreflightDNS struct {
 }
 
 type PreflightResolver struct {
-	Disposition PreflightDisposition `json:"disposition"`
-	Addresses   []string             `json:"addresses"`
+	Disposition       PreflightDisposition `json:"disposition"`
+	Addresses         []string             `json:"addresses"`
+	ServiceActive     bool                 `json:"serviceActive"`
+	ServiceStateKnown bool                 `json:"serviceStateKnown"`
 }
 
 type PreflightManifest struct {

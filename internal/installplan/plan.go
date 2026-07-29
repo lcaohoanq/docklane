@@ -246,7 +246,7 @@ func selectManagedArtifacts(
 		case "container-gateway":
 			resourceID = "global-traefik"
 		case "container-controller":
-			resourceID = runtimeControllerName
+			resourceID = runtimeControllerResourceID
 		case "container-probe":
 			resourceID = runtimeProbeName
 		}
@@ -389,7 +389,7 @@ func addDNS(plan *domain.InstallationPlan, options Options) {
 	default:
 		plan.Blockers = append(plan.Blockers, "dnsmasq-mapping-ownership")
 	}
-	if fact.ServiceActive {
+	if fact.ServiceActive && fact.Disposition != domain.PreflightCreate {
 		addResource(
 			plan,
 			domain.InstallationResource{
@@ -412,8 +412,11 @@ func addDNS(plan *domain.InstallationPlan, options Options) {
 				Ownership: domain.ResourceManaged,
 				State:     domain.ResourcePlanned,
 				Rollback:  domain.RollbackRestore,
+				Fingerprint: serviceStateFingerprint(
+					fact.ServiceActive,
+				),
 			},
-			"Inactive dnsmasq service must be started and later restored.",
+			"dnsmasq must reload managed configuration and return to its prior state on rollback.",
 		)
 	}
 }
@@ -435,6 +438,10 @@ func addResolver(plan *domain.InstallationPlan) {
 			"Working split-DNS behavior will be recorded and preserved.",
 		)
 	case domain.PreflightCreate:
+		if !fact.ServiceStateKnown {
+			plan.Blockers = append(plan.Blockers, "resolver-service-state")
+			break
+		}
 		addResource(
 			plan,
 			domain.InstallationResource{
@@ -444,12 +451,24 @@ func addResolver(plan *domain.InstallationPlan) {
 				Ownership: domain.ResourceManaged,
 				State:     domain.ResourcePlanned,
 				Rollback:  domain.RollbackRestore,
+				Fingerprint: serviceStateFingerprint(
+					fact.ServiceActive,
+				),
 			},
 			"Missing split-DNS behavior must be configured and verified.",
 		)
 	default:
 		plan.Blockers = append(plan.Blockers, "resolver-domain-ownership")
 	}
+}
+
+func serviceStateFingerprint(active bool) string {
+	value := "inactive"
+	if active {
+		value = "active"
+	}
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }
 
 func addTLS(plan *domain.InstallationPlan) {
@@ -597,13 +616,19 @@ func addRuntime(plan *domain.InstallationPlan) {
 			)
 		}
 	case domain.PreflightCreate:
-		for _, name := range []string{runtimeProbeName, runtimeControllerName} {
+		for _, container := range []struct {
+			id     string
+			target string
+		}{
+			{runtimeProbeName, runtimeProbeName},
+			{runtimeControllerResourceID, runtimeControllerName},
+		} {
 			addResource(
 				plan,
 				domain.InstallationResource{
-					ID:        name,
+					ID:        container.id,
 					Kind:      domain.ResourceDockerContainer,
-					Target:    name,
+					Target:    container.target,
 					Ownership: domain.ResourceManaged,
 					State:     domain.ResourcePlanned,
 					Rollback:  domain.RollbackRemove,
@@ -617,8 +642,9 @@ func addRuntime(plan *domain.InstallationPlan) {
 }
 
 const (
-	runtimeControllerName = "docklane"
-	runtimeProbeName      = "docklane-probe"
+	runtimeControllerResourceID = "docklane-controller"
+	runtimeControllerName       = "docklane"
+	runtimeProbeName            = "docklane-probe"
 )
 
 func addRuntimeNetwork(

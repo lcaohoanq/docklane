@@ -37,8 +37,10 @@ func adoptionReport() domain.PreflightReport {
 				ServiceActive: true,
 			},
 			Resolver: domain.PreflightResolver{
-				Disposition: domain.PreflightAdopt,
-				Addresses:   []string{"127.0.0.1"},
+				Disposition:       domain.PreflightAdopt,
+				Addresses:         []string{"127.0.0.1"},
+				ServiceActive:     true,
+				ServiceStateKnown: true,
 			},
 			TLS: domain.PreflightTLS{
 				Disposition:            domain.PreflightAdopt,
@@ -173,8 +175,10 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 		ServiceActive: false,
 	}
 	report.Inventory.Resolver = domain.PreflightResolver{
-		Disposition: domain.PreflightCreate,
-		Addresses:   []string{},
+		Disposition:       domain.PreflightCreate,
+		Addresses:         []string{},
+		ServiceActive:     true,
+		ServiceStateKnown: true,
 	}
 	report.Inventory.TLS = domain.PreflightTLS{
 		Disposition: domain.PreflightCreate,

@@ -714,6 +714,24 @@ func (runner *Runner) resolverCheck(ctx context.Context) (
 	domain.PreflightResolver,
 ) {
 	inventory := domain.PreflightResolver{Addresses: []string{}}
+	serviceCtx, serviceCancel := context.WithTimeout(ctx, checkTimeout)
+	active, serviceErr := runner.host.ServiceActive(
+		serviceCtx,
+		"systemd-resolved",
+	)
+	serviceCancel()
+	if serviceErr != nil {
+		inventory.Disposition = domain.PreflightConflict
+		return fail(
+			"resolver-service",
+			"resolver",
+			"systemd-resolved service state could not be determined",
+			serviceErr.Error(),
+			"Verify systemd-resolved before applying managed resolver changes.",
+		), inventory
+	}
+	inventory.ServiceActive = active
+	inventory.ServiceStateKnown = true
 	hostname := "docklane-preflight." + runner.config.BaseDomain
 	checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()

@@ -100,6 +100,7 @@ type InstallationManifest struct {
 	InstallationID       string                     `json:"installationId"`
 	Generation           uint64                     `json:"generation"`
 	ProductVersion       string                     `json:"productVersion"`
+	ReviewedToken        string                     `json:"reviewedToken,omitempty"`
 	State                InstallationState          `json:"state"`
 	CreatedAt            time.Time                  `json:"createdAt"`
 	UpdatedAt            time.Time                  `json:"updatedAt"`
@@ -139,6 +140,10 @@ func (manifest InstallationManifest) Validate() error {
 	if strings.TrimSpace(manifest.ProductVersion) == "" ||
 		strings.TrimSpace(manifest.ProductVersion) != manifest.ProductVersion {
 		return fmt.Errorf("product version is required")
+	}
+	if manifest.ReviewedToken != "" &&
+		!fingerprintPattern.MatchString(manifest.ReviewedToken) {
+		return fmt.Errorf("reviewed token must be lowercase SHA-256")
 	}
 	if !validInstallationState(manifest.State) {
 		return fmt.Errorf("invalid installation state %q", manifest.State)
@@ -337,10 +342,14 @@ func (resource InstallationResource) Validate() error {
 		}
 	}
 	if resource.Rollback == RollbackRestore &&
+		(resource.Kind == ResourceFile ||
+			resource.Kind == ResourceTrustAnchor) &&
 		(resource.State == ResourceApplied ||
 			resource.State == ResourceVerified) &&
 		resource.Backup == nil {
-		return fmt.Errorf("applied restore resource requires a backup")
+		return fmt.Errorf(
+			"applied file restore resource requires a backup",
+		)
 	}
 	return nil
 }

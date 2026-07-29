@@ -460,9 +460,16 @@ func (runner *Runner) markApplied(
 			operation.Observation = copyObservation(&observation)
 			resource := findResource(next.Resources, operation.ResourceID)
 			resource.State = domain.ResourceVerified
-			resource.Fingerprint = observation.Fingerprint
-			if resource.Fingerprint == "" {
+			if resource.Rollback == domain.RollbackRestore &&
+				resource.Kind != domain.ResourceFile &&
+				resource.Kind != domain.ResourceTrustAnchor &&
+				observation.SnapshotFingerprint != "" {
 				resource.Fingerprint = observation.SnapshotFingerprint
+			} else {
+				resource.Fingerprint = observation.Fingerprint
+				if resource.Fingerprint == "" {
+					resource.Fingerprint = observation.SnapshotFingerprint
+				}
 			}
 			resource.Backup = copyBackup(observation.Backup)
 		},
