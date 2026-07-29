@@ -1,6 +1,6 @@
 # Docklane Implementation Plan
 
-Last updated: 2026-07-28
+Last updated: 2026-07-29
 
 This file is the project task tracker. Architecture and design rationale live
 in [architecture.md](./architecture.md).
@@ -29,11 +29,41 @@ A task is complete only when:
 | 0     | Product and architecture decisions             | Complete                       |
 | 1     | Non-disruptive controller prototype            | Complete                       |
 | 2     | Route lifecycle and reconciliation reliability | In progress                    |
-| 3     | Managed Docker network and Traefik integration | In progress                    |
+| 3     | Managed Docker network and Traefik integration | Complete                       |
 | 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
 | 5     | Installer, migration, and rollback             | In progress                    |
 | 6     | Diagnostics and observability                  | Complete                       |
 | 7     | UX/DX hardening and first release              | Planned                        |
+
+## Next execution order
+
+The immediate priority is to validate the new machine-level lifecycle outside
+the development host. Implementation proceeds in this order:
+
+1. **Disposable-VM lifecycle gate**
+   - provision a clean supported Arch Linux VM;
+   - capture a before-state inventory;
+   - run reviewed preflight, managed install, route, diagnostics, and
+     token-gated uninstall;
+   - inject failures during filesystem, host-service, and Docker stages;
+   - prove same-token recovery and compare the final host state with the
+     before-state inventory;
+   - prove application data is retained while Docklane ownership is released.
+2. **Application opt-in workflow**
+   - add `docklane app enable` and `docklane app disable`;
+   - generate copy-paste Compose guidance without editing project files;
+   - prove an application needs neither a published HTTP port nor Traefik
+     labels.
+3. **Lifecycle maintenance**
+   - add installation upgrade/schema migration;
+   - add expiry tracking and safe certificate rotation.
+4. **First-alpha readiness**
+   - finish onboarding and accessibility work;
+   - freeze public configuration and API schemas;
+   - add CI, deterministic release artifacts, provenance, and operator guides.
+
+The disposable-VM lifecycle gate is required before Docklane applies a clean
+managed installation to this development host.
 
 ## Phase 0 — Product foundation
 
@@ -144,18 +174,20 @@ machine-level mutations.
 
 ### Observed state
 
-- [ ] Define route states: `ready`, `unresolved`, `ambiguous`, `unreachable`,
-  `disabled`, and `error`.
+- [X] Define reconciliation states: `ready`, `unresolved`, `ambiguous`,
+  `disabled`, and `error`. Upstream unreachability is reported as bounded
+  readiness/diagnostic evidence instead of a stale durable route state.
 - [X] Return desired and observed state separately.
 - [X] Validate that the configured internal port belongs to the selected
   workload.
 - [X] Classify the active Traefik gateway as a managed system container.
 - [X] Reject and omit routes that would send the gateway back into itself.
-- [ ] Probe upstream reachability with bounded timeouts.
+- [X] Probe upstream reachability from the restricted proxy-network sidecar
+  with bounded timeouts.
 - [ ] Support non-Compose containers without pretending their ID is durable.
 - [X] Define initial behavior for scaled Compose services: report ambiguous and
   omit the route until an explicit replica policy is implemented.
-- [ ] Prefer deterministic managed aliases over generated container names.
+- [X] Prefer deterministic managed aliases over generated container names.
 
 ### Reconciler
 
@@ -192,9 +224,9 @@ without published host ports.
 
 ### Managed Docker network
 
-- [ ] Define the managed network name and labels.
-- [ ] Preview network create/connect/disconnect operations.
-- [ ] Create the network idempotently.
+- [X] Define the managed network name and ownership labels.
+- [X] Preview network create/connect/disconnect operations.
+- [X] Create the network idempotently.
 - [X] Attach selected containers without removing their existing networks.
 - [X] Assign a deterministic per-route network alias.
 - [X] Track attachments created by Docklane.
@@ -352,7 +384,8 @@ safe and repeatable.
 - [X] Add interrupted-install recovery across private material, filesystem,
   host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.
-- [ ] Exercise install/rollback in a disposable VM before host rollout.
+- [ ] Exercise clean install, interruption recovery, rollback, and uninstall in
+  a disposable VM before managed host rollout. This is the current priority.
 
 Acceptance criteria:
 
@@ -434,13 +467,15 @@ The first complete end-to-end milestone is:
 
 ```text
 docklane install --dry-run
-docklane install
+docklane install --token <reviewed-install-token>
 docklane discover
 docklane route add excalidraw \
   --project excalidraw \
   --service excalidraw \
   --port 80
 docklane doctor excalidraw
+docklane uninstall --dry-run
+docklane uninstall --token <reviewed-uninstall-token>
 ```
 
 Expected result:
