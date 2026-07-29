@@ -99,21 +99,49 @@ func SelectPort(container docker.Container, requested uint16) (uint16, error) {
 		return requested, nil
 	}
 	ports := uniquePorts(container.ExposedPorts)
-	switch len(ports) {
-	case 0:
+	if len(ports) == 0 {
 		return 0, fmt.Errorf(
 			"%s declares no TCP port; add Compose `expose` and supply --port",
 			Identity(container),
 		)
-	case 1:
-		return ports[0], nil
-	default:
-		return 0, fmt.Errorf(
-			"%s declares multiple TCP ports %v; choose one with --port",
-			Identity(container),
-			ports,
-		)
 	}
+	if len(ports) == 1 {
+		return ports[0], nil
+	}
+	if port := RecommendedHTTPPort(ports); port != 0 {
+		return port, nil
+	}
+	return 0, fmt.Errorf(
+		"%s declares multiple TCP ports %v and none is a recognizable HTTP default; "+
+			"choose one with --port",
+		Identity(container),
+		ports,
+	)
+}
+
+// RecommendedHTTPPort returns a conservative recommendation when a container
+// exposes a commonly used application HTTP port. Zero means Docklane should
+// ask instead of guessing.
+func RecommendedHTTPPort(ports []uint16) uint16 {
+	available := uniquePorts(ports)
+	if len(available) == 1 {
+		return available[0]
+	}
+	for _, preferred := range []uint16{
+		80, 8080, 3000, 8000, 5000, 5173, 4200, 8081, 3001, 8888, 443, 8443,
+	} {
+		if containsPort(available, preferred) {
+			return preferred
+		}
+	}
+	return 0
+}
+
+func RecommendedScheme(port uint16) string {
+	if port == 443 || port == 8443 {
+		return "https"
+	}
+	return "http"
 }
 
 func RouteName(value string) string {
@@ -173,11 +201,15 @@ func ComposeGuidance(application Application, port uint16) string {
 	}
 	fmt.Fprintf(
 		&output,
-		"docklane app enable %s --name %s --port %d\n",
+		"docklane app enable %s --name %s --port %d",
 		application.Identity,
 		application.Name,
 		port,
 	)
+	if RecommendedScheme(port) == "https" {
+		output.WriteString(" --scheme https")
+	}
+	output.WriteByte('\n')
 	return output.String()
 }
 

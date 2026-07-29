@@ -27,6 +27,7 @@ type appGuideResult struct {
 	Application string `json:"application"`
 	RouteName   string `json:"routeName"`
 	Port        uint16 `json:"port"`
+	Scheme      string `json:"scheme"`
 	Guidance    string `json:"guidance"`
 }
 
@@ -55,7 +56,7 @@ func appEnable(args []string) error {
 	controllerURL := flags.String("url", defaultControllerURL(), "Docklane controller URL")
 	name := flags.String("name", "", "local route name (defaults to the Compose service or container)")
 	port := flags.Uint("port", 0, "internal container port (inferred when unambiguous)")
-	scheme := flags.String("scheme", "http", "upstream scheme")
+	scheme := flags.String("scheme", "", "upstream scheme (inferred from the selected port)")
 	wait := flags.Duration("wait", 30*time.Second, "maximum time to wait for a reachable route (0 disables waiting)")
 	dryRun := flags.Bool("dry-run", false, "validate and print without saving")
 	asJSON := flags.Bool("json", false, "print JSON")
@@ -90,11 +91,15 @@ func appEnable(args []string) error {
 	if err != nil {
 		return err
 	}
+	selectedScheme := strings.TrimSpace(*scheme)
+	if selectedScheme == "" {
+		selectedScheme = appflow.RecommendedScheme(selectedPort)
+	}
 	candidate := domain.Route{
 		Name:     routeName,
 		Selector: application.Selector,
 		Port:     selectedPort,
-		Scheme:   *scheme,
+		Scheme:   selectedScheme,
 		Enabled:  true,
 	}
 	if err := candidate.Validate(); err != nil {
@@ -267,7 +272,7 @@ func appGuide(args []string) error {
 		Name:     application.Name,
 		Selector: application.Selector,
 		Port:     selectedPort,
-		Scheme:   "http",
+		Scheme:   appflow.RecommendedScheme(selectedPort),
 		Enabled:  true,
 	}
 	if err := candidate.Validate(); err != nil {
@@ -277,6 +282,7 @@ func appGuide(args []string) error {
 		Application: application.Identity,
 		RouteName:   application.Name,
 		Port:        selectedPort,
+		Scheme:      candidate.Scheme,
 		Guidance:    appflow.ComposeGuidance(application, selectedPort),
 	}
 	if *asJSON {

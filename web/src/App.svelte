@@ -113,6 +113,9 @@
     status: "idle",
     summary: "Browser probe has not run",
   };
+  const commonWebPorts = [
+    80, 8080, 3000, 8000, 5000, 5173, 4200, 8081, 3001, 8888, 443, 8443,
+  ];
 
   async function refresh(showLoading = true) {
     if (showLoading) loading = true;
@@ -234,9 +237,11 @@
   function choose(container: Container) {
     selected = container;
     editing = null;
-    routeName = slug(container.composeService || container.name);
-    routePort = container.exposedPorts[0] || 80;
-    routeScheme = "http";
+    routeName = availableRouteName(
+      slug(container.composeService || container.name),
+    );
+    routePort = recommendedPort(container.exposedPorts);
+    routeScheme = recommendedScheme(routePort);
     notice = "";
   }
 
@@ -268,7 +273,70 @@
     return value
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+      .replace(/^-|-$/g, "")
+      .slice(0, 63)
+      .replace(/-+$/g, "");
+  }
+
+  function availableRouteName(base: string) {
+    const fallback = base || "app";
+    const used = new Set(routes.map((route) => route.name));
+    if (!used.has(fallback)) return fallback;
+    for (let suffix = 2; ; suffix += 1) {
+      const ending = `-${suffix}`;
+      const candidate = `${fallback
+        .slice(0, 63 - ending.length)
+        .replace(/-+$/g, "")}${ending}`;
+      if (!used.has(candidate)) return candidate;
+    }
+  }
+
+  function uniquePorts(ports: number[]) {
+    return [...new Set(ports.filter((port) => port > 0))].sort(
+      (left, right) => left - right,
+    );
+  }
+
+  function recommendedPort(ports: number[]) {
+    const available = uniquePorts(ports);
+    if (available.length === 1) return available[0];
+    return commonWebPorts.find((port) => available.includes(port)) || 0;
+  }
+
+  function recommendedScheme(port: number) {
+    return port === 443 || port === 8443 ? "https" : "http";
+  }
+
+  function nameConflict() {
+    return routes.find(
+      (route) => route.name === routeName && route.id !== editing?.id,
+    );
+  }
+
+  function portRecommendation() {
+    if (!selected) return "";
+    const available = uniquePorts(selected.exposedPorts);
+    if (available.length === 0) {
+      return "This container declares no internal TCP port. Add `expose` to its Compose service, recreate it, then refresh Docker.";
+    }
+    if (routePort === 0) {
+      return `Choose the app's web listener: ${available.map((port) => `:${port}`).join(", ")}.`;
+    }
+    if (!available.includes(Number(routePort))) {
+      return `Port :${routePort} is not declared by this container. Available: ${available.map((port) => `:${port}`).join(", ")}.`;
+    }
+    if (available.length === 1) {
+      return `Selected the container's only declared port, :${routePort}.`;
+    }
+    return `Suggested :${routePort} as the likely web listener. Other declared ports: ${available
+      .filter((port) => port !== Number(routePort))
+      .map((port) => `:${port}`)
+      .join(", ")}.`;
+  }
+
+  function invalidSelectedPort() {
+    if (!selected) return false;
+    return !selected.exposedPorts.includes(Number(routePort));
   }
 
   function selectorFor(container: Container): Selector {
@@ -580,6 +648,16 @@
             />
             <span>.{baseDomain}</span>
           </div>
+          {#if nameConflict()}
+            <small class="field-hint error">
+              This hostname already belongs to route #{nameConflict()?.id}.
+              Choose another local name.
+            </small>
+          {:else if !editing}
+            <small class="field-hint">
+              Available hostname selected automatically.
+            </small>
+          {/if}
         </label>
         <div class="field-row">
           <label>
@@ -588,9 +666,26 @@
               type="number"
               min="1"
               max="65535"
+              list="declared-container-ports"
               bind:value={routePort}
+              onchange={() => {
+                if (!editing) routeScheme = recommendedScheme(Number(routePort));
+              }}
               required
             />
+            {#if selected}
+              <datalist id="declared-container-ports">
+                {#each uniquePorts(selected.exposedPorts) as port}
+                  <option value={port}></option>
+                {/each}
+              </datalist>
+              <small
+                class:error={routePort === 0 || invalidSelectedPort()}
+                class="field-hint"
+              >
+                {portRecommendation()}
+              </small>
+            {/if}
           </label>
           <label>
             Upstream scheme
@@ -601,7 +696,13 @@
           </label>
         </div>
         <div class="form-actions">
-          <button type="submit" disabled={saving}>
+          <button
+            type="submit"
+            disabled={saving ||
+              !!nameConflict() ||
+              routePort < 1 ||
+              invalidSelectedPort()}
+          >
             {saving ? "Saving…" : editing ? "Save changes" : "Create route"}
           </button>
           <button type="button" class="secondary" onclick={closeEditor}>

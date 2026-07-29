@@ -306,6 +306,19 @@ form > code {
   white-space: nowrap;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 0.15rem;
+  color: #89958d;
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.field-hint.error {
+  color: #ff9b9b;
+}
+
 .route-list {
   display: grid;
   margin-top: 1.2rem;

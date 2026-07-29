@@ -145,10 +145,18 @@ it. Set `DOCKLANE_URL` when the controller is not at
 can be a displayed `project/service`, a unique Compose service, a container
 name, or a container-ID prefix. Docklane stores a stable Compose selector when
 available, derives the local name, infers a port only when exactly one is
-declared, attaches the workload to the proxy network, and waits up to 30
-seconds for Traefik readiness. Use `--name`, `--port`, `--scheme`, `--wait`,
-or `--dry-run` when the defaults are not appropriate. Repeating the same
-command is a no-op; an existing name with a different target is refused.
+declared or when a conventional web port can be identified, attaches the
+workload to the proxy network, and waits up to 30 seconds for Traefik
+readiness. Ports 443 and 8443 also select an HTTPS upstream automatically.
+Unusual multi-port containers require an explicit `--port` instead of a
+guess. Use `--name`, `--port`, `--scheme`, `--wait`, or `--dry-run` when the
+defaults are not appropriate. Repeating the same command is a no-op; an
+existing name with a different target is refused.
+
+The route editor applies the same conservative UX: it proposes an unused local
+name, ranks conventional web listeners, lists every declared alternative, and
+disables creation while the hostname or selected port conflicts with current
+inventory.
 
 `docklane app disable ROUTE` disables by local name or route ID. Repeating it
 is also a no-op. Reconciliation removes the endpoint only when Docklane owns

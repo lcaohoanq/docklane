@@ -61,9 +61,42 @@ func TestSelectPortInfersOnlyUnambiguousPort(t *testing.T) {
 		t.Fatalf("port = %d, error = %v", port, err)
 	}
 	container.ExposedPorts = []uint16{80, 8080}
+	port, err = SelectPort(container, 0)
+	if err != nil || port != 80 {
+		t.Fatalf("port = %d, error = %v", port, err)
+	}
+	container.ExposedPorts = []uint16{7000, 9000}
 	if _, err := SelectPort(container, 0); err == nil ||
-		!strings.Contains(err.Error(), "--port") {
+		!strings.Contains(err.Error(), "none is a recognizable HTTP default") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRecommendedHTTPPortRanksCommonApplicationPorts(t *testing.T) {
+	tests := []struct {
+		ports []uint16
+		want  uint16
+	}{
+		{ports: []uint16{3000, 8080}, want: 8080},
+		{ports: []uint16{5173, 3000}, want: 3000},
+		{ports: []uint16{9000}, want: 9000},
+		{ports: []uint16{443, 8443}, want: 443},
+		{ports: []uint16{7000, 9000}, want: 0},
+		{ports: nil, want: 0},
+	}
+	for _, test := range tests {
+		if got := RecommendedHTTPPort(test.ports); got != test.want {
+			t.Fatalf("RecommendedHTTPPort(%v) = %d, want %d", test.ports, got, test.want)
+		}
+	}
+}
+
+func TestRecommendedSchemeUsesTLSForConventionalTLSPorts(t *testing.T) {
+	if got := RecommendedScheme(443); got != "https" {
+		t.Fatalf("scheme for 443 = %q", got)
+	}
+	if got := RecommendedScheme(8080); got != "http" {
+		t.Fatalf("scheme for 8080 = %q", got)
 	}
 }
 
@@ -123,6 +156,17 @@ func TestComposeGuidanceAddsExposeWhenRequestedPortIsUndeclared(t *testing.T) {
 	}, 8080)
 	if !strings.Contains(guidance, "expose:\n      - \"8080\"") ||
 		strings.Contains(guidance, "ports:") {
+		t.Fatalf("guidance = %q", guidance)
+	}
+}
+
+func TestComposeGuidanceIncludesHTTPSForTLSPort(t *testing.T) {
+	guidance := ComposeGuidance(Application{
+		Container: docker.Container{Name: "secure", ExposedPorts: []uint16{443}},
+		Identity:  "secure",
+		Name:      "secure",
+	}, 443)
+	if !strings.Contains(guidance, "--port 443 --scheme https") {
 		t.Fatalf("guidance = %q", guidance)
 	}
 }

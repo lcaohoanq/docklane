@@ -465,8 +465,10 @@ Goal: make Docklane pleasant, predictable, and distributable.
 - [X] Poll route-scoped readiness and replace transient raw Traefik 404s with
   publishing progress and a bounded diagnostic timeout.
 - [ ] Add guided onboarding with dependency and safety explanations.
-- [ ] Recommend a route name and likely HTTP port.
-- [ ] Explain conflicts and ambiguous workload matches clearly.
+- [X] Recommend an available route name and conservatively rank conventional
+  HTTP/HTTPS container ports without guessing among unusual listeners.
+- [X] Explain hostname, declared-port, and ambiguous workload conflicts at the
+  point of action.
 - [ ] Show equivalent CLI commands for UI mutations.
 - [ ] Add confirmation only for meaningful machine-level changes.
 - [ ] Add accessible keyboard and screen-reader behavior.
