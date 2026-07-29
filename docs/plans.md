@@ -482,8 +482,8 @@ Goal: make Docklane pleasant, predictable, and distributable.
 - [ ] Add man page and command reference.
 - [X] Add deterministic, byte-compared Linux `amd64` and `arm64` release
   builds with normalized metadata and linker-injected versions.
-- [-] Add Linux package or installer artifact. Portable versioned tarballs are
-  complete; the first-alpha installation guide is the next milestone.
+- [X] Add a portable Linux installer artifact: versioned tarballs contain the
+  binary, license, README, and minimal controller/probe image Dockerfile.
 - [-] Add checksums and release provenance. SHA-256 manifests are complete;
   signed provenance remains a post-alpha hardening option.
 - [X] Add CI for Go, Svelte, integration tests, binary builds, embedded assets,
@@ -499,10 +499,11 @@ Goal: make Docklane pleasant, predictable, and distributable.
 
 Acceptance criteria:
 
-- [ ] A new user can install, route an app, diagnose it, and uninstall from the
-  documented workflow.
-- [ ] Release artifacts reproduce from source.
-- [ ] No known operation can silently overwrite unrelated host configuration.
+- [X] A new user can install, route an app, diagnose it, and uninstall from the
+  documented workflow. Rehearsed from `docklane-clean` on Debian 12 VM 129.
+- [X] Release artifacts reproduce from source.
+- [X] No known operation can silently overwrite unrelated host configuration;
+  the clean-VM rehearsal verified token-gated apply and exact-state rollback.
 
 ## Integrated milestone
 

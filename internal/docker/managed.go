@@ -250,18 +250,47 @@ func (c *Client) CreateManagedContainer(
 	if err != nil {
 		return ManagedContainerState{}, err
 	}
-	response, err := c.managedRequest(
-		ctx,
-		http.MethodPost,
-		"/containers/create?name="+url.QueryEscape(specification.Name),
-		payload,
-	)
+	response, err := c.createManagedContainerRequest(ctx, specification.Name, payload)
 	if err != nil {
 		return ManagedContainerState{}, fmt.Errorf(
 			"create managed Docker container %s: %w",
 			specification.Name,
 			err,
 		)
+	}
+	if response.StatusCode == http.StatusNotFound {
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+		closeErr := response.Body.Close()
+		if readErr != nil {
+			return ManagedContainerState{}, errors.Join(readErr, closeErr)
+		}
+		if !missingImageResponse(body) {
+			response.Body = io.NopCloser(bytes.NewReader(body))
+			return ManagedContainerState{}, dockerResponseError(
+				"create managed Docker container "+specification.Name,
+				response,
+			)
+		}
+		if err := c.pullImage(ctx, specification.Image); err != nil {
+			return ManagedContainerState{}, fmt.Errorf(
+				"acquire image %s for managed Docker container %s: %w",
+				specification.Image,
+				specification.Name,
+				err,
+			)
+		}
+		response, err = c.createManagedContainerRequest(
+			ctx,
+			specification.Name,
+			payload,
+		)
+		if err != nil {
+			return ManagedContainerState{}, fmt.Errorf(
+				"create managed Docker container %s after acquiring image: %w",
+				specification.Name,
+				err,
+			)
+		}
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
@@ -297,6 +326,70 @@ func (c *Client) CreateManagedContainer(
 		}
 	}
 	return c.InspectManagedContainer(ctx, created.ID)
+}
+
+func (c *Client) createManagedContainerRequest(
+	ctx context.Context,
+	name string,
+	payload []byte,
+) (*http.Response, error) {
+	return c.managedRequest(
+		ctx,
+		http.MethodPost,
+		"/containers/create?name="+url.QueryEscape(name),
+		payload,
+	)
+}
+
+func missingImageResponse(body []byte) bool {
+	var payload struct {
+		Message string `json:"message"`
+	}
+	return json.Unmarshal(body, &payload) == nil &&
+		strings.Contains(strings.ToLower(payload.Message), "no such image")
+}
+
+func (c *Client) pullImage(ctx context.Context, image string) error {
+	repository, tag := splitImageReference(image)
+	query := url.Values{"fromImage": []string{repository}}
+	if tag != "" {
+		query.Set("tag", tag)
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodPost,
+		"http://docker/images/create?"+query.Encode(),
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("pull Docker image %s: %w", image, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return dockerResponseError("pull Docker image "+image, response)
+	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		return fmt.Errorf("read Docker image pull progress for %s: %w", image, err)
+	}
+	return nil
+}
+
+func splitImageReference(image string) (string, string) {
+	if strings.Contains(image, "@") {
+		return image, ""
+	}
+	lastSlash := strings.LastIndex(image, "/")
+	lastColon := strings.LastIndex(image, ":")
+	if lastColon > lastSlash {
+		return image[:lastColon], image[lastColon+1:]
+	}
+	return image, ""
 }
 
 func (c *Client) StartManagedContainer(

@@ -231,6 +231,71 @@ func TestCreateManagedContainerAttachesAdditionalNetworksAfterCreate(
 	}
 }
 
+func TestCreateManagedContainerPullsMissingImageAndRetries(t *testing.T) {
+	requests := 0
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if request.Method != http.MethodPost ||
+					request.URL.Path != "/containers/create" {
+					t.Fatalf("initial request = %s %s", request.Method, request.URL.Path)
+				}
+				return dockerResponse(
+					http.StatusNotFound,
+					`{"message":"No such image: traefik:v3.7"}`,
+				), nil
+			case 2:
+				if request.Method != http.MethodPost ||
+					request.URL.Path != "/images/create" ||
+					request.URL.Query().Get("fromImage") != "traefik" ||
+					request.URL.Query().Get("tag") != "v3.7" {
+					t.Fatalf("pull request = %s %s", request.Method, request.URL.String())
+				}
+				return dockerResponse(http.StatusOK, "{}\n"), nil
+			case 3:
+				if request.Method != http.MethodPost ||
+					request.URL.Path != "/containers/create" {
+					t.Fatalf("retry request = %s %s", request.Method, request.URL.Path)
+				}
+				return dockerResponse(http.StatusCreated, `{"Id":"gateway123"}`), nil
+			case 4:
+				if request.Method != http.MethodGet ||
+					request.URL.Path != "/containers/gateway123/json" {
+					t.Fatalf("inspect request = %s %s", request.Method, request.URL.Path)
+				}
+				return dockerResponse(http.StatusOK, `{
+					"Id":"gateway123",
+					"Name":"/traefik",
+					"Config":{"Image":"traefik:v3.7","Labels":{}},
+					"State":{"Running":false},
+					"NetworkSettings":{"Networks":{"proxy":{}}},
+					"HostConfig":{"RestartPolicy":{"Name":"unless-stopped"}}
+				}`), nil
+			default:
+				t.Fatalf("unexpected request %d", requests)
+				return nil, nil
+			}
+		},
+	)}}
+	state, err := client.CreateManagedContainer(
+		context.Background(),
+		ManagedContainerRequest{
+			Name:          "traefik",
+			Image:         "traefik:v3.7",
+			Networks:      []string{"proxy"},
+			RestartPolicy: "unless-stopped",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 4 || state.ID != "gateway123" {
+		t.Fatalf("requests = %d, state = %#v", requests, state)
+	}
+}
+
 func TestCreateManagedNetworkTreatsConflictAsError(t *testing.T) {
 	requests := 0
 	client := &Client{http: &http.Client{Transport: roundTripFunc(

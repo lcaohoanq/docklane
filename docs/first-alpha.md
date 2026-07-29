@@ -48,6 +48,10 @@ sudo apt-get install -y ca-certificates curl dnsmasq docker.io systemd-resolved
 sudo systemctl enable --now docker systemd-resolved
 ```
 
+If a newly booted Debian machine reports that `unattended-upgrades` holds the
+dpkg lock, let that service finish and rerun the commands. Do not delete the
+lock file or terminate dpkg.
+
 On Arch Linux:
 
 ```sh
@@ -168,10 +172,13 @@ installation.
 Verify the installed gateway:
 
 ```sh
-sudo docklane preflight
 docklane doctor
 docklane discover
 ```
+
+`docklane preflight` is the fresh-install compatibility check used before the
+reviewed plan. It is not the post-install health command; use `docklane doctor`
+after installation.
 
 Open the controller UI at <http://127.0.0.1:4646>.
 

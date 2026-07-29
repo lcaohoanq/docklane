@@ -6,6 +6,7 @@ stable HTTPS names such as `excalidraw.docker.home.arpa`.
 Project documentation:
 
 - [First-alpha installation guide](./docs/first-alpha.md)
+- [v0.1.0-alpha.1 clean-VM release test](./docs/release-test-v0.1.0-alpha.1.md)
 - [Architecture](./docs/architecture.md)
 - [Installation manifest schema v2](./docs/install-manifest-v2.md)
 - [Legacy installation manifest schema v1](./docs/install-manifest-v1.md)
