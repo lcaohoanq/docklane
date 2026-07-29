@@ -1,8 +1,12 @@
 package installmanifest
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,8 +113,11 @@ func TestStoreRejectsUnknownFieldsWithoutReplacingValidState(t *testing.T) {
 	}
 	encoded = []byte(strings.Replace(
 		string(encoded),
-		`"schemaVersion":1`,
-		`"schemaVersion":1,"unexpected":true`,
+		fmt.Sprintf(`"schemaVersion":%d`, domain.InstallationManifestSchemaVersion),
+		fmt.Sprintf(
+			`"schemaVersion":%d,"unexpected":true`,
+			domain.InstallationManifestSchemaVersion,
+		),
 		1,
 	))
 	if err := os.WriteFile(path, encoded, 0o600); err != nil {
@@ -120,6 +127,202 @@ func TestStoreRejectsUnknownFieldsWithoutReplacingValidState(t *testing.T) {
 		!strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("load error = %v", err)
 	}
+}
+
+func TestStoreLoadsLegacyManifestOnlyForUpgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-manifest.json")
+	legacy, raw := writeLegacyManifestV1(t, path)
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrUpgradeRequired) {
+		t.Fatalf("load error = %v", err)
+	}
+	source, err := store.LoadForUpgrade()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Manifest.InstallationID != legacy.InstallationID ||
+		source.Manifest.SchemaVersion != 1 ||
+		source.Fingerprint == "" {
+		t.Fatalf("source = %#v", source)
+	}
+	sum := sha256.Sum256(raw)
+	if source.Fingerprint != hex.EncodeToString(sum[:]) {
+		t.Fatalf("fingerprint = %s", source.Fingerprint)
+	}
+}
+
+func TestStoreAppliesUpgradeWithExactPrivateBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-manifest.json")
+	legacy, raw := writeLegacyManifestV1(t, path)
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := store.LoadForUpgrade()
+	if err != nil {
+		t.Fatal(err)
+	}
+	appliedAt := legacy.UpdatedAt.Add(time.Minute)
+	backupPath := store.UpgradeBackupPath(
+		legacy.SchemaVersion,
+		legacy.Generation,
+	)
+	upgraded := upgradeCandidate(
+		store,
+		source,
+		appliedAt,
+	)
+	if err := store.ApplyUpgrade(
+		legacy.Generation,
+		legacy.SchemaVersion,
+		source.Fingerprint,
+		upgraded,
+	); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SchemaVersion != domain.InstallationManifestSchemaVersion ||
+		loaded.Generation != legacy.Generation+1 ||
+		len(loaded.UpgradeHistory) != 1 {
+		t.Fatalf("loaded = %#v", loaded)
+	}
+	backup, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(backup, raw) {
+		t.Fatal("upgrade backup does not contain the exact legacy manifest")
+	}
+	info, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("backup mode = %o", info.Mode().Perm())
+	}
+}
+
+func TestStoreUpgradeCannotChangeInstallationContract(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-manifest.json")
+	legacy, _ := writeLegacyManifestV1(t, path)
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := store.LoadForUpgrade()
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgraded := upgradeCandidate(
+		store,
+		source,
+		legacy.UpdatedAt.Add(time.Minute),
+	)
+	upgraded.Settings.ProxyNetwork = "different"
+	err = store.ApplyUpgrade(
+		legacy.Generation,
+		legacy.SchemaVersion,
+		source.Fingerprint,
+		upgraded,
+	)
+	if err == nil || !strings.Contains(err.Error(), "may change only") {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Stat(
+		store.UpgradeBackupPath(legacy.SchemaVersion, legacy.Generation),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected backup after rejected migration: %v", err)
+	}
+}
+
+func TestStoreUpgradeResumesAfterExactBackupWasAlreadyPublished(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-manifest.json")
+	legacy, raw := writeLegacyManifestV1(t, path)
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := store.LoadForUpgrade()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupPath := store.UpgradeBackupPath(
+		legacy.SchemaVersion,
+		legacy.Generation,
+	)
+	if err := os.WriteFile(backupPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	upgraded := upgradeCandidate(
+		store,
+		source,
+		legacy.UpdatedAt.Add(time.Minute),
+	)
+	if err := store.ApplyUpgrade(
+		legacy.Generation,
+		legacy.SchemaVersion,
+		source.Fingerprint,
+		upgraded,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeLegacyManifestV1(
+	t *testing.T,
+	path string,
+) (domain.InstallationManifest, []byte) {
+	t.Helper()
+	manifest := testManifest(t)
+	manifest.SchemaVersion = 1
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, '\n')
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return manifest, raw
+}
+
+func upgradeCandidate(
+	store *Store,
+	source UpgradeSource,
+	appliedAt time.Time,
+) domain.InstallationManifest {
+	upgraded := source.Manifest
+	upgraded.SchemaVersion = domain.InstallationManifestSchemaVersion
+	upgraded.Generation++
+	upgraded.UpdatedAt = appliedAt
+	upgraded.UpgradeHistory = append(
+		append(
+			[]domain.InstallationUpgradeRecord(nil),
+			source.Manifest.UpgradeHistory...,
+		),
+		domain.InstallationUpgradeRecord{
+			FromSchemaVersion: source.Manifest.SchemaVersion,
+			ToSchemaVersion:   domain.InstallationManifestSchemaVersion,
+			AppliedAt:         appliedAt,
+			SourceBackup: domain.ResourceBackup{
+				Path: store.UpgradeBackupPath(
+					source.Manifest.SchemaVersion,
+					source.Manifest.Generation,
+				),
+				Fingerprint: source.Fingerprint,
+			},
+		},
+	)
+	return upgraded
 }
 
 func TestStoreRejectsManifestSymlink(t *testing.T) {

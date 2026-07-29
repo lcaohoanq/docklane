@@ -67,7 +67,7 @@ func TestInstallationManifestValidation(t *testing.T) {
 		{
 			name: "future schema",
 			change: func(manifest *InstallationManifest) {
-				manifest.SchemaVersion = 2
+				manifest.SchemaVersion = InstallationManifestSchemaVersion + 1
 			},
 			contains: "unsupported",
 		},
@@ -119,6 +119,54 @@ func TestInstallationManifestValidation(t *testing.T) {
 				t.Fatalf("error = %v, want containing %q", err, test.contains)
 			}
 		})
+	}
+}
+
+func TestInstallationManifestAcceptsContinuousUpgradeHistory(t *testing.T) {
+	manifest := validInstallationManifest()
+	manifest.UpdatedAt = manifest.UpdatedAt.Add(time.Minute)
+	manifest.UpgradeHistory = []InstallationUpgradeRecord{{
+		FromSchemaVersion: 1,
+		ToSchemaVersion:   2,
+		AppliedAt:         manifest.UpdatedAt,
+		SourceBackup: ResourceBackup{
+			Path:        "/var/lib/docklane/install-manifest.json.schema-v1-generation-1.bak",
+			Fingerprint: strings.Repeat("a", 64),
+		},
+	}}
+	if err := manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallationManifestRejectsUpgradeHistoryThatDoesNotReachSchema(t *testing.T) {
+	manifest := validInstallationManifest()
+	manifest.UpdatedAt = manifest.UpdatedAt.Add(time.Minute)
+	manifest.UpgradeHistory = []InstallationUpgradeRecord{{
+		FromSchemaVersion: 1,
+		ToSchemaVersion:   3,
+		AppliedAt:         manifest.UpdatedAt,
+		SourceBackup: ResourceBackup{
+			Path:        "/var/lib/docklane/install-manifest.json.schema-v1-generation-1.bak",
+			Fingerprint: strings.Repeat("a", 64),
+		},
+	}}
+	if err := manifest.Validate(); err == nil ||
+		!strings.Contains(err.Error(), "invalid schema transition") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLegacyManifestV1Validation(t *testing.T) {
+	manifest := validInstallationManifest()
+	manifest.SchemaVersion = 1
+	if err := ValidateLegacyInstallationManifestV1(manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.UpgradeHistory = []InstallationUpgradeRecord{{}}
+	if err := ValidateLegacyInstallationManifestV1(manifest); err == nil ||
+		!strings.Contains(err.Error(), "must not contain") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

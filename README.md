@@ -6,7 +6,8 @@ stable HTTPS names such as `excalidraw.docker.home.arpa`.
 Project documentation:
 
 - [Architecture](./docs/architecture.md)
-- [Installation manifest schema v1](./docs/install-manifest-v1.md)
+- [Installation manifest schema v2](./docs/install-manifest-v2.md)
+- [Legacy installation manifest schema v1](./docs/install-manifest-v1.md)
 - [Implementation plan and task tracker](./docs/plans.md)
 
 The Phase 1 prototype provides:
@@ -118,6 +119,10 @@ PLAN_TOKEN=copy-the-token-from-the-reviewed-output
 ./bin/docklane uninstall --dry-run --json
 ROLLBACK_TOKEN=copy-the-token-from-the-reviewed-uninstall-output
 ./bin/docklane uninstall --token "$ROLLBACK_TOKEN"
+./bin/docklane upgrade --dry-run
+./bin/docklane upgrade --dry-run --json
+UPGRADE_TOKEN=copy-the-token-from-the-reviewed-upgrade-output
+./bin/docklane upgrade --token "$UPGRADE_TOKEN"
 ./bin/docklane manifest init --path /absolute/path/install-manifest.json
 ./bin/docklane manifest validate --path /absolute/path/install-manifest.json
 ./bin/docklane manifest show --path /absolute/path/install-manifest.json
@@ -150,6 +155,15 @@ is also a no-op. Reconciliation removes the endpoint only when Docklane owns
 the attachment and no other enabled route needs it. `docklane app guide
 TARGET` prints a copy-paste command and, when needed, an `expose` override; it
 never edits Compose files, publishes a host port, or adds Traefik labels.
+
+`docklane upgrade --dry-run` is the only path that reads an older installation
+manifest. The current v1-to-v2 migration requires a terminal `installed` or
+`rolled_back` state and binds the installation identity, generation, source
+schema, exact file fingerprint, and backup path into the reviewed token.
+Applying that token creates a byte-exact mode-`0600` source backup, appends the
+schema-v2 audit record, advances the generation, and atomically replaces the
+manifest. It changes no host service, Docker object, certificate, route, or
+application data.
 
 The installation manifest defaults to
 `/var/lib/docklane/install-manifest.json`; override it with

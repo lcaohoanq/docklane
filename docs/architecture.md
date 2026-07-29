@@ -629,7 +629,7 @@ installation order so consumers precede their networks, volumes, directories,
 and gateway dependencies. Adopted resources emit non-mutating `preserve`
 operations. Managed `remove` resources emit removal operations, while managed
 file `restore` resources require the exact backup path and fingerprint already
-validated by manifest schema v1. Service restore resources use their recorded
+validated by manifest schema v2. Service restore resources use their recorded
 prior-state snapshot. The uninstall token covers the installation identity,
 manifest generation, path, operations, and blockers.
 
@@ -640,6 +640,18 @@ deleted secrets; host rollback still restores files before trust/service
 reload; Docker removal requires the recorded Engine identity. The same token
 resumes an interrupted rollback, including external success followed by a lost
 checkpoint. Adopted resources are never included in mutation steps.
+
+Installation manifest schema upgrades are separate from host-resource
+reconciliation. `docklane upgrade --dry-run` accepts a strictly validated
+legacy manifest only through the migration reader and binds its path,
+installation identity, generation, terminal state, schema versions, exact
+file fingerprint, backup path, operations, and blockers into a review token.
+Apply rechecks those facts under the manifest lock, creates a byte-exact
+mode-`0600` no-replace backup, appends a continuous schema-v2 upgrade-history
+record, advances the generation, and atomically replaces the manifest.
+Non-terminal manifests are refused so a new binary cannot reinterpret an
+active execution journal. The migration mutates no Docker, DNS, TLS, service,
+route, or application resource.
 
 The controller data directory has an explicit retention boundary: if empty it
 is removed, but if the controller produced persistent data, uninstall removes

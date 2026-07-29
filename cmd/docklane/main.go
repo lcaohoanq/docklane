@@ -63,6 +63,8 @@ func run(args []string) error {
 		return install(args[1:])
 	case "uninstall":
 		return uninstall(args[1:])
+	case "upgrade":
+		return upgrade(args[1:])
 	case "route":
 		return route(args[1:])
 	case "version":
@@ -723,6 +725,8 @@ Usage:
   docklane install --token T  Apply or resume the exact reviewed install plan
   docklane uninstall --dry-run Preview manifest-driven rollback
   docklane uninstall --token T Apply or resume the reviewed rollback
+  docklane upgrade --dry-run Preview installation manifest migration
+  docklane upgrade --token T Apply the exact reviewed manifest migration
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route

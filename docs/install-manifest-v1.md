@@ -1,5 +1,10 @@
 # Installation manifest schema v1
 
+Schema v1 is retained as the legacy contract. Current binaries inspect it only
+through `docklane upgrade --dry-run`; see
+[installation manifest schema v2](./install-manifest-v2.md) for the reviewed
+migration and current format.
+
 Docklane's installation manifest is the durable ownership boundary for
 machine-level changes. It is a standalone JSON file so install, recovery, and
 uninstall remain possible before the controller database exists or after the

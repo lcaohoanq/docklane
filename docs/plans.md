@@ -37,11 +37,10 @@ A task is complete only when:
 
 ## Next execution order
 
-The disposable-VM lifecycle gate and application opt-in workflow are complete.
-Implementation proceeds in this order:
+The disposable-VM lifecycle gate, application opt-in workflow, and installation
+schema migration are complete. Implementation proceeds in this order:
 
 1. **Lifecycle maintenance**
-   - add installation upgrade/schema migration;
    - add expiry tracking and safe certificate rotation.
 2. **First-alpha readiness**
    - finish onboarding and accessibility work;
@@ -384,7 +383,9 @@ safe and repeatable.
 - [X] Export copy-paste Compose guidance without editing user files.
 - [X] Add interrupted-install recovery across private material, filesystem,
   host, and Docker stages with immutable topology and same-token command resume.
-- [ ] Add upgrade and schema migration flow.
+- [X] Add token-reviewed installation upgrade and schema migration with
+  terminal-state gating, exact source fingerprinting, immutable private
+  backup, generation-safe atomic replacement, and schema-v2 audit history.
 - [X] Exercise clean install, interruption recovery, rollback, and uninstall in
   disposable Debian and Arch VMs before managed host rollout. Clean install,
   a no-published-port HTTPS route, reviewed uninstall, and same-token recovery

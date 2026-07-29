@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const InstallationManifestSchemaVersion = 1
+const InstallationManifestSchemaVersion = 2
 
 type InstallationState string
 
@@ -85,6 +85,13 @@ type ResourceBackup struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
+type InstallationUpgradeRecord struct {
+	FromSchemaVersion int            `json:"fromSchemaVersion"`
+	ToSchemaVersion   int            `json:"toSchemaVersion"`
+	AppliedAt         time.Time      `json:"appliedAt"`
+	SourceBackup      ResourceBackup `json:"sourceBackup"`
+}
+
 type InstallationResource struct {
 	ID          string            `json:"id"`
 	Kind        ResourceKind      `json:"kind"`
@@ -99,21 +106,22 @@ type InstallationResource struct {
 }
 
 type InstallationManifest struct {
-	SchemaVersion        int                        `json:"schemaVersion"`
-	InstallationID       string                     `json:"installationId"`
-	Generation           uint64                     `json:"generation"`
-	ProductVersion       string                     `json:"productVersion"`
-	ReviewedToken        string                     `json:"reviewedToken,omitempty"`
-	RollbackToken        string                     `json:"rollbackToken,omitempty"`
-	State                InstallationState          `json:"state"`
-	CreatedAt            time.Time                  `json:"createdAt"`
-	UpdatedAt            time.Time                  `json:"updatedAt"`
-	Settings             InstallationSettings       `json:"settings"`
-	ManagedSpecification *InstallationSpecification `json:"managedSpecification,omitempty"`
-	ManagedArtifacts     []InstallationArtifact     `json:"managedArtifacts,omitempty"`
-	MaterialCache        *InstallationMaterialCache `json:"materialCache,omitempty"`
-	Execution            *InstallationExecution     `json:"execution,omitempty"`
-	Resources            []InstallationResource     `json:"resources"`
+	SchemaVersion        int                         `json:"schemaVersion"`
+	InstallationID       string                      `json:"installationId"`
+	Generation           uint64                      `json:"generation"`
+	ProductVersion       string                      `json:"productVersion"`
+	ReviewedToken        string                      `json:"reviewedToken,omitempty"`
+	RollbackToken        string                      `json:"rollbackToken,omitempty"`
+	State                InstallationState           `json:"state"`
+	CreatedAt            time.Time                   `json:"createdAt"`
+	UpdatedAt            time.Time                   `json:"updatedAt"`
+	Settings             InstallationSettings        `json:"settings"`
+	ManagedSpecification *InstallationSpecification  `json:"managedSpecification,omitempty"`
+	ManagedArtifacts     []InstallationArtifact      `json:"managedArtifacts,omitempty"`
+	MaterialCache        *InstallationMaterialCache  `json:"materialCache,omitempty"`
+	Execution            *InstallationExecution      `json:"execution,omitempty"`
+	UpgradeHistory       []InstallationUpgradeRecord `json:"upgradeHistory,omitempty"`
+	Resources            []InstallationResource      `json:"resources"`
 }
 
 var (
@@ -161,6 +169,9 @@ func (manifest InstallationManifest) Validate() error {
 	}
 	if manifest.UpdatedAt.Before(manifest.CreatedAt) {
 		return fmt.Errorf("manifest updatedAt cannot precede createdAt")
+	}
+	if err := validateUpgradeHistory(manifest); err != nil {
+		return err
 	}
 	if err := manifest.Settings.Validate(); err != nil {
 		return err
@@ -300,6 +311,77 @@ func (manifest InstallationManifest) Validate() error {
 				"rolled-back manifest execution phase must be rolled_back",
 			)
 		}
+	}
+	return nil
+}
+
+func ValidateLegacyInstallationManifestV1(
+	manifest InstallationManifest,
+) error {
+	if manifest.SchemaVersion != 1 {
+		return fmt.Errorf(
+			"legacy validator requires schema version 1, got %d",
+			manifest.SchemaVersion,
+		)
+	}
+	if len(manifest.UpgradeHistory) != 0 {
+		return fmt.Errorf("schema v1 manifest must not contain upgrade history")
+	}
+	candidate := manifest
+	candidate.SchemaVersion = InstallationManifestSchemaVersion
+	return candidate.Validate()
+}
+
+func validateUpgradeHistory(manifest InstallationManifest) error {
+	previousSchema := 0
+	for index, record := range manifest.UpgradeHistory {
+		if record.FromSchemaVersion <= 0 ||
+			record.ToSchemaVersion <= record.FromSchemaVersion ||
+			record.ToSchemaVersion > manifest.SchemaVersion {
+			return fmt.Errorf(
+				"upgrade history %d has invalid schema transition %d to %d",
+				index,
+				record.FromSchemaVersion,
+				record.ToSchemaVersion,
+			)
+		}
+		if index > 0 && record.FromSchemaVersion != previousSchema {
+			return fmt.Errorf(
+				"upgrade history %d does not continue schema version %d",
+				index,
+				previousSchema,
+			)
+		}
+		if record.AppliedAt.IsZero() ||
+			record.AppliedAt.Before(manifest.CreatedAt) ||
+			record.AppliedAt.After(manifest.UpdatedAt) {
+			return fmt.Errorf(
+				"upgrade history %d has an invalid applied timestamp",
+				index,
+			)
+		}
+		if !filepath.IsAbs(record.SourceBackup.Path) ||
+			filepath.Clean(record.SourceBackup.Path) != record.SourceBackup.Path {
+			return fmt.Errorf(
+				"upgrade history %d backup path must be absolute and canonical",
+				index,
+			)
+		}
+		if !fingerprintPattern.MatchString(record.SourceBackup.Fingerprint) {
+			return fmt.Errorf(
+				"upgrade history %d backup fingerprint must be lowercase SHA-256",
+				index,
+			)
+		}
+		previousSchema = record.ToSchemaVersion
+	}
+	if len(manifest.UpgradeHistory) > 0 &&
+		previousSchema != manifest.SchemaVersion {
+		return fmt.Errorf(
+			"upgrade history ends at schema version %d, manifest is version %d",
+			previousSchema,
+			manifest.SchemaVersion,
+		)
 	}
 	return nil
 }
