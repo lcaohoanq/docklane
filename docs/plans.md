@@ -33,24 +33,24 @@ A task is complete only when:
 | 4     | Local DNS and TLS lifecycle                    | Integrated checkpoint complete |
 | 5     | Installer, migration, and rollback             | In progress                    |
 | 6     | Diagnostics and observability                  | Complete                       |
-| 7     | UX/DX hardening and first release              | In progress                    |
+| 7     | UX/DX hardening and first release              | First alpha published          |
 
 ## Next execution order
 
 The disposable-VM lifecycle gate, application opt-in workflow, installation
-schema migration, and route readiness gate are complete. The first-alpha
-priority is the shortest reliable path from a running container to a usable
-local URL:
+schema migration, route readiness gate, and first public alpha are complete.
+The post-alpha priority is to tighten the shortest path from a running
+container to a usable local URL based on real user feedback:
 
 1. **Create a route and use it**
    - recommend a route name and likely internal HTTP port;
    - explain workload, hostname, and port conflicts at the point of action;
    - keep the URL disabled until DNS, Traefik, and the backend are reachable;
    - show the equivalent CLI command for every UI route mutation.
-2. **First-alpha distribution**
+2. **Post-alpha distribution**
    - finish guided onboarding and accessibility work;
    - freeze public configuration and API schemas;
-   - add CI, deterministic release artifacts, provenance, and operator guides.
+   - expand provenance, packaging, and operator guides.
 
 Automatic certificate lifecycle maintenance is intentionally deferred until
 after the first alpha. Existing diagnostics still report certificate expiry,
@@ -495,7 +495,9 @@ Goal: make Docklane pleasant, predictable, and distributable.
   uninstall are documented; a general product upgrade path is not supported
   yet.
 - [X] License the project under Apache License 2.0.
-- [ ] Tag the first alpha release.
+- [X] Tag and publish
+  [`v0.1.0-alpha.1`](https://github.com/lcaohoanq/docklane/releases/tag/v0.1.0-alpha.1)
+  with verified `amd64`/`arm64` archives and SHA-256 checksums.
 
 Acceptance criteria:
 
