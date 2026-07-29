@@ -1,0 +1,129 @@
+name: Release build
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - ".github/workflows/release-build.yml"
+      - "cmd/**"
+      - "internal/**"
+      - "ops/build-release.sh"
+      - "ops/check-release-reproducibility.sh"
+      - "web/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "LICENSE"
+      - "README.md"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version embedded in test artifacts
+        required: true
+        default: v0.0.0-dev
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Reproducible Linux artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.5.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install locked web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Select artifact version
+        id: version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="$GITHUB_REF_NAME"
+          elif [[ -n "$REQUESTED_VERSION" ]]; then
+            version="$REQUESTED_VERSION"
+          else
+            version="v0.0.0-dev.${GITHUB_SHA:0:12}"
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: Build embedded web UI
+        run: pnpm --dir web run build
+
+      - name: Verify committed web assets
+        run: git diff --exit-code -- internal/webui/dist
+
+      - name: Prove release reproducibility
+        run: ./ops/check-release-reproducibility.sh "${{ steps.version.outputs.version }}"
+
+      - name: Build upload artifacts
+        run: ./ops/build-release.sh "${{ steps.version.outputs.version }}" dist
+
+      - name: Verify checksums and package contents
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          (
+            cd dist
+            sha256sum --check checksums.txt
+          )
+          release_version="${VERSION#v}"
+          for architecture in amd64 arm64; do
+            archive="dist/docklane_${release_version}_linux_${architecture}.tar.gz"
+            tar -tzf "$archive" >"package-${architecture}.txt"
+            test "$(wc -l <"package-${architecture}.txt")" -eq 4
+            grep -Fx "docklane_${release_version}_linux_${architecture}/" "package-${architecture}.txt"
+            grep -Fx "docklane_${release_version}_linux_${architecture}/LICENSE" "package-${architecture}.txt"
+            grep -Fx "docklane_${release_version}_linux_${architecture}/README.md" "package-${architecture}.txt"
+            grep -Fx "docklane_${release_version}_linux_${architecture}/docklane" "package-${architecture}.txt"
+          done
+
+      - name: Verify embedded version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          release_version="${VERSION#v}"
+          mkdir version-check
+          tar -xzf "dist/docklane_${release_version}_linux_amd64.tar.gz" -C version-check
+          test "$(version-check/docklane_${release_version}_linux_amd64/docklane version)" = "docklane ${VERSION}"
+
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v7
+        with:
+          name: docklane-${{ steps.version.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

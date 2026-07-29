@@ -480,12 +480,14 @@ Goal: make Docklane pleasant, predictable, and distributable.
 - [ ] Freeze API version 1.
 - [ ] Add shell completions.
 - [ ] Add man page and command reference.
-- [ ] Add deterministic release builds.
-- [ ] Add Linux package or installer artifact.
-- [ ] Add checksums and release provenance.
-- [-] Add CI for Go, Svelte, integration tests, and packaging. The source,
-  Svelte, Go, embedded-asset, and binary-build gate runs on pull requests and
-  `main`; release packaging is tracked by the next milestone.
+- [X] Add deterministic, byte-compared Linux `amd64` and `arm64` release
+  builds with normalized metadata and linker-injected versions.
+- [-] Add Linux package or installer artifact. Portable versioned tarballs are
+  complete; the first-alpha installation guide is the next milestone.
+- [-] Add checksums and release provenance. SHA-256 manifests are complete;
+  signed provenance remains a post-alpha hardening option.
+- [X] Add CI for Go, Svelte, integration tests, binary builds, embedded assets,
+  and reproducible release packaging.
 - [ ] Document supported Linux resolver/trust-store combinations.
 - [ ] Write upgrade, backup, restore, and uninstall guides.
 - [X] License the project under Apache License 2.0.

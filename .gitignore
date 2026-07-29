@@ -5,6 +5,7 @@
 
 # Build outputs
 /bin/
+/dist/
 /.gocache/
 
 # Runtime state and backups

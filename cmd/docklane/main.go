@@ -27,7 +27,7 @@ import (
 	"docklane.local/docklane/internal/upstreamprobe"
 )
 
-const docklaneVersion = "dev"
+var docklaneVersion = "dev"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {

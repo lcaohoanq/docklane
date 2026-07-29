@@ -84,6 +84,30 @@ The binary is written to `bin/docklane`.
 and type checks, Go tests and vet, the final binary build, and verification
 that the committed embedded UI matches a clean rebuild.
 
+## Build release artifacts
+
+Build the Linux release candidates and their SHA-256 manifest with:
+
+```sh
+make release VERSION=v0.1.0-alpha.1
+cd dist
+sha256sum --check checksums.txt
+```
+
+The output contains:
+
+```text
+docklane_0.1.0-alpha.1_linux_amd64.tar.gz
+docklane_0.1.0-alpha.1_linux_arm64.tar.gz
+checksums.txt
+```
+
+Run `make release-repro-check VERSION=v0.1.0-alpha.1` to build both
+architectures twice and require byte-for-byte identical archives and checksum
+manifests. Each archive contains the versioned `docklane` binary, `LICENSE`,
+and `README.md`. The `Release build` GitHub workflow performs the same proof
+and uploads 14-day workflow artifacts; it does not create a GitHub Release.
+
 ## Run Docklane
 
 For isolated source development:

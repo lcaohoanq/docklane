@@ -1,4 +1,4 @@
-.PHONY: build ci format-check setup test web
+.PHONY: build ci format-check release release-repro-check setup test web
 
 GOCACHE := $(CURDIR)/.gocache
 PNPM_STORE := $(CURDIR)/.pnpm-store
@@ -23,3 +23,11 @@ format-check:
 
 ci: format-check test build
 	git diff --exit-code -- internal/webui/dist
+
+release: web
+	test -n "$(VERSION)"
+	GOCACHE=$(GOCACHE) ./ops/build-release.sh "$(VERSION)" "$(or $(DIST),dist)"
+
+release-repro-check: web
+	test -n "$(VERSION)"
+	GOCACHE=$(GOCACHE) ./ops/check-release-reproducibility.sh "$(VERSION)"
