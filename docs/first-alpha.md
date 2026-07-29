@@ -127,6 +127,18 @@ sudo docker image inspect docklane:local >/dev/null
 
 No Go, Node.js, pnpm, or source checkout is required on the target machine.
 
+The same image is also published at
+`lcaohoanq/docklane:v0.1.0-alpha.1`. Because this first release still defaults
+to `docklane:local`, users who prefer the prebuilt image can pull and retag it
+instead of building:
+
+```sh
+sudo docker pull lcaohoanq/docklane:v0.1.0-alpha.1
+sudo docker tag lcaohoanq/docklane:v0.1.0-alpha.1 docklane:local
+```
+
+Future release binaries select their matching versioned image directly.
+
 ## 4. Inspect before changing the machine
 
 Preflight is read-only:

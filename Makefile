@@ -1,4 +1,4 @@
-.PHONY: build ci format-check release release-repro-check setup test web
+.PHONY: build ci format-check release release-repro-check runtime-image-context setup test web
 
 GOCACHE := $(CURDIR)/.gocache
 PNPM_STORE := $(CURDIR)/.pnpm-store
@@ -31,3 +31,9 @@ release: web
 release-repro-check: web
 	test -n "$(VERSION)"
 	GOCACHE=$(GOCACHE) ./ops/check-release-reproducibility.sh "$(VERSION)"
+
+runtime-image-context:
+	test -n "$(VERSION)"
+	test -n "$(DIST)"
+	test -n "$(OUTPUT)"
+	./ops/prepare-runtime-image-context.sh "$(VERSION)" "$(DIST)" "$(OUTPUT)"

@@ -484,6 +484,10 @@ Goal: make Docklane pleasant, predictable, and distributable.
   builds with normalized metadata and linker-injected versions.
 - [X] Add a portable Linux installer artifact: versioned tarballs contain the
   binary, license, README, and minimal controller/probe image Dockerfile.
+- [X] Publish version-matched `amd64`/`arm64` controller and probe images to
+  Docker Hub from the exact verified release binaries.
+- [X] Automate Docker Hub publication for release tags; the repository
+  operator supplies the write-only `DOCKERHUB_TOKEN` GitHub Actions secret.
 - [-] Add checksums and release provenance. SHA-256 manifests are complete;
   signed provenance remains a post-alpha hardening option.
 - [X] Add CI for Go, Svelte, integration tests, binary builds, embedded assets,

@@ -110,8 +110,22 @@ architectures twice and require byte-for-byte identical archives and checksum
 manifests. Each archive contains the versioned `docklane` binary, `LICENSE`,
 `README.md`, and a minimal `Dockerfile` that packages the downloaded binary as
 the managed `docklane:local` controller/probe image. The `Release build`
-GitHub workflow pins Go 1.26.5, performs the same proof, and uploads 14-day
-workflow artifacts; it does not create a GitHub Release.
+GitHub workflow pins Go 1.26.5, performs the same proof, creates the tagged
+GitHub prerelease, and publishes the exact binaries as a multi-platform
+controller/probe image:
+
+```text
+lcaohoanq/docklane:vVERSION
+```
+
+Release binaries use their version-matched Docker Hub image automatically.
+Development builds continue to use `docklane:local`.
+
+Published images are available at
+[Docker Hub](https://hub.docker.com/r/lcaohoanq/docklane). Maintainers must
+configure a GitHub Actions repository secret named `DOCKERHUB_TOKEN` with
+write access to that repository before publishing the next release tag. Never
+store the token in the repository.
 
 ## Run Docklane
 

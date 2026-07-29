@@ -42,7 +42,7 @@ func install(args []string) error {
 	)
 	docklaneImage := flags.String(
 		"docklane-image",
-		"docklane:local",
+		defaultDocklaneImage(),
 		"clean-install Docklane image reference",
 	)
 	dryRun := flags.Bool("dry-run", false, "render the plan without applying it")
@@ -180,6 +180,15 @@ func install(args []string) error {
 		return err
 	}
 	return printInstalled(manifestStore, installation, *asJSON)
+}
+
+func defaultDocklaneImage() string {
+	if docklaneVersion == "" ||
+		docklaneVersion == "dev" ||
+		strings.Contains(docklaneVersion, "-dev.") {
+		return "docklane:local"
+	}
+	return "lcaohoanq/docklane:" + docklaneVersion
 }
 
 func newManagedInstallRunner(

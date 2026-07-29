@@ -18,3 +18,29 @@ func TestInstallRejectsTokenWithDryRun(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestDefaultDocklaneImageTracksProductVersion(t *testing.T) {
+	previous := docklaneVersion
+	t.Cleanup(func() {
+		docklaneVersion = previous
+	})
+	for _, test := range []struct {
+		version string
+		want    string
+	}{
+		{"", "docklane:local"},
+		{"dev", "docklane:local"},
+		{"v0.0.0-dev.0123456789ab", "docklane:local"},
+		{"v0.1.0-alpha.2", "lcaohoanq/docklane:v0.1.0-alpha.2"},
+	} {
+		docklaneVersion = test.version
+		if got := defaultDocklaneImage(); got != test.want {
+			t.Fatalf(
+				"defaultDocklaneImage() for %q = %q, want %q",
+				test.version,
+				got,
+				test.want,
+			)
+		}
+	}
+}
