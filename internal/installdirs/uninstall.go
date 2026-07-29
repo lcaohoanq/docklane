@@ -21,9 +21,9 @@ func NewUninstallWorkflowAdapter(
 			"managed specification is required for directory uninstall",
 		)
 	}
-	adapter, err := NewWorkflowAdapter(
+	adapter, err := NewManagedWorkflowAdapter(
 		manifest.InstallationID,
-		manifest.ManagedSpecification.Paths.StateDirectory,
+		*manifest.ManagedSpecification,
 		manifest.Resources,
 	)
 	if err != nil {

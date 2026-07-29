@@ -35,11 +35,6 @@ func install(args []string) error {
 		"",
 		"clean-install system trust-anchor target (host-profile default when omitted)",
 	)
-	managedResolverConfig := flags.String(
-		"managed-resolver-config",
-		"/etc/systemd/resolved.conf.d/docklane.conf",
-		"clean-install systemd-resolved route-only domain target",
-	)
 	traefikImage := flags.String(
 		"traefik-image",
 		"traefik:v3.7",
@@ -124,7 +119,7 @@ func install(args []string) error {
 		StateDirectory:  *managedStateDirectory,
 		DataDirectory:   *options.runtimeDataPath,
 		DnsmasqConfig:   *dnsmasqTarget,
-		ResolverConfig:  *managedResolverConfig,
+		ResolverConfig:  *options.resolverConfig,
 		TrustAnchorPath: *managedTrustAnchor,
 		TraefikImage:    *traefikImage,
 		DocklaneImage:   *docklaneImage,

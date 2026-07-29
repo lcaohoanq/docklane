@@ -428,7 +428,6 @@ func newManagedRunnerFixture(t *testing.T) managedRunnerFixture {
 	state := filepath.Join(root, "state")
 	for _, directory := range []string{
 		filepath.Join(root, "dns"),
-		filepath.Join(root, "resolved"),
 		filepath.Join(root, "trust"),
 	} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -473,10 +472,11 @@ func newManagedRunnerFixture(t *testing.T) managedRunnerFixture {
 				ServiceActive: false,
 			},
 			Resolver: domain.PreflightResolver{
-				Disposition:       domain.PreflightCreate,
-				Addresses:         []string{},
-				ServiceActive:     true,
-				ServiceStateKnown: true,
+				Disposition:                domain.PreflightCreate,
+				ConfigDirectoryDisposition: domain.PreflightCreate,
+				Addresses:                  []string{},
+				ServiceActive:              true,
+				ServiceStateKnown:          true,
 			},
 			TLS: domain.PreflightTLS{
 				Disposition: domain.PreflightCreate,

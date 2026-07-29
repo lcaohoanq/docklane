@@ -37,10 +37,11 @@ func adoptionReport() domain.PreflightReport {
 				ServiceActive: true,
 			},
 			Resolver: domain.PreflightResolver{
-				Disposition:       domain.PreflightAdopt,
-				Addresses:         []string{"127.0.0.1"},
-				ServiceActive:     true,
-				ServiceStateKnown: true,
+				Disposition:                domain.PreflightAdopt,
+				ConfigDirectoryDisposition: domain.PreflightAdopt,
+				Addresses:                  []string{"127.0.0.1"},
+				ServiceActive:              true,
+				ServiceStateKnown:          true,
 			},
 			TLS: domain.PreflightTLS{
 				Disposition:            domain.PreflightAdopt,
@@ -175,10 +176,11 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 		ServiceActive: false,
 	}
 	report.Inventory.Resolver = domain.PreflightResolver{
-		Disposition:       domain.PreflightCreate,
-		Addresses:         []string{},
-		ServiceActive:     true,
-		ServiceStateKnown: true,
+		Disposition:                domain.PreflightCreate,
+		ConfigDirectoryDisposition: domain.PreflightCreate,
+		Addresses:                  []string{},
+		ServiceActive:              true,
+		ServiceStateKnown:          true,
 	}
 	report.Inventory.TLS = domain.PreflightTLS{
 		Disposition: domain.PreflightCreate,
@@ -212,6 +214,13 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	}
 	if plan.ManagedSpecification == nil {
 		t.Fatal("managed specification is missing")
+	}
+	if !resourceTargetExists(
+		plan.Resources,
+		domain.ResourceDirectory,
+		"/etc/systemd/resolved.conf.d",
+	) {
+		t.Fatal("resolver configuration directory is not explicitly managed")
 	}
 	if len(plan.ManagedArtifacts) != 13 {
 		t.Fatalf("managed artifacts = %d, want 13", len(plan.ManagedArtifacts))

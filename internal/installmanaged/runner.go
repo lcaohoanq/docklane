@@ -168,9 +168,9 @@ func (runner *Runner) execute(
 	}
 	defer installmaterial.ClearFiles(files)
 	specification := *prepared.ManagedSpecification
-	directories, err := installdirs.NewWorkflowAdapter(
+	directories, err := installdirs.NewManagedWorkflowAdapter(
 		prepared.InstallationID,
-		specification.Paths.StateDirectory,
+		specification,
 		prepared.Resources,
 	)
 	if err != nil {

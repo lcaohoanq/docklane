@@ -162,6 +162,7 @@ func testConfig(t *testing.T) Config {
 		DnsmasqConfig:   "/etc/dnsmasq.conf",
 		DnsmasqDir:      "/etc/dnsmasq.d",
 		DnsmasqService:  "dnsmasq",
+		ResolverConfig:  "/etc/systemd/resolved.conf.d/docklane.conf",
 		TrustAnchorPath: "/trust/root.crt",
 		RuntimeDataPath: "/var/lib/docklane",
 	}
@@ -178,6 +179,9 @@ func healthyHost() portAwareHost {
 		},
 		configFiles: []string{"/etc/dnsmasq.d/lab.conf"},
 		active:      true,
+		fileModes: map[string]os.FileMode{
+			"/etc/systemd/resolved.conf.d": os.ModeDir | 0o755,
+		},
 	}}
 }
 
@@ -252,9 +256,10 @@ func configureHealthyTLS(
 	host.files["/trust/root.crt"] = string(pem.EncodeToMemory(
 		&pem.Block{Type: "CERTIFICATE", Bytes: rootDER},
 	))
-	host.fileModes = map[string]os.FileMode{
-		"/host/certs/local.key": 0o600,
+	if host.fileModes == nil {
+		host.fileModes = map[string]os.FileMode{}
 	}
+	host.fileModes["/host/certs/local.key"] = 0o600
 	host.servedCert = leafDER
 	dockerInspector.runtime = docker.ContainerRuntime{
 		Command: []string{"--providers.file.filename=/dynamic/tls.yml"},

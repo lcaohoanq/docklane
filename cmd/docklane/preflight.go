@@ -21,6 +21,7 @@ type preflightOptions struct {
 	dnsmasqConfig   *string
 	dnsmasqDir      *string
 	dnsmasqService  *string
+	resolverConfig  *string
 	trustAnchorPath *string
 	runtimeDataPath *string
 	hostProfile     *string
@@ -63,6 +64,11 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 		"dnsmasq",
 		"dnsmasq system service name",
 	)
+	options.resolverConfig = flags.String(
+		"managed-resolver-config",
+		"/etc/systemd/resolved.conf.d/docklane.conf",
+		"systemd-resolved route-only domain target",
+	)
 	options.trustAnchorPath = flags.String(
 		"trust-anchor",
 		"",
@@ -104,6 +110,7 @@ func (options preflightOptions) run(
 			DnsmasqConfig:   *options.dnsmasqConfig,
 			DnsmasqDir:      *options.dnsmasqDir,
 			DnsmasqService:  *options.dnsmasqService,
+			ResolverConfig:  *options.resolverConfig,
 			TrustAnchorPath: *options.trustAnchorPath,
 			RuntimeDataPath: *options.runtimeDataPath,
 		},

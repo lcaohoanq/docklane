@@ -154,7 +154,7 @@ func TestDirectoryRollbackRefusesNonEmptyOrChangedOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observation, err := applyDirectory(resource, content)
+	observation, err := applyDirectory(resource, content, defaultDirectoryMode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,6 +165,7 @@ func TestDirectoryRollbackRefusesNonEmptyOrChangedOwnership(t *testing.T) {
 	if err := rollbackDirectory(
 		resource,
 		content,
+		defaultDirectoryMode,
 		observation,
 	); err == nil || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("non-empty rollback error = %v", err)
@@ -179,6 +180,7 @@ func TestDirectoryRollbackRefusesNonEmptyOrChangedOwnership(t *testing.T) {
 	if err := rollbackDirectory(
 		resource,
 		content,
+		defaultDirectoryMode,
 		observation,
 	); err == nil || !strings.Contains(err.Error(), "changed") {
 		t.Fatalf("changed marker rollback error = %v", err)
@@ -186,7 +188,12 @@ func TestDirectoryRollbackRefusesNonEmptyOrChangedOwnership(t *testing.T) {
 	if err := os.WriteFile(markerPath, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := rollbackDirectory(resource, content, observation); err != nil {
+	if err := rollbackDirectory(
+		resource,
+		content,
+		defaultDirectoryMode,
+		observation,
+	); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -202,7 +209,7 @@ func TestDirectoryRecoveryCompletesRollbackAfterMarkerRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observation, err := applyDirectory(resource, content)
+	observation, err := applyDirectory(resource, content, defaultDirectoryMode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,12 +219,18 @@ func TestDirectoryRecoveryCompletesRollbackAfterMarkerRemoval(t *testing.T) {
 	disposition, _, err := inspectDirectory(
 		resource,
 		content,
+		defaultDirectoryMode,
 		&observation,
 	)
 	if err != nil || disposition != installworkflow.DispositionApplied {
 		t.Fatalf("partial rollback disposition = %q, error = %v", disposition, err)
 	}
-	if err := rollbackDirectory(resource, content, observation); err != nil {
+	if err := rollbackDirectory(
+		resource,
+		content,
+		defaultDirectoryMode,
+		observation,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(resource.Target); !errors.Is(err, os.ErrNotExist) {
@@ -242,6 +255,7 @@ func TestDirectoryApplyRefusesUnmarkedTargetAndRecoversPrivateStaging(t *testing
 	if _, err := applyDirectory(
 		resource,
 		content,
+		defaultDirectoryMode,
 	); err == nil || !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("unmarked target error = %v", err)
 	}
@@ -252,7 +266,7 @@ func TestDirectoryApplyRefusesUnmarkedTargetAndRecoversPrivateStaging(t *testing
 	if err := os.Mkdir(staging, defaultDirectoryMode); err != nil {
 		t.Fatal(err)
 	}
-	observation, err := applyDirectory(resource, content)
+	observation, err := applyDirectory(resource, content, defaultDirectoryMode)
 	if err != nil {
 		t.Fatal(err)
 	}

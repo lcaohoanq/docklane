@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -121,6 +122,28 @@ func addManagedDirectoryResources(
 	specification domain.InstallationSpecification,
 	artifacts []domain.InstallationArtifact,
 ) error {
+	if managedResourceExists(plan.Resources, "resolver-domain") {
+		switch plan.Inventory.Resolver.ConfigDirectoryDisposition {
+		case domain.PreflightCreate:
+			addResource(
+				plan,
+				domain.InstallationResource{
+					ID:        "resolver-config-directory",
+					Kind:      domain.ResourceDirectory,
+					Target:    filepath.Dir(specification.Paths.ResolverConfig),
+					Ownership: domain.ResourceManaged,
+					State:     domain.ResourcePlanned,
+					Rollback:  domain.RollbackRemove,
+				},
+				"Missing resolver file parent must be created as a journaled host directory.",
+			)
+		case domain.PreflightAdopt:
+		default:
+			return errors.New(
+				"managed resolver requires known configuration directory ownership",
+			)
+		}
+	}
 	hasFiles := false
 	needed := map[string]bool{}
 	state := specification.Paths.StateDirectory
@@ -197,6 +220,19 @@ func addManagedDirectoryResources(
 		}
 	}
 	return nil
+}
+
+func managedResourceExists(
+	resources []domain.InstallationResource,
+	id string,
+) bool {
+	for _, resource := range resources {
+		if resource.ID == id &&
+			resource.Ownership == domain.ResourceManaged {
+			return true
+		}
+	}
+	return false
 }
 
 func pathBelow(parent string, child string) bool {

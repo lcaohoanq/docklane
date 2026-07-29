@@ -42,6 +42,7 @@ type Config struct {
 	DnsmasqConfig   string
 	DnsmasqDir      string
 	DnsmasqService  string
+	ResolverConfig  string
 	TrustAnchorPath string
 	RuntimeDataPath string
 }
@@ -164,7 +165,7 @@ func (SystemInspector) ServiceActive(
 }
 
 func (SystemInspector) Stat(path string) (HostFileInfo, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return HostFileInfo{}, err
 	}
@@ -235,6 +236,9 @@ func New(
 	if !filepath.IsAbs(config.TrustAnchorPath) {
 		return nil, fmt.Errorf("preflight trust anchor path must be absolute")
 	}
+	if !filepath.IsAbs(config.ResolverConfig) {
+		return nil, fmt.Errorf("preflight resolver config path must be absolute")
+	}
 	if !filepath.IsAbs(config.RuntimeDataPath) {
 		return nil, fmt.Errorf("preflight runtime data path must be absolute")
 	}
@@ -302,8 +306,10 @@ func (runner *Runner) Run(ctx context.Context) domain.PreflightReport {
 	report.Inventory.DNS = dnsInventory
 	add(&report, mappingCheck)
 	resolverCheck, resolverInventory := runner.resolverCheck(ctx)
+	resolverDirectoryCheck := runner.resolverDirectoryCheck(&resolverInventory)
 	report.Inventory.Resolver = resolverInventory
 	add(&report, resolverCheck)
+	add(&report, resolverDirectoryCheck)
 	manifestCheck, manifestInventory := runner.manifestCheck()
 	report.Inventory.Manifest = manifestInventory
 	add(&report, manifestCheck)
@@ -781,6 +787,48 @@ func (runner *Runner) resolverCheck(ctx context.Context) (
 		"resolver",
 		"System resolver maps "+hostname+" to "+strings.Join(loopback, ", "),
 	), inventory
+}
+
+func (runner *Runner) resolverDirectoryCheck(
+	inventory *domain.PreflightResolver,
+) domain.DiagnosticCheck {
+	directory := filepath.Dir(runner.config.ResolverConfig)
+	info, err := runner.host.Stat(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		inventory.ConfigDirectoryDisposition = domain.PreflightCreate
+		return warn(
+			"resolver-config-directory",
+			"resolver",
+			"Resolver configuration directory does not exist",
+			"The reviewed install plan will create and own "+directory+".",
+		)
+	}
+	if err != nil {
+		inventory.ConfigDirectoryDisposition = domain.PreflightUnknown
+		return fail(
+			"resolver-config-directory",
+			"resolver",
+			"Resolver configuration directory could not be inspected",
+			err.Error(),
+			"Fix access to "+directory+" before installation.",
+		)
+	}
+	if info.Mode&os.ModeSymlink != 0 || !info.Mode.IsDir() {
+		inventory.ConfigDirectoryDisposition = domain.PreflightConflict
+		return fail(
+			"resolver-config-directory",
+			"resolver",
+			"Resolver configuration parent is not a real directory",
+			directory,
+			"Replace it with a real directory before installation.",
+		)
+	}
+	inventory.ConfigDirectoryDisposition = domain.PreflightAdopt
+	return pass(
+		"resolver-config-directory",
+		"resolver",
+		"Resolver configuration directory already exists at "+directory,
+	)
 }
 
 func (runner *Runner) manifestCheck() (

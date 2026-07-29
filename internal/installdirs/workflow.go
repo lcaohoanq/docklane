@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	markerName            = ".docklane-owner.json"
-	directoryMarkerSchema = 1
-	defaultDirectoryMode  = 0o700
+	markerName                        = ".docklane-owner.json"
+	directoryMarkerSchema             = 1
+	defaultDirectoryMode  fs.FileMode = 0o700
 )
 
 type marker struct {
@@ -38,6 +38,35 @@ type WorkflowAdapter struct {
 func NewWorkflowAdapter(
 	installationID string,
 	stateDirectory string,
+	resources []domain.InstallationResource,
+) (*WorkflowAdapter, error) {
+	return newWorkflowAdapter(
+		installationID,
+		stateDirectory,
+		nil,
+		resources,
+	)
+}
+
+func NewManagedWorkflowAdapter(
+	installationID string,
+	specification domain.InstallationSpecification,
+	resources []domain.InstallationResource,
+) (*WorkflowAdapter, error) {
+	return newWorkflowAdapter(
+		installationID,
+		specification.Paths.StateDirectory,
+		map[string]fs.FileMode{
+			filepath.Dir(specification.Paths.ResolverConfig): 0o755,
+		},
+		resources,
+	)
+}
+
+func newWorkflowAdapter(
+	installationID string,
+	stateDirectory string,
+	hostDirectories map[string]fs.FileMode,
 	resources []domain.InstallationResource,
 ) (*WorkflowAdapter, error) {
 	if installationID == "" {
@@ -61,9 +90,20 @@ func NewWorkflowAdapter(
 				resource.ID,
 			)
 		}
+		mode := defaultDirectoryMode
 		if !pathWithin(stateDirectory, resource.Target) {
+			hostMode, allowed := hostDirectories[resource.Target]
+			if !allowed {
+				return nil, fmt.Errorf(
+					"managed directory %s must stay below the state directory or match an allowed host directory",
+					resource.ID,
+				)
+			}
+			mode = hostMode
+		}
+		if mode.Perm() == 0 || mode.Perm() != mode {
 			return nil, fmt.Errorf(
-				"managed directory %s must stay below the state directory",
+				"managed directory %s has invalid mode",
 				resource.ID,
 			)
 		}
@@ -83,11 +123,11 @@ func NewWorkflowAdapter(
 			Target:            resource.Target,
 			Stage:             domain.ExecutionDirectories,
 			IntentFingerprint: fingerprint(content),
-			IntentMode:        defaultDirectoryMode,
+			IntentMode:        uint32(mode),
 			Apply: func(
 				context.Context,
 			) (domain.InstallationObservation, error) {
-				return applyDirectory(capturedResource, capturedContent)
+				return applyDirectory(capturedResource, capturedContent, mode)
 			},
 			Inspect: func(
 				_ context.Context,
@@ -100,6 +140,7 @@ func NewWorkflowAdapter(
 				return inspectDirectory(
 					capturedResource,
 					capturedContent,
+					mode,
 					observation,
 				)
 			},
@@ -110,6 +151,7 @@ func NewWorkflowAdapter(
 				return rollbackDirectory(
 					capturedResource,
 					capturedContent,
+					mode,
 					observation,
 				)
 			},
@@ -121,8 +163,14 @@ func NewWorkflowAdapter(
 func applyDirectory(
 	resource domain.InstallationResource,
 	content []byte,
+	mode fs.FileMode,
 ) (domain.InstallationObservation, error) {
-	disposition, observation, err := inspectDirectory(resource, content, nil)
+	disposition, observation, err := inspectDirectory(
+		resource,
+		content,
+		mode,
+		nil,
+	)
 	if err != nil {
 		return domain.InstallationObservation{}, err
 	}
@@ -148,16 +196,16 @@ func applyDirectory(
 		)
 	}
 	staging := stagingPath(resource)
-	if err := cleanupStaging(staging, content); err != nil {
+	if err := cleanupStaging(staging, content, mode); err != nil {
 		return domain.InstallationObservation{}, err
 	}
-	if err := os.Mkdir(staging, defaultDirectoryMode); err != nil {
+	if err := os.Mkdir(staging, mode); err != nil {
 		return domain.InstallationObservation{}, err
 	}
 	cleanup := true
 	defer func() {
 		if cleanup {
-			cleanupStaging(staging, content)
+			cleanupStaging(staging, content, mode)
 		}
 	}()
 	if err := writeMarker(
@@ -179,6 +227,7 @@ func applyDirectory(
 		disposition, observation, inspectErr := inspectDirectory(
 			resource,
 			content,
+			mode,
 			nil,
 		)
 		if inspectErr == nil &&
@@ -200,6 +249,7 @@ func applyDirectory(
 func inspectDirectory(
 	resource domain.InstallationResource,
 	content []byte,
+	mode fs.FileMode,
 	recorded *domain.InstallationObservation,
 ) (
 	installworkflow.Disposition,
@@ -224,7 +274,7 @@ func inspectDirectory(
 	if err != nil ||
 		info.Mode()&os.ModeSymlink != 0 ||
 		!info.IsDir() ||
-		info.Mode().Perm() != defaultDirectoryMode ||
+		info.Mode().Perm() != mode.Perm() ||
 		!ownedByCurrentUser(info) {
 		return installworkflow.DispositionConflict,
 			domain.InstallationObservation{},
@@ -256,6 +306,7 @@ func inspectDirectory(
 func rollbackDirectory(
 	resource domain.InstallationResource,
 	content []byte,
+	mode fs.FileMode,
 	observation domain.InstallationObservation,
 ) error {
 	expected := expectedObservation(resource, content)
@@ -269,7 +320,7 @@ func rollbackDirectory(
 	if err != nil ||
 		info.Mode()&os.ModeSymlink != 0 ||
 		!info.IsDir() ||
-		info.Mode().Perm() != defaultDirectoryMode ||
+		info.Mode().Perm() != mode.Perm() ||
 		!ownedByCurrentUser(info) {
 		return errors.New("managed directory changed before rollback")
 	}
@@ -381,7 +432,11 @@ func verifyMarker(path string, expected []byte) error {
 	return nil
 }
 
-func cleanupStaging(path string, markerContent []byte) error {
+func cleanupStaging(
+	path string,
+	markerContent []byte,
+	mode fs.FileMode,
+) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -389,7 +444,7 @@ func cleanupStaging(path string, markerContent []byte) error {
 	if err != nil ||
 		info.Mode()&os.ModeSymlink != 0 ||
 		!info.IsDir() ||
-		info.Mode().Perm() != defaultDirectoryMode ||
+		info.Mode().Perm() != mode.Perm() ||
 		!ownedByCurrentUser(info) {
 		return errors.New("directory staging path is unsafe")
 	}
