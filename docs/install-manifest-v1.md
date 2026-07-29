@@ -119,6 +119,12 @@ marker fingerprint and mode. This exposes no file content but prevents a
 restart from combining newly generated private material or directory identity
 with operations from an earlier generation.
 
+Symlink resources record the link path, desired absolute target, and exact
+reviewed prior target. The resolver-stub operation uses an atomic exchange and
+fingerprints both targets in its execution observation. Recovery accepts only
+the reviewed prior or desired state; any third target is drift and blocks
+mutation.
+
 Before an external apply, the next manifest generation records `applying`.
 After successful inspection it records `applied`. Rollback similarly records
 `rolling_back` before mutation and `rolled_back` after inspection. Recovery

@@ -13,6 +13,53 @@ import (
 
 const persistentDataResourceID = "docklane-data"
 
+func usePersistentRollback(
+	adapter *WorkflowAdapter,
+	installationID string,
+	resources []domain.InstallationResource,
+) error {
+	var data *domain.InstallationResource
+	for index := range resources {
+		resource := &resources[index]
+		if resource.ID == persistentDataResourceID &&
+			resource.Ownership == domain.ResourceManaged {
+			data = resource
+			break
+		}
+	}
+	if data == nil {
+		return nil
+	}
+	content, err := markerContent(
+		installationID,
+		data.ID,
+		data.Target,
+	)
+	if err != nil {
+		return err
+	}
+	for index := range adapter.Steps {
+		if adapter.Steps[index].ResourceID != data.ID {
+			continue
+		}
+		resource := *data
+		adapter.Steps[index].Rollback = func(
+			_ context.Context,
+			observation domain.InstallationObservation,
+		) error {
+			return releasePersistentDirectory(
+				resource,
+				content,
+				observation,
+			)
+		}
+		return nil
+	}
+	return errors.New(
+		"managed persistent data directory has no workflow step",
+	)
+}
+
 func NewUninstallWorkflowAdapter(
 	manifest domain.InstallationManifest,
 ) (*WorkflowAdapter, error) {

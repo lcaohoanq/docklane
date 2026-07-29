@@ -186,7 +186,21 @@ func (backend *SystemBackend) LookupHost(
 	ctx context.Context,
 	hostname string,
 ) ([]string, error) {
-	return net.DefaultResolver.LookupHost(ctx, hostname)
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(
+			ctx context.Context,
+			network string,
+			_ string,
+		) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(
+				ctx,
+				network,
+				"127.0.0.53:53",
+			)
+		},
+	}
+	return resolver.LookupHost(ctx, hostname)
 }
 
 func (backend *SystemBackend) VerifyTrustAnchor(

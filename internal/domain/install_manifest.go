@@ -25,6 +25,7 @@ type ResourceKind string
 
 const (
 	ResourceFile            ResourceKind = "file"
+	ResourceSymlink         ResourceKind = "symlink"
 	ResourceDirectory       ResourceKind = "directory"
 	ResourceTrustAnchor     ResourceKind = "trust_anchor"
 	ResourceDockerNetwork   ResourceKind = "docker_network"
@@ -93,6 +94,8 @@ type InstallationResource struct {
 	Rollback    RollbackStrategy  `json:"rollback"`
 	Fingerprint string            `json:"fingerprint,omitempty"`
 	Backup      *ResourceBackup   `json:"backup,omitempty"`
+	LinkTarget  string            `json:"linkTarget,omitempty"`
+	PriorTarget string            `json:"priorTarget,omitempty"`
 }
 
 type InstallationManifest struct {
@@ -312,13 +315,32 @@ func (resource InstallationResource) Validate() error {
 		strings.TrimSpace(resource.Target) != resource.Target {
 		return fmt.Errorf("resource target is required")
 	}
-	if resource.Kind == ResourceFile || resource.Kind == ResourceDirectory {
+	if resource.Kind == ResourceFile ||
+		resource.Kind == ResourceSymlink ||
+		resource.Kind == ResourceDirectory {
 		if !filepath.IsAbs(resource.Target) {
 			return fmt.Errorf("file target %q must be absolute", resource.Target)
 		}
 		if filepath.Clean(resource.Target) != resource.Target {
 			return fmt.Errorf("file target %q must be canonical", resource.Target)
 		}
+	}
+	if resource.Kind == ResourceSymlink {
+		if !absoluteCanonicalResourcePath(resource.LinkTarget) {
+			return fmt.Errorf("symlink target %q must be absolute and canonical", resource.LinkTarget)
+		}
+		if resource.Rollback == RollbackRestore &&
+			!absoluteCanonicalResourcePath(resource.PriorTarget) {
+			return fmt.Errorf(
+				"symlink prior target %q must be absolute and canonical",
+				resource.PriorTarget,
+			)
+		}
+		if resource.Rollback == RollbackRemove && resource.PriorTarget != "" {
+			return fmt.Errorf("remove symlink must not declare a prior target")
+		}
+	} else if resource.LinkTarget != "" || resource.PriorTarget != "" {
+		return fmt.Errorf("link targets require a symlink resource")
 	}
 	if !validResourceState(resource.State) {
 		return fmt.Errorf("invalid resource state %q", resource.State)
@@ -386,6 +408,7 @@ func validInstallationState(state InstallationState) bool {
 func validResourceKind(kind ResourceKind) bool {
 	switch kind {
 	case ResourceFile,
+		ResourceSymlink,
 		ResourceDirectory,
 		ResourceTrustAnchor,
 		ResourceDockerNetwork,
@@ -397,6 +420,10 @@ func validResourceKind(kind ResourceKind) bool {
 	default:
 		return false
 	}
+}
+
+func absoluteCanonicalResourcePath(path string) bool {
+	return filepath.IsAbs(path) && filepath.Clean(path) == path
 }
 
 func validResourceState(state ResourceState) bool {

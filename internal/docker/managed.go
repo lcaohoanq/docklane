@@ -279,6 +279,23 @@ func (c *Client) CreateManagedContainer(
 	if created.ID == "" {
 		return ManagedContainerState{}, errors.New("Docker returned an empty container ID")
 	}
+	for _, network := range specification.Networks[1:] {
+		aliases := []string{specification.Name}
+		if network == "bridge" {
+			aliases = nil
+		}
+		if err := c.ConnectNetwork(
+			ctx,
+			network,
+			created.ID,
+			aliases,
+		); err != nil {
+			return ManagedContainerState{}, errors.Join(
+				err,
+				c.RemoveManagedContainer(ctx, created.ID),
+			)
+		}
+	}
 	return c.InspectManagedContainer(ctx, created.ID)
 }
 
@@ -391,7 +408,7 @@ func managedContainerPayload(
 		})
 	}
 	endpoints := map[string]any{}
-	for _, network := range specification.Networks {
+	for _, network := range specification.Networks[:min(1, len(specification.Networks))] {
 		endpoints[network] = map[string]any{
 			"Aliases": []string{specification.Name},
 		}

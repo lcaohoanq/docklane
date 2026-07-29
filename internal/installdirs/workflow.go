@@ -53,7 +53,7 @@ func NewManagedWorkflowAdapter(
 	specification domain.InstallationSpecification,
 	resources []domain.InstallationResource,
 ) (*WorkflowAdapter, error) {
-	return newWorkflowAdapter(
+	adapter, err := newWorkflowAdapter(
 		installationID,
 		specification.Paths.StateDirectory,
 		map[string]fs.FileMode{
@@ -61,6 +61,17 @@ func NewManagedWorkflowAdapter(
 		},
 		resources,
 	)
+	if err != nil {
+		return nil, err
+	}
+	if err := usePersistentRollback(
+		adapter,
+		installationID,
+		resources,
+	); err != nil {
+		return nil, err
+	}
+	return adapter, nil
 }
 
 func newWorkflowAdapter(

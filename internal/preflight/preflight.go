@@ -27,6 +27,11 @@ import (
 
 const checkTimeout = 5 * time.Second
 
+const (
+	resolverLinkPath = "/etc/resolv.conf"
+	resolverStubPath = "/run/systemd/resolve/stub-resolv.conf"
+)
+
 type PortState string
 
 const (
@@ -63,6 +68,7 @@ type HostInspector interface {
 	LookupHost(context.Context, string) ([]string, error)
 	LookPath(string) (string, error)
 	ReadFile(string) ([]byte, error)
+	Readlink(string) (string, error)
 	ListConfigFiles(string) ([]string, error)
 	ServiceActive(context.Context, string) (bool, error)
 	Stat(string) (HostFileInfo, error)
@@ -139,6 +145,10 @@ func (SystemInspector) LookPath(name string) (string, error) {
 
 func (SystemInspector) ReadFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
+}
+
+func (SystemInspector) Readlink(path string) (string, error) {
+	return os.Readlink(path)
 }
 
 func (SystemInspector) ListConfigFiles(directory string) ([]string, error) {
@@ -307,9 +317,11 @@ func (runner *Runner) Run(ctx context.Context) domain.PreflightReport {
 	add(&report, mappingCheck)
 	resolverCheck, resolverInventory := runner.resolverCheck(ctx)
 	resolverDirectoryCheck := runner.resolverDirectoryCheck(&resolverInventory)
+	resolverLinkCheck := runner.resolverLinkCheck(&resolverInventory)
 	report.Inventory.Resolver = resolverInventory
 	add(&report, resolverCheck)
 	add(&report, resolverDirectoryCheck)
+	add(&report, resolverLinkCheck)
 	manifestCheck, manifestInventory := runner.manifestCheck()
 	report.Inventory.Manifest = manifestInventory
 	add(&report, manifestCheck)
@@ -831,6 +843,63 @@ func (runner *Runner) resolverDirectoryCheck(
 	)
 }
 
+func (runner *Runner) resolverLinkCheck(
+	inventory *domain.PreflightResolver,
+) domain.DiagnosticCheck {
+	info, err := runner.host.Stat(resolverLinkPath)
+	if err != nil {
+		inventory.StubLinkDisposition = domain.PreflightUnknown
+		return fail(
+			"resolver-stub-link",
+			"resolver",
+			"System resolver link could not be inspected",
+			err.Error(),
+			"Restore a valid "+resolverLinkPath+" symlink before installation.",
+		)
+	}
+	if info.Mode&os.ModeSymlink == 0 {
+		inventory.StubLinkDisposition = domain.PreflightConflict
+		return fail(
+			"resolver-stub-link",
+			"resolver",
+			"System resolver configuration is not a symlink",
+			resolverLinkPath,
+			"Convert it to a systemd-resolved symlink before installation.",
+		)
+	}
+	target, err := runner.host.Readlink(resolverLinkPath)
+	if err != nil {
+		inventory.StubLinkDisposition = domain.PreflightUnknown
+		return fail(
+			"resolver-stub-link",
+			"resolver",
+			"System resolver link target could not be read",
+			err.Error(),
+			"Repair "+resolverLinkPath+" before installation.",
+		)
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Clean(filepath.Join(filepath.Dir(resolverLinkPath), target))
+	}
+	inventory.StubLinkTarget = target
+	if target == resolverStubPath {
+		inventory.StubLinkDisposition = domain.PreflightAdopt
+		return pass(
+			"resolver-stub-link",
+			"resolver",
+			"Applications already use the systemd-resolved local stub",
+		)
+	}
+	inventory.StubLinkDisposition = domain.PreflightCreate
+	return warn(
+		"resolver-stub-link",
+		"resolver",
+		"Applications bypass the systemd-resolved local stub",
+		"The reviewed install plan will switch "+resolverLinkPath+
+			" from "+target+" to "+resolverStubPath+" and restore it on uninstall.",
+	)
+}
+
 func (runner *Runner) manifestCheck() (
 	domain.DiagnosticCheck,
 	domain.PreflightManifest,
@@ -1085,7 +1154,9 @@ func (runner *Runner) validateController(
 	if runtime.RestartPolicy != "unless-stopped" {
 		return fmt.Errorf("controller restart policy is %q", runtime.RestartPolicy)
 	}
-	if len(container.Networks) != 1 || !container.HasNetwork(runtimeControlNetwork) {
+	if len(container.Networks) != 2 ||
+		!container.HasNetwork(runtimeControlNetwork) ||
+		!container.HasNetwork("bridge") {
 		return fmt.Errorf("controller networks are %v", container.Networks)
 	}
 	if !hasCommand(runtime.Command, "serve") ||

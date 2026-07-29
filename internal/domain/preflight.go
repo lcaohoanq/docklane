@@ -41,6 +41,8 @@ type PreflightDNS struct {
 type PreflightResolver struct {
 	Disposition                PreflightDisposition `json:"disposition"`
 	ConfigDirectoryDisposition PreflightDisposition `json:"configDirectoryDisposition"`
+	StubLinkDisposition        PreflightDisposition `json:"stubLinkDisposition"`
+	StubLinkTarget             string               `json:"stubLinkTarget,omitempty"`
 	Addresses                  []string             `json:"addresses"`
 	ServiceActive              bool                 `json:"serviceActive"`
 	ServiceStateKnown          bool                 `json:"serviceStateKnown"`

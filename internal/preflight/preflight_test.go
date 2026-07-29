@@ -80,6 +80,7 @@ type fakeHostInspector struct {
 	active      bool
 	serviceErr  error
 	fileModes   map[string]os.FileMode
+	links       map[string]string
 	servedCert  []byte
 	tlsErr      error
 }
@@ -123,6 +124,14 @@ func (inspector fakeHostInspector) ReadFile(path string) ([]byte, error) {
 		return nil, os.ErrNotExist
 	}
 	return []byte(content), nil
+}
+
+func (inspector fakeHostInspector) Readlink(path string) (string, error) {
+	target, exists := inspector.links[path]
+	if !exists {
+		return "", os.ErrNotExist
+	}
+	return target, nil
 }
 
 func (inspector fakeHostInspector) ListConfigFiles(
@@ -181,6 +190,10 @@ func healthyHost() portAwareHost {
 		active:      true,
 		fileModes: map[string]os.FileMode{
 			"/etc/systemd/resolved.conf.d": os.ModeDir | 0o755,
+			"/etc/resolv.conf":             os.ModeSymlink | 0o777,
+		},
+		links: map[string]string{
+			"/etc/resolv.conf": "/run/systemd/resolve/stub-resolv.conf",
 		},
 	}}
 }
@@ -285,7 +298,7 @@ func configureHealthyRuntime(
 			ComposeProject: "docklane",
 			ComposeService: "docklane",
 			PublishedPorts: []uint16{4646},
-			Networks:       []string{"docklane-control"},
+			Networks:       []string{"bridge", "docklane-control"},
 		},
 		docker.Container{
 			ID:             "probe123",

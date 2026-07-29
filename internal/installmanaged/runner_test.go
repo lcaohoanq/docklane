@@ -474,6 +474,8 @@ func newManagedRunnerFixture(t *testing.T) managedRunnerFixture {
 			Resolver: domain.PreflightResolver{
 				Disposition:                domain.PreflightCreate,
 				ConfigDirectoryDisposition: domain.PreflightCreate,
+				StubLinkDisposition:        domain.PreflightAdopt,
+				StubLinkTarget:             "/run/systemd/resolve/stub-resolv.conf",
 				Addresses:                  []string{},
 				ServiceActive:              true,
 				ServiceStateKnown:          true,

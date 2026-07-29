@@ -14,6 +14,7 @@ import (
 	"docklane.local/docklane/internal/installdocker"
 	"docklane.local/docklane/internal/installfiles"
 	"docklane.local/docklane/internal/installhost"
+	"docklane.local/docklane/internal/installlinks"
 	"docklane.local/docklane/internal/installworkflow"
 )
 
@@ -124,6 +125,10 @@ func (runner *Runner) rollbackManaged(
 	if err != nil {
 		return manifest, err
 	}
+	links, err := installlinks.NewWorkflowAdapter(manifest.Resources)
+	if err != nil {
+		return manifest, err
+	}
 	fileRestorer, err := installhost.NewManagedFileRestorer(
 		runner.store,
 		files.Steps,
@@ -165,8 +170,11 @@ func (runner *Runner) rollbackManaged(
 		installcompose.Groups{
 			Directories: directories.Steps,
 			Files:       files.Steps,
-			Host:        host.Steps,
-			Docker:      dockerAdapter.Steps,
+			Host: append(
+				append([]installworkflow.Step(nil), links.Steps...),
+				host.Steps...,
+			),
+			Docker: dockerAdapter.Steps,
 		},
 	)
 	if err != nil {

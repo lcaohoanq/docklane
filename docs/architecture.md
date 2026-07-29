@@ -548,7 +548,20 @@ drop-in target. `arch-systemd` uses p11-kit; `debian-systemd` uses
 `update-ca-certificates` and `/etc/ssl/certs/ca-certificates.crt`. Debian's
 dnsmasq artifact also binds explicitly to `127.0.0.1` so it can coexist with
 systemd-resolved's `127.0.0.53` stub. The drop-in routes only
-`~docker.home.arpa` to loopback dnsmasq. Rollback first compares current
+`~docker.home.arpa` to loopback dnsmasq. Preflight inventories the real
+`/etc/resolv.conf` symlink target. If it points at systemd-resolved's uplink
+file, Docklane journals an atomic exchange to
+`/run/systemd/resolve/stub-resolv.conf`; apply and rollback both refuse an
+unreviewed target, and uninstall restores the exact prior link.
+
+Docker 20.10 cannot create a container with multiple network endpoints in one
+request, so Docklane creates it on the first network and attaches remaining
+networks before startup. The controller joins the private control network and
+Docker's built-in bridge: Traefik polls it over the private network, while the
+non-internal bridge permits Docker to publish the controller API solely on
+`127.0.0.1:4646`.
+
+Rollback first compares current
 service state with the recorded post-apply state; drift stops rollback before
 files change. It then restores the file transaction, refreshes trust, validates
 the restored dnsmasq configuration, and restores resolver then dnsmasq to their

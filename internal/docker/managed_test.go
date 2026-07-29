@@ -150,6 +150,87 @@ func TestCreateManagedContainerSendsExactSecurityAndTopology(t *testing.T) {
 	}
 }
 
+func TestCreateManagedContainerAttachesAdditionalNetworksAfterCreate(
+	t *testing.T,
+) {
+	requests := 0
+	client := &Client{http: &http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				var payload struct {
+					NetworkingConfig struct {
+						Endpoints map[string]any `json:"EndpointsConfig"`
+					} `json:"NetworkingConfig"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if len(payload.NetworkingConfig.Endpoints) != 1 ||
+					payload.NetworkingConfig.Endpoints["proxy"] == nil {
+					t.Fatalf(
+						"create endpoints = %#v",
+						payload.NetworkingConfig.Endpoints,
+					)
+				}
+				return dockerResponse(http.StatusCreated, `{"Id":"gateway123"}`), nil
+			case 2:
+				if request.Method != http.MethodPost ||
+					request.URL.Path != "/networks/bridge/connect" {
+					t.Fatalf("connect request = %s %s", request.Method, request.URL.Path)
+				}
+				var payload struct {
+					EndpointConfig struct {
+						Aliases []string `json:"Aliases"`
+					} `json:"EndpointConfig"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if len(payload.EndpointConfig.Aliases) != 0 {
+					t.Fatalf("default bridge aliases = %v", payload.EndpointConfig.Aliases)
+				}
+				return dockerResponse(http.StatusOK, `{}`), nil
+			case 3:
+				return dockerResponse(http.StatusOK, `{
+					"Id":"gateway123",
+					"Name":"/traefik",
+					"Config":{"Image":"traefik:v3.7","Labels":{}},
+					"State":{"Running":false},
+					"NetworkSettings":{"Networks":{
+						"proxy":{},
+						"bridge":{}
+					}},
+					"HostConfig":{"RestartPolicy":{"Name":"unless-stopped"}}
+				}`), nil
+			default:
+				t.Fatalf("unexpected request %d", requests)
+				return nil, nil
+			}
+		},
+	)}}
+	state, err := client.CreateManagedContainer(
+		context.Background(),
+		ManagedContainerRequest{
+			Name:          "traefik",
+			Image:         "traefik:v3.7",
+			Networks:      []string{"proxy", "bridge"},
+			RestartPolicy: "unless-stopped",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 3 ||
+		!reflect.DeepEqual(
+			state.Networks,
+			[]string{"bridge", "proxy"},
+		) {
+		t.Fatalf("requests = %d, state = %#v", requests, state)
+	}
+}
+
 func TestCreateManagedNetworkTreatsConflictAsError(t *testing.T) {
 	requests := 0
 	client := &Client{http: &http.Client{Transport: roundTripFunc(

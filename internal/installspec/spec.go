@@ -173,7 +173,7 @@ func controller(spec domain.InstallationSpecification) domain.InstallationContai
 			"--traefik-api-ca-file=/run/secrets/docklane-root-ca.crt",
 			"--manage-network-attachments",
 		},
-		Networks: []string{spec.ControlNetwork},
+		Networks: []string{spec.ControlNetwork, "bridge"},
 		Mounts: []domain.InstallationMount{
 			{Source: spec.DockerSocket, Destination: "/var/run/docker.sock", ReadOnly: true},
 			{Source: spec.Paths.DataDirectory, Destination: "/data"},

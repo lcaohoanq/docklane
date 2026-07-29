@@ -478,6 +478,11 @@ func addResolver(plan *domain.InstallationPlan) {
 			plan.Blockers = append(plan.Blockers, "resolver-service-state")
 			break
 		}
+		if fact.StubLinkDisposition != domain.PreflightAdopt &&
+			fact.StubLinkDisposition != domain.PreflightCreate {
+			plan.Blockers = append(plan.Blockers, "resolver-stub-link-ownership")
+			break
+		}
 		addResource(
 			plan,
 			domain.InstallationResource{
@@ -493,6 +498,22 @@ func addResolver(plan *domain.InstallationPlan) {
 			},
 			"Missing split-DNS behavior must be configured and verified.",
 		)
+		if fact.StubLinkDisposition == domain.PreflightCreate {
+			addResource(
+				plan,
+				domain.InstallationResource{
+					ID:          "resolver-stub-link",
+					Kind:        domain.ResourceSymlink,
+					Target:      "/etc/resolv.conf",
+					LinkTarget:  "/run/systemd/resolve/stub-resolv.conf",
+					PriorTarget: fact.StubLinkTarget,
+					Ownership:   domain.ResourceManaged,
+					State:       domain.ResourcePlanned,
+					Rollback:    domain.RollbackRestore,
+				},
+				"Applications must use systemd-resolved for route-only local DNS.",
+			)
+		}
 	default:
 		plan.Blockers = append(plan.Blockers, "resolver-domain-ownership")
 	}

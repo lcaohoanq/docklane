@@ -39,6 +39,8 @@ func adoptionReport() domain.PreflightReport {
 			Resolver: domain.PreflightResolver{
 				Disposition:                domain.PreflightAdopt,
 				ConfigDirectoryDisposition: domain.PreflightAdopt,
+				StubLinkDisposition:        domain.PreflightAdopt,
+				StubLinkTarget:             "/run/systemd/resolve/stub-resolv.conf",
 				Addresses:                  []string{"127.0.0.1"},
 				ServiceActive:              true,
 				ServiceStateKnown:          true,
@@ -178,6 +180,8 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 	report.Inventory.Resolver = domain.PreflightResolver{
 		Disposition:                domain.PreflightCreate,
 		ConfigDirectoryDisposition: domain.PreflightCreate,
+		StubLinkDisposition:        domain.PreflightCreate,
+		StubLinkTarget:             "/run/systemd/resolve/resolv.conf",
 		Addresses:                  []string{},
 		ServiceActive:              true,
 		ServiceStateKnown:          true,
@@ -221,6 +225,13 @@ func TestBuildCleanHostPlanCreatesRestorableResources(t *testing.T) {
 		"/etc/systemd/resolved.conf.d",
 	) {
 		t.Fatal("resolver configuration directory is not explicitly managed")
+	}
+	if !resourceTargetExists(
+		plan.Resources,
+		domain.ResourceSymlink,
+		"/etc/resolv.conf",
+	) {
+		t.Fatal("resolver stub link is not explicitly managed")
 	}
 	if len(plan.ManagedArtifacts) != 13 {
 		t.Fatalf("managed artifacts = %d, want 13", len(plan.ManagedArtifacts))

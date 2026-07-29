@@ -41,8 +41,8 @@ The immediate priority is to validate the new machine-level lifecycle outside
 the development host. Implementation proceeds in this order:
 
 1. **Disposable-VM lifecycle gate**
-   - provision a clean supported Linux VM (Debian 12 is the current harness;
-     Arch remains a required final profile check);
+   - keep the completed Debian 12 lifecycle as the reference harness and
+     provision the required compact Arch cloud-init VM;
    - capture a before-state inventory;
    - run reviewed preflight, managed install, route, diagnostics, and
      token-gated uninstall;
@@ -345,6 +345,9 @@ safe and repeatable.
   uses `update-ca-certificates`, the Debian trust bundle and anchor directory,
   the package service-helper validator, and an explicit loopback-only dnsmasq
   binding compatible with systemd-resolved.
+- [X] Inventory the `/etc/resolv.conf` target and journal an atomic,
+  drift-checked switch to systemd-resolved's local stub, restoring the exact
+  prior symlink on rollback and uninstall.
 - [X] Add transactional dnsmasq validation, trust refresh/verification,
   service-state restoration, resolver cache flush, DNS verification, drift
   refusal, and failure rollback.
@@ -367,6 +370,10 @@ safe and repeatable.
 - [X] Add per-resource journal adapters for host service/resolver activation
   and all managed Docker networks, volume, and containers with exact prior
   state/Engine identity, drift refusal, and reverse rollback.
+- [X] Support Docker 20.10 by creating containers on one network and attaching
+  additional endpoints transactionally; attach the controller to the default
+  bridge so its `127.0.0.1:4646` binding works while control traffic remains on
+  the private network.
 - [X] Add token-gated `docklane uninstall` with reverse journal execution,
   adopted-resource preservation, same-token interruption recovery, generated
   file rollback without secret regeneration, persistent-data retention, and a
@@ -390,16 +397,17 @@ safe and repeatable.
   host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.
 - [ ] Exercise clean install, interruption recovery, rollback, and uninstall in
-  disposable Debian and Arch VMs before managed host rollout. Debian preflight
-  and the complete dry-run plan are verified; mutation awaits a clean snapshot.
+  disposable Debian and Arch VMs before managed host rollout. Debian clean
+  install, a no-published-port HTTPS route, and reviewed uninstall are proven;
+  injected recovery and the Arch profile remain.
 
 Acceptance criteria:
 
-- [ ] A clean machine can install the full local gateway from one reviewed
+- [X] A clean machine can install the full local gateway from one reviewed
   plan.
 - [X] An existing compatible Traefik can be adopted without losing routes.
 - [ ] A failed installation returns the machine to its recorded prior state.
-- [ ] Application projects require no published HTTP port and no Traefik
+- [X] Application projects require no published HTTP port and no Traefik
   labels.
 
 ## Phase 6 — Diagnostics and observability

@@ -208,6 +208,9 @@ dnsmasq explicitly to `127.0.0.1`; Arch uses p11-kit. Apply snapshots dnsmasq
 and systemd-resolved state, validates effective dnsmasq configuration,
 refreshes the selected trust store, activates both services,
 flushes caches, then verifies apex/wildcard loopback DNS and the installed CA.
+Preflight also inventories `/etc/resolv.conf`; when applications bypass the
+local systemd-resolved stub, the reviewed plan atomically switches the symlink
+and records its exact prior target for rollback.
 Rollback refuses service drift, restores files first, refreshes trust, and
 returns both services to their exact prior active/inactive states. Managed
 `docklane install --token TOKEN` reruns preflight and planning, then
@@ -216,6 +219,11 @@ records verified resources without changing them. Managed installation uses
 durable private-material and per-resource execution journals across files,
 directories, host integration, and Docker. Repeating the command with the
 original token resumes an interrupted managed installation.
+
+For Docker 20.10 compatibility, managed containers are created on one network
+and attached to additional networks afterward. The controller retains its
+private control-network path to Traefik and also joins Docker's built-in bridge
+so the CLI endpoint remains available only on `127.0.0.1:4646`.
 
 `docklane uninstall --dry-run` reads the installed ownership manifest and
 renders its exact inverse in reverse dependency order. Adopted resources are
