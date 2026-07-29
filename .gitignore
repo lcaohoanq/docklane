@@ -11,6 +11,9 @@
 # Runtime state and backups
 /data/
 
+# Local maintainer notes
+/docs/aur-publishing.md
+
 # JavaScript dependencies and local package cache
 /web/node_modules/
 /.pnpm-store/
