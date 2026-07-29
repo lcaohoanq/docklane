@@ -206,8 +206,9 @@ systemd-resolved route-only domain drop-in (customizable with
 `--managed-resolver-config`). Debian uses `update-ca-certificates` and manages
 `/etc/dnsmasq.d/docklane.conf`; Arch uses p11-kit and manages the
 package-default `/etc/dnsmasq.conf`. Both bind dnsmasq explicitly to
-`127.0.0.1`. Apply snapshots dnsmasq and systemd-resolved state, validates
-effective dnsmasq configuration,
+`127.0.0.1` and declare the managed zone local, preventing AAAA and other
+unsupported queries from looping back through systemd-resolved. Apply
+snapshots dnsmasq and systemd-resolved state, validates effective configuration,
 refreshes the selected trust store, activates both services,
 flushes caches, then verifies apex/wildcard loopback DNS and the installed CA.
 Preflight also inventories `/etc/resolv.conf`; when applications bypass the
@@ -243,7 +244,9 @@ Arch Linux cloud-image VMs. Each harness proves a reviewed install, local DNS
 and trusted TLS, an HTTPS route to an application with no published host port,
 and reviewed uninstall with host configuration restored. The compact Arch
 harness is cloud-init provisioned with 2 vCPU, 2 GiB RAM, and a 12 GiB disk;
-the remaining lifecycle gate is injected-failure recovery.
+filesystem, host-service, and Docker interruptions resume with the same
+reviewed token. A real missing-image failure also proves automatic reverse
+rollback to the recorded host baseline.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the

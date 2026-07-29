@@ -19,7 +19,9 @@ func Build(
 		"# Managed by Docklane installation manifest\n"+
 			"bind-interfaces\n"+
 			"listen-address=127.0.0.1\n"+
+			"local=/%s/\n"+
 			"address=/.%s/127.0.0.1\n",
+		specification.BaseDomain,
 		specification.BaseDomain,
 	)
 	dynamic := fmt.Sprintf(

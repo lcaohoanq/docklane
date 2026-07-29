@@ -294,6 +294,10 @@ local=/docker.home.arpa/
 The system resolver must route `docker.home.arpa` queries to dnsmasq without
 requiring DNS-over-TLS on the loopback resolver. Docklane must detect the
 machine's resolver manager before applying a system integration.
+The `local=` declaration is part of the correctness contract: `address=`
+provides the IPv4 answer, while declaring the zone local prevents AAAA and
+other record types from being forwarded to systemd-resolved and routed back
+to dnsmasq in a loop.
 
 ### 5.8 Local TLS
 
@@ -545,9 +549,10 @@ snapshot services
 The managed specification pins a platform profile, its trust-store profile,
 the `systemd-resolved` profile, both service names, and the exact resolver
 drop-in target. `arch-systemd` uses p11-kit; `debian-systemd` uses
-`update-ca-certificates` and `/etc/ssl/certs/ca-certificates.crt`. Debian's
-dnsmasq artifact also binds explicitly to `127.0.0.1` so it can coexist with
-systemd-resolved's `127.0.0.53` stub. The drop-in routes only
+`update-ca-certificates` and `/etc/ssl/certs/ca-certificates.crt`. The dnsmasq
+artifact binds explicitly to `127.0.0.1` so it can coexist with
+systemd-resolved's `127.0.0.53` stub and declares the managed zone local to
+prevent resolver loops. The drop-in routes only
 `~docker.home.arpa` to loopback dnsmasq. Preflight inventories the real
 `/etc/resolv.conf` symlink target. If it points at systemd-resolved's uplink
 file, Docklane journals an atomic exchange to

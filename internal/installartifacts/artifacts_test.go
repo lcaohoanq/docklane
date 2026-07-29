@@ -64,6 +64,7 @@ func TestBuildRendersDeterministicSafeArtifacts(t *testing.T) {
 		"# Managed by Docklane installation manifest\n"+
 			"bind-interfaces\n"+
 			"listen-address=127.0.0.1\n"+
+			"local=/docker.home.arpa/\n"+
 			"address=/.docker.home.arpa/127.0.0.1\n" {
 		t.Fatalf("dnsmasq content = %q", got)
 	}
@@ -108,6 +109,7 @@ func TestBuildRendersDebianDnsmasqLoopbackBinding(t *testing.T) {
 		want := "# Managed by Docklane installation manifest\n" +
 			"bind-interfaces\n" +
 			"listen-address=127.0.0.1\n" +
+			"local=/docker.home.arpa/\n" +
 			"address=/.docker.home.arpa/127.0.0.1\n"
 		if artifact.Content != want {
 			t.Fatalf("dnsmasq content = %q, want %q", artifact.Content, want)

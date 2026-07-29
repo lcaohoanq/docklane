@@ -37,31 +37,24 @@ A task is complete only when:
 
 ## Next execution order
 
-The immediate priority is to validate the new machine-level lifecycle outside
-the development host. Implementation proceeds in this order:
+The disposable-VM lifecycle gate is complete. Implementation proceeds in this
+order:
 
-1. **Disposable-VM lifecycle gate**
-   - keep the completed Debian 12 lifecycle and compact Arch cloud-init
-     lifecycle as reference harnesses;
-   - inject failures during filesystem, host-service, and Docker stages;
-   - prove same-token recovery and compare the final host state with the
-     before-state inventory;
-   - repeat the retained-data assertion during an injected recovery run.
-2. **Application opt-in workflow**
+1. **Application opt-in workflow**
    - add `docklane app enable` and `docklane app disable`;
    - generate copy-paste Compose guidance without editing project files;
    - prove an application needs neither a published HTTP port nor Traefik
      labels.
-3. **Lifecycle maintenance**
+2. **Lifecycle maintenance**
    - add installation upgrade/schema migration;
    - add expiry tracking and safe certificate rotation.
-4. **First-alpha readiness**
+3. **First-alpha readiness**
    - finish onboarding and accessibility work;
    - freeze public configuration and API schemas;
    - add CI, deterministic release artifacts, provenance, and operator guides.
 
-The disposable-VM lifecycle gate is required before Docklane applies a clean
-managed installation to this development host.
+The Debian and Arch reference harnesses remain available for regression and
+release-candidate qualification.
 
 ## Phase 0 — Product foundation
 
@@ -395,30 +388,35 @@ safe and repeatable.
 - [X] Add interrupted-install recovery across private material, filesystem,
   host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.
-- [ ] Exercise clean install, interruption recovery, rollback, and uninstall in
+- [X] Exercise clean install, interruption recovery, rollback, and uninstall in
   disposable Debian and Arch VMs before managed host rollout. Clean install,
-  a no-published-port HTTPS route, and reviewed uninstall are proven on both
-  distributions; injected recovery remains.
+  a no-published-port HTTPS route, reviewed uninstall, and same-token recovery
+  are proven on both distributions.
 
 Disposable VM evidence:
 
 - Debian 12, VM 129, snapshot `docklane-ready`: managed install, trusted HTTPS
   route without a published application port, and token-gated uninstall
   completed. Resolver and dnsmasq state were restored and application data was
-  retained with Docklane ownership released.
+  retained with Docklane ownership released. A `SIGKILL` while the resolver
+  symlink operation was journaled as applying resumed with the same token and
+  completed on attempt two.
 - Arch Linux cloud image, VM 130, snapshot `docklane-arch-ready`: provisioned
   by cloud-init with 2 vCPU, 2 GiB RAM, and a 12 GiB disk. The same lifecycle
   completed against Docker 20-compatible runtime behavior. Uninstall removed
   managed containers and networks, left systemd-resolved active, restored the
   package-default `/etc/dnsmasq.conf`, retained SQLite data, and released its
-  ownership marker.
+  ownership marker. Journal-directed `SIGKILL` interruptions in the file,
+  host-service, and Docker stages each resumed with the reviewed token and
+  completed on attempt two. A missing-image Docker error automatically rolled
+  all preceding host and Docker mutations back to the recorded baseline.
 
 Acceptance criteria:
 
 - [X] A clean machine can install the full local gateway from one reviewed
   plan.
 - [X] An existing compatible Traefik can be adopted without losing routes.
-- [ ] A failed installation returns the machine to its recorded prior state.
+- [X] A failed installation returns the machine to its recorded prior state.
 - [X] Application projects require no published HTTP port and no Traefik
   labels.
 
