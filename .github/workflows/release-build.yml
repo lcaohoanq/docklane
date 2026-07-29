@@ -39,6 +39,8 @@ jobs:
     name: Reproducible Linux artifacts
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Check out source
@@ -129,3 +131,40 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    name: Publish GitHub prerelease
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v6
+
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: docklane-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          test "$GITHUB_REF_TYPE" = "tag"
+          test "$GITHUB_REF_NAME" = "$VERSION"
+          test -f "docs/releases/${VERSION}.md"
+          gh release create "$VERSION" \
+            dist/checksums.txt \
+            "dist/docklane_${VERSION#v}_linux_amd64.tar.gz" \
+            "dist/docklane_${VERSION#v}_linux_arm64.tar.gz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --prerelease \
+            --title "Docklane ${VERSION}" \
+            --notes-file "docs/releases/${VERSION}.md"
