@@ -330,7 +330,10 @@ safe and repeatable.
 - [X] Add per-resource journal adapters for host service/resolver activation
   and all managed Docker networks, volume, and containers with exact prior
   state/Engine identity, drift refusal, and reverse rollback.
-- [ ] Add `docklane uninstall`.
+- [X] Add token-gated `docklane uninstall` with reverse journal execution,
+  adopted-resource preservation, same-token interruption recovery, generated
+  file rollback without secret regeneration, persistent-data retention, and a
+  private audit tombstone.
 - [X] Record every file, directory, trust entry, Docker network, volume,
   container, resolver behavior, and service state created or changed by
   Docklane.

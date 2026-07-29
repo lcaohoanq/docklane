@@ -25,6 +25,7 @@ ownership/rollback combinations.
 | `generation` | Monotonic revision used to reject concurrent stale writes |
 | `productVersion` | Docklane version that last wrote the manifest |
 | `reviewedToken` | Original managed/adoption plan token required for recovery |
+| `rollbackToken` | Reviewed uninstall token required to resume reverse execution |
 | `state` | `planned`, `applying`, `installed`, `rolling_back`, `rolled_back`, or `failed` |
 | `createdAt`, `updatedAt` | UTC lifecycle timestamps |
 | `settings` | Installation-wide base domain and proxy network |
@@ -182,12 +183,23 @@ its resources in reverse order:
 
 - `adopted` + `preserve` becomes a non-mutating `preserve` operation;
 - `managed` + `remove` becomes a mutating `remove` operation;
-- `managed` + `restore` becomes a mutating `restore` operation and requires
-  the recorded backup path and SHA-256 fingerprint.
+- `managed` + `restore` becomes a mutating `restore` operation; file restores
+  require the recorded backup path and SHA-256 fingerprint, while service
+  restores use the recorded prior-state snapshot.
 
 The resulting token changes with the installation ID, manifest generation,
-manifest path, rollback operations, or blockers. Uninstall apply remains
-disabled until the mutation executors verify those contracts.
+manifest path, rollback operations, or blockers. Apply persists this token as
+`rollbackToken` before mutation, then walks the immutable installed execution
+journal in reverse. The same token resumes a `rolling_back` manifest.
+
+Rollback-only file steps use the installed intent fingerprint and mode plus
+the operation observation; generated private bytes are not recreated. Docker
+steps require the recorded Engine identity and inspected-state fingerprint.
+Host steps reconstruct their reviewed service snapshot from execution
+observations even after earlier resource checkpoints have been cleared.
+Non-empty controller data is retained after its ownership marker is removed.
+The final private manifest remains in `rolled_back` state as an audit
+tombstone.
 
 ## Example
 

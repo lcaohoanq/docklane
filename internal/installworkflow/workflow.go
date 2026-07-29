@@ -102,6 +102,72 @@ func (runner *Runner) Run(
 	}
 }
 
+func (runner *Runner) Rollback(
+	ctx context.Context,
+	manifest domain.InstallationManifest,
+	steps []Step,
+	rollbackToken string,
+) (domain.InstallationManifest, error) {
+	if err := validateSteps(manifest, steps); err != nil {
+		return manifest, err
+	}
+	if manifest.Execution == nil {
+		return manifest, errors.New(
+			"managed uninstall requires an execution journal",
+		)
+	}
+	if err := verifyTopology(*manifest.Execution, steps); err != nil {
+		return manifest, err
+	}
+	if err := ctx.Err(); err != nil {
+		return manifest, err
+	}
+	switch manifest.Execution.Phase {
+	case domain.ExecutionComplete:
+		if manifest.State != domain.InstallationInstalled {
+			return manifest, fmt.Errorf(
+				"complete execution has installation state %s",
+				manifest.State,
+			)
+		}
+		if len(rollbackToken) != 64 {
+			return manifest, errors.New(
+				"managed uninstall rollback token is invalid",
+			)
+		}
+		rollingBack, err := runner.checkpoint(
+			manifest,
+			func(next *domain.InstallationManifest) {
+				next.State = domain.InstallationRollingBack
+				next.Execution.Phase = domain.ExecutionRollback
+				next.RollbackToken = rollbackToken
+			},
+		)
+		if err != nil {
+			return manifest, fmt.Errorf(
+				"begin managed uninstall rollback: %w",
+				err,
+			)
+		}
+		return runner.runRollback(ctx, rollingBack, steps)
+	case domain.ExecutionRollback:
+		if manifest.State != domain.InstallationRollingBack {
+			return manifest, fmt.Errorf(
+				"rollback execution has installation state %s",
+				manifest.State,
+			)
+		}
+		return runner.runRollback(ctx, manifest, steps)
+	case domain.ExecutionRolledBack:
+		return manifest, nil
+	default:
+		return manifest, fmt.Errorf(
+			"cannot uninstall execution in phase %s",
+			manifest.Execution.Phase,
+		)
+	}
+}
+
 func (runner *Runner) runForward(
 	ctx context.Context,
 	manifest domain.InstallationManifest,

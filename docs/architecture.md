@@ -606,9 +606,24 @@ manifest, never from live-state guesses. Resources are traversed in reverse
 installation order so consumers precede their networks, volumes, directories,
 and gateway dependencies. Adopted resources emit non-mutating `preserve`
 operations. Managed `remove` resources emit removal operations, while managed
-`restore` resources require the exact backup path and fingerprint already
-validated by manifest schema v1. The uninstall token covers the installation
-identity, manifest generation, path, operations, and blockers.
+file `restore` resources require the exact backup path and fingerprint already
+validated by manifest schema v1. Service restore resources use their recorded
+prior-state snapshot. The uninstall token covers the installation identity,
+manifest generation, path, operations, and blockers.
+
+`docklane uninstall --token TOKEN` persists that token before the first
+mutation and drives the installed execution journal in reverse. It reconstructs
+file rollback from intent fingerprints, modes, and backups without regenerating
+deleted secrets; host rollback still restores files before trust/service
+reload; Docker removal requires the recorded Engine identity. The same token
+resumes an interrupted rollback, including external success followed by a lost
+checkpoint. Adopted resources are never included in mutation steps.
+
+The controller data directory has an explicit retention boundary: if empty it
+is removed, but if the controller produced persistent data, uninstall removes
+only Docklane's ownership marker and leaves the contents in place. A
+`rolled_back` mode-`0600` manifest is retained as an audit tombstone instead of
+being deleted during the transaction that proves recovery.
 
 ## 6. Route lifecycle
 

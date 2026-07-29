@@ -101,6 +101,7 @@ type InstallationManifest struct {
 	Generation           uint64                     `json:"generation"`
 	ProductVersion       string                     `json:"productVersion"`
 	ReviewedToken        string                     `json:"reviewedToken,omitempty"`
+	RollbackToken        string                     `json:"rollbackToken,omitempty"`
 	State                InstallationState          `json:"state"`
 	CreatedAt            time.Time                  `json:"createdAt"`
 	UpdatedAt            time.Time                  `json:"updatedAt"`
@@ -145,6 +146,10 @@ func (manifest InstallationManifest) Validate() error {
 		!fingerprintPattern.MatchString(manifest.ReviewedToken) {
 		return fmt.Errorf("reviewed token must be lowercase SHA-256")
 	}
+	if manifest.RollbackToken != "" &&
+		!fingerprintPattern.MatchString(manifest.RollbackToken) {
+		return fmt.Errorf("rollback token must be lowercase SHA-256")
+	}
 	if !validInstallationState(manifest.State) {
 		return fmt.Errorf("invalid installation state %q", manifest.State)
 	}
@@ -183,14 +188,24 @@ func (manifest InstallationManifest) Validate() error {
 		); err != nil {
 			return fmt.Errorf("material cache: %w", err)
 		}
-		if manifest.MaterialCache.State == MaterialCacheClearing ||
-			manifest.MaterialCache.State == MaterialCacheCleared {
+		if manifest.MaterialCache.State == MaterialCacheClearing {
 			if manifest.Execution == nil ||
 				(manifest.Execution.Phase != ExecutionComplete &&
 					manifest.Execution.Phase != ExecutionRolledBack &&
 					manifest.Execution.Phase != ExecutionFailed) {
 				return fmt.Errorf(
-					"clearing or cleared material cache requires terminal execution",
+					"clearing material cache requires terminal execution",
+				)
+			}
+		}
+		if manifest.MaterialCache.State == MaterialCacheCleared {
+			if manifest.Execution == nil ||
+				(manifest.Execution.Phase != ExecutionComplete &&
+					manifest.Execution.Phase != ExecutionRollback &&
+					manifest.Execution.Phase != ExecutionRolledBack &&
+					manifest.Execution.Phase != ExecutionFailed) {
+				return fmt.Errorf(
+					"cleared material cache requires terminal or uninstall execution",
 				)
 			}
 		}

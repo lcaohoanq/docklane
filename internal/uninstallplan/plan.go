@@ -79,7 +79,11 @@ func reverseOperation(
 		resource.Rollback == domain.RollbackRemove:
 		operation.ID = "remove-" + resource.ID
 		operation.Action = domain.InstallationRemove
-		operation.Reason = "Docklane created this resource; uninstall may remove it."
+		if resource.ID == "docklane-data" {
+			operation.Reason = "Release Docklane ownership; retain the directory when persistent data remains."
+		} else {
+			operation.Reason = "Docklane created this resource; uninstall may remove it."
+		}
 		operation.Mutating = true
 	case resource.Ownership == domain.ResourceManaged &&
 		resource.Rollback == domain.RollbackRestore:

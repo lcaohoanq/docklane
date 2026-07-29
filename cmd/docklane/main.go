@@ -717,6 +717,7 @@ Usage:
   docklane install --dry-run Render a reviewed installation plan
   docklane install --token T  Apply or resume the exact reviewed install plan
   docklane uninstall --dry-run Preview manifest-driven rollback
+  docklane uninstall --token T Apply or resume the reviewed rollback
   docklane route list        List saved local routes
   docklane route add NAME    Create a route
   docklane route edit ID     Edit a route

@@ -1,4 +1,4 @@
-package installmanaged
+package installmanaged_test
 
 import (
 	"context"
@@ -12,9 +12,12 @@ import (
 	"docklane.local/docklane/internal/docker"
 	"docklane.local/docklane/internal/domain"
 	"docklane.local/docklane/internal/installhost"
+	"docklane.local/docklane/internal/installmanaged"
 	"docklane.local/docklane/internal/installmanifest"
 	"docklane.local/docklane/internal/installplan"
 	"docklane.local/docklane/internal/installspec"
+	"docklane.local/docklane/internal/installuninstall"
+	"docklane.local/docklane/internal/uninstallplan"
 )
 
 func TestManagedRunnerInstallsCleanPlanAndClearsMaterial(t *testing.T) {
@@ -94,6 +97,258 @@ func TestManagedRunnerRejectsTokenBeforeManifestCreation(t *testing.T) {
 	}
 }
 
+func TestManagedInstallThenReviewedUninstallRollsBackEverything(t *testing.T) {
+	fixture := newManagedRunnerFixture(t)
+	installed, err := fixture.runner.Apply(
+		context.Background(),
+		fixture.plan,
+		fixture.plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persistentFile := filepath.Join(
+		installed.ManagedSpecification.Paths.DataDirectory,
+		"docklane.db",
+	)
+	if err := os.WriteFile(
+		persistentFile,
+		[]byte("persistent test data"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := uninstallplan.Build(installed, fixture.store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Ready {
+		t.Fatalf("uninstall plan = %#v", plan)
+	}
+	uninstaller, err := installuninstall.New(
+		fixture.store,
+		fixture.docker,
+		fixture.host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolledBack, err := uninstaller.Apply(
+		context.Background(),
+		installed,
+		plan,
+		plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.State != domain.InstallationRolledBack ||
+		rolledBack.Execution == nil ||
+		rolledBack.Execution.Phase != domain.ExecutionRolledBack ||
+		rolledBack.RollbackToken != plan.Token {
+		t.Fatalf("rolled-back manifest = %#v", rolledBack)
+	}
+	if len(fixture.docker.networks) != 0 ||
+		len(fixture.docker.volumes) != 0 ||
+		len(fixture.docker.containers) != 0 {
+		t.Fatalf("uninstall leaked Docker state")
+	}
+	if fixture.host.services["dnsmasq"].Active ||
+		!fixture.host.services["systemd-resolved"].Active {
+		t.Fatalf("uninstall host state = %#v", fixture.host.services)
+	}
+	for _, resource := range rolledBack.Resources {
+		if resource.Ownership == domain.ResourceManaged &&
+			resource.State != domain.ResourceRolledBack {
+			t.Fatalf("resource was not rolled back: %#v", resource)
+		}
+		if (resource.Kind == domain.ResourceFile ||
+			resource.Kind == domain.ResourceTrustAnchor ||
+			resource.Kind == domain.ResourceDirectory) &&
+			resource.Ownership == domain.ResourceManaged {
+			if resource.ID == "docklane-data" {
+				content, readErr := os.ReadFile(persistentFile)
+				if readErr != nil ||
+					string(content) != "persistent test data" {
+					t.Fatalf(
+						"persistent data was not retained: %q, %v",
+						content,
+						readErr,
+					)
+				}
+				entries, readErr := os.ReadDir(resource.Target)
+				if readErr != nil ||
+					len(entries) != 1 ||
+					entries[0].Name() != "docklane.db" {
+					t.Fatalf(
+						"released data directory = %v, %v",
+						entries,
+						readErr,
+					)
+				}
+				continue
+			}
+			if _, statErr := os.Lstat(resource.Target); !errors.Is(
+				statErr,
+				os.ErrNotExist,
+			) {
+				t.Fatalf("uninstalled path %s remains: %v", resource.Target, statErr)
+			}
+		}
+	}
+	resumed, err := uninstaller.Resume(
+		context.Background(),
+		plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Generation != rolledBack.Generation {
+		t.Fatalf("terminal uninstall resume changed generation")
+	}
+}
+
+func TestManagedUninstallResumeReconcilesRemovedDockerObject(t *testing.T) {
+	fixture := newManagedRunnerFixture(t)
+	installed, err := fixture.runner.Apply(
+		context.Background(),
+		fixture.plan,
+		fixture.plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := uninstallplan.Build(installed, fixture.store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	failing := &failingUninstallStore{
+		Store:  fixture.store,
+		failAt: 3,
+	}
+	first, err := installuninstall.New(
+		failing,
+		fixture.docker,
+		fixture.host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = first.Apply(
+		context.Background(),
+		installed,
+		plan,
+		plan.Token,
+	)
+	if err == nil || !strings.Contains(err.Error(), "injected checkpoint") {
+		t.Fatalf("interrupted uninstall error = %v", err)
+	}
+	if _, exists := fixture.docker.containers["traefik"]; exists {
+		t.Fatal("gateway was not removed before checkpoint failure")
+	}
+	current, err := fixture.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastOperation := current.Execution.Operations[len(current.Execution.Operations)-1]
+	if current.State != domain.InstallationRollingBack ||
+		lastOperation.State != domain.OperationRollingBack {
+		t.Fatalf("interrupted journal = %#v", current.Execution)
+	}
+	recovery, err := installuninstall.New(
+		fixture.store,
+		fixture.docker,
+		fixture.host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolledBack, err := recovery.Resume(
+		context.Background(),
+		plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.State != domain.InstallationRolledBack {
+		t.Fatalf("recovered state = %s", rolledBack.State)
+	}
+	if countString(
+		fixture.docker.mutations,
+		"remove-container:traefik",
+	) != 1 {
+		t.Fatalf(
+			"gateway removal repeated: %v",
+			fixture.docker.mutations,
+		)
+	}
+}
+
+func TestManagedUninstallResumeAfterHostAndFileRestoration(t *testing.T) {
+	fixture := newManagedRunnerFixture(t)
+	installed, err := fixture.runner.Apply(
+		context.Background(),
+		fixture.plan,
+		fixture.plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := uninstallplan.Build(installed, fixture.store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	failing := &failingUninstallStore{
+		Store:  fixture.store,
+		failAt: 18,
+	}
+	first, err := installuninstall.New(
+		failing,
+		fixture.docker,
+		fixture.host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = first.Apply(
+		context.Background(),
+		installed,
+		plan,
+		plan.Token,
+	)
+	if err == nil || !strings.Contains(err.Error(), "injected checkpoint") {
+		t.Fatalf("interrupted host uninstall error = %v", err)
+	}
+	current, err := fixture.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range current.Execution.Operations {
+		if operation.Stage == domain.ExecutionHost &&
+			operation.State != domain.OperationRolledBack {
+			t.Fatalf("host operation did not checkpoint rollback: %#v", operation)
+		}
+	}
+	recovery, err := installuninstall.New(
+		fixture.store,
+		fixture.docker,
+		fixture.host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolledBack, err := recovery.Resume(
+		context.Background(),
+		plan.Token,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.State != domain.InstallationRolledBack {
+		t.Fatalf("recovered state = %s", rolledBack.State)
+	}
+}
+
 func TestManagedRunnerFailureRestoresHostAndDockerState(t *testing.T) {
 	fixture := newManagedRunnerFixture(t)
 	fixture.docker.failContainer = "traefik"
@@ -143,11 +398,28 @@ func TestManagedRunnerFailureRestoresHostAndDockerState(t *testing.T) {
 }
 
 type managedRunnerFixture struct {
-	runner *Runner
+	runner *installmanaged.Runner
 	store  *installmanifest.Store
 	plan   domain.InstallationPlan
 	docker *managedDockerFake
 	host   *managedHostFake
+}
+
+type failingUninstallStore struct {
+	*installmanifest.Store
+	failAt int
+	saves  int
+}
+
+func (store *failingUninstallStore) Save(
+	generation uint64,
+	manifest domain.InstallationManifest,
+) error {
+	store.saves++
+	if store.saves == store.failAt {
+		return errors.New("injected checkpoint failure")
+	}
+	return store.Store.Save(generation, manifest)
 }
 
 func newManagedRunnerFixture(t *testing.T) managedRunnerFixture {
@@ -247,7 +519,7 @@ func newManagedRunnerFixture(t *testing.T) managedRunnerFixture {
 			specification.Host.ResolverService: {Active: true},
 		},
 	}
-	runner, err := New(
+	runner, err := installmanaged.New(
 		store,
 		"dev",
 		dockerBackend,
@@ -376,6 +648,10 @@ func (backend *managedDockerFake) RemoveManagedNetwork(
 ) error {
 	for name, network := range backend.networks {
 		if network.ID == id || network.Name == id {
+			backend.mutations = append(
+				backend.mutations,
+				"remove-network:"+network.Name,
+			)
 			delete(backend.networks, name)
 		}
 	}
@@ -410,6 +686,12 @@ func (backend *managedDockerFake) RemoveManagedVolume(
 	_ context.Context,
 	name string,
 ) error {
+	if _, exists := backend.volumes[name]; exists {
+		backend.mutations = append(
+			backend.mutations,
+			"remove-volume:"+name,
+		)
+	}
 	delete(backend.volumes, name)
 	return nil
 }
@@ -461,6 +743,10 @@ func (backend *managedDockerFake) RemoveManagedContainer(
 ) error {
 	for name, container := range backend.containers {
 		if container.ID == id || container.Name == id {
+			backend.mutations = append(
+				backend.mutations,
+				"remove-container:"+container.Name,
+			)
 			delete(backend.containers, name)
 		}
 	}
@@ -520,4 +806,14 @@ func cloneStringMap(input map[string]string) map[string]string {
 		result[key] = value
 	}
 	return result
+}
+
+func countString(values []string, expected string) int {
+	count := 0
+	for _, value := range values {
+		if value == expected {
+			count++
+		}
+	}
+	return count
 }

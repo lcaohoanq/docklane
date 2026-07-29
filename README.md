@@ -113,6 +113,8 @@ PLAN_TOKEN=copy-the-token-from-the-reviewed-output
 ./bin/docklane install --token "$PLAN_TOKEN"
 ./bin/docklane uninstall --dry-run
 ./bin/docklane uninstall --dry-run --json
+ROLLBACK_TOKEN=copy-the-token-from-the-reviewed-uninstall-output
+./bin/docklane uninstall --token "$ROLLBACK_TOKEN"
 ./bin/docklane manifest init --path /absolute/path/install-manifest.json
 ./bin/docklane manifest validate --path /absolute/path/install-manifest.json
 ./bin/docklane manifest show --path /absolute/path/install-manifest.json
@@ -205,23 +207,23 @@ state, validates dnsmasq, refreshes p11-kit trust, activates both services,
 flushes caches, then verifies apex/wildcard loopback DNS and the installed CA.
 Rollback refuses service drift, restores files first, refreshes trust, and
 returns both services to their exact prior active/inactive states. Managed
-install remains disabled until the file, Docker, and host transactions are
-composed with manifest journaling and interrupted-install recovery.
-
 `docklane install --token TOKEN` reruns preflight and planning, then
-applies only if the supplied token exactly matches the fresh plan. The current
-apply engine supports safe adoption: it atomically journals `planned`,
-`applying`, and `installed` generations and records all existing resources as
-verified/preserved without restarting or changing them. Plans containing
-managed create/configure operations are rejected before the manifest is
-written until their rollback executors are implemented.
+applies only if the supplied token exactly matches the fresh plan. Adoption
+records verified resources without changing them. Managed installation uses
+durable private-material and per-resource execution journals across files,
+directories, host integration, and Docker. Repeating the command with the
+original token resumes an interrupted managed installation.
 
 `docklane uninstall --dry-run` reads the installed ownership manifest and
 renders its exact inverse in reverse dependency order. Adopted resources are
 shown as non-mutating `preserve`; Docklane-managed resources become `remove`
 or fingerprint-backed `restore` operations according to their recorded
 rollback contract. A deterministic token binds the preview to the manifest
-installation ID and generation. Uninstall apply is not enabled yet.
+installation ID and generation. `docklane uninstall --token TOKEN` executes
+that inverse through the installed journal and resumes with the same token
+after interruption. Adopted resources are untouched. Non-empty controller data
+is retained after its Docklane ownership marker is released, and the rolled
+back manifest remains as a private audit tombstone.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the

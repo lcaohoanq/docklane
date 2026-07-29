@@ -145,6 +145,49 @@ type WorkflowAdapter struct {
 	Steps []installworkflow.Step
 }
 
+func NewRollbackWorkflowAdapter(
+	backend Backend,
+	files *ManagedFileRestorer,
+	contract Contract,
+	manifest domain.InstallationManifest,
+) (*WorkflowAdapter, error) {
+	if manifest.Execution == nil {
+		return nil, errors.New(
+			"host rollback requires installation execution",
+		)
+	}
+	resources := append(
+		[]domain.InstallationResource(nil),
+		manifest.Resources...,
+	)
+	indexByID := map[string]int{}
+	for index, resource := range resources {
+		indexByID[resource.ID] = index
+	}
+	for _, operation := range manifest.Execution.Operations {
+		if operation.Stage != domain.ExecutionHost ||
+			operation.Observation == nil {
+			continue
+		}
+		index, exists := indexByID[operation.ResourceID]
+		if !exists {
+			return nil, fmt.Errorf(
+				"host rollback operation %s has no resource",
+				operation.ID,
+			)
+		}
+		if operation.Observation.SnapshotFingerprint == "" {
+			return nil, fmt.Errorf(
+				"host rollback operation %s has no prior-state snapshot",
+				operation.ID,
+			)
+		}
+		resources[index].Fingerprint =
+			operation.Observation.SnapshotFingerprint
+	}
+	return NewWorkflowAdapter(backend, files, contract, resources)
+}
+
 func NewWorkflowAdapter(
 	backend Backend,
 	files *ManagedFileRestorer,
