@@ -22,8 +22,8 @@ func install(args []string) error {
 	options := bindPreflightFlags(flags)
 	dnsmasqTarget := flags.String(
 		"dnsmasq-target",
-		"/etc/dnsmasq.d/docklane.conf",
-		"managed dnsmasq wildcard configuration target",
+		"",
+		"managed dnsmasq wildcard configuration target (host-profile default when omitted)",
 	)
 	managedStateDirectory := flags.String(
 		"managed-state-dir",
@@ -76,6 +76,9 @@ func install(args []string) error {
 	}
 	if *managedTrustAnchor == "" {
 		*managedTrustAnchor = profile.ManagedTrustAnchor
+	}
+	if *dnsmasqTarget == "" {
+		*dnsmasqTarget = profile.ManagedDnsmasqConfig
 	}
 	manifestStore, err := installmanifest.NewStore(*options.manifestPath)
 	if err != nil {

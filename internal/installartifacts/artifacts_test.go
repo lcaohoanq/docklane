@@ -62,6 +62,8 @@ func TestBuildRendersDeterministicSafeArtifacts(t *testing.T) {
 	}
 	if got := byID["dnsmasq-domain"].Content; got !=
 		"# Managed by Docklane installation manifest\n"+
+			"bind-interfaces\n"+
+			"listen-address=127.0.0.1\n"+
 			"address=/.docker.home.arpa/127.0.0.1\n" {
 		t.Fatalf("dnsmasq content = %q", got)
 	}

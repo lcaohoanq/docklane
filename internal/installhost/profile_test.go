@@ -30,11 +30,19 @@ func TestDebianSystemdProfileUsesDebianTrustStore(t *testing.T) {
 		profile.DnsmasqBinary != "/usr/sbin/dnsmasq" ||
 		profile.DnsmasqValidator != "/usr/share/dnsmasq/systemd-helper" ||
 		profile.DnsmasqIncludeConfig != "/etc/default/dnsmasq" ||
+		profile.ManagedDnsmasqConfig != "/etc/dnsmasq.d/docklane.conf" ||
 		profile.UpdateCATrust != "/usr/sbin/update-ca-certificates" ||
 		profile.TrustBundle != "/etc/ssl/certs/ca-certificates.crt" ||
 		profile.ManagedTrustAnchor !=
 			"/usr/local/share/ca-certificates/docklane-local-root-ca.crt" {
 		t.Fatalf("unexpected Debian profile: %#v", profile)
+	}
+}
+
+func TestArchSystemdProfileUsesPrimaryDnsmasqConfig(t *testing.T) {
+	profile := ArchSystemdProfile()
+	if profile.ManagedDnsmasqConfig != "/etc/dnsmasq.conf" {
+		t.Fatalf("unexpected Arch profile: %#v", profile)
 	}
 }
 

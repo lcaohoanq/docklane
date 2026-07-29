@@ -41,15 +41,12 @@ The immediate priority is to validate the new machine-level lifecycle outside
 the development host. Implementation proceeds in this order:
 
 1. **Disposable-VM lifecycle gate**
-   - keep the completed Debian 12 lifecycle as the reference harness and
-     provision the required compact Arch cloud-init VM;
-   - capture a before-state inventory;
-   - run reviewed preflight, managed install, route, diagnostics, and
-     token-gated uninstall;
+   - keep the completed Debian 12 lifecycle and compact Arch cloud-init
+     lifecycle as reference harnesses;
    - inject failures during filesystem, host-service, and Docker stages;
    - prove same-token recovery and compare the final host state with the
      before-state inventory;
-   - prove application data is retained while Docklane ownership is released.
+   - repeat the retained-data assertion during an injected recovery run.
 2. **Application opt-in workflow**
    - add `docklane app enable` and `docklane app disable`;
    - generate copy-paste Compose guidance without editing project files;
@@ -343,8 +340,10 @@ safe and repeatable.
   route-only resolver drop-in as a reviewed managed artifact.
 - [X] Add automatic Arch/Debian host-profile selection. The Debian profile
   uses `update-ca-certificates`, the Debian trust bundle and anchor directory,
-  the package service-helper validator, and an explicit loopback-only dnsmasq
-  binding compatible with systemd-resolved.
+  the package service-helper validator, and
+  `/etc/dnsmasq.d/docklane.conf`. The Arch profile manages its package-default
+  `/etc/dnsmasq.conf`; both profiles bind dnsmasq explicitly to loopback for
+  compatibility with systemd-resolved.
 - [X] Inventory the `/etc/resolv.conf` target and journal an atomic,
   drift-checked switch to systemd-resolved's local stub, restoring the exact
   prior symlink on rollback and uninstall.
@@ -397,9 +396,22 @@ safe and repeatable.
   host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.
 - [ ] Exercise clean install, interruption recovery, rollback, and uninstall in
-  disposable Debian and Arch VMs before managed host rollout. Debian clean
-  install, a no-published-port HTTPS route, and reviewed uninstall are proven;
-  injected recovery and the Arch profile remain.
+  disposable Debian and Arch VMs before managed host rollout. Clean install,
+  a no-published-port HTTPS route, and reviewed uninstall are proven on both
+  distributions; injected recovery remains.
+
+Disposable VM evidence:
+
+- Debian 12, VM 129, snapshot `docklane-ready`: managed install, trusted HTTPS
+  route without a published application port, and token-gated uninstall
+  completed. Resolver and dnsmasq state were restored and application data was
+  retained with Docklane ownership released.
+- Arch Linux cloud image, VM 130, snapshot `docklane-arch-ready`: provisioned
+  by cloud-init with 2 vCPU, 2 GiB RAM, and a 12 GiB disk. The same lifecycle
+  completed against Docker 20-compatible runtime behavior. Uninstall removed
+  managed containers and networks, left systemd-resolved active, restored the
+  package-default `/etc/dnsmasq.conf`, retained SQLite data, and released its
+  ownership marker.
 
 Acceptance criteria:
 

@@ -25,6 +25,7 @@ type SystemProfile struct {
 	DnsmasqValidator     string
 	DnsmasqValidatorArgs []string
 	DnsmasqIncludeConfig string
+	ManagedDnsmasqConfig string
 	Systemctl            string
 	Resolvectl           string
 	UpdateCATrust        string
@@ -42,6 +43,7 @@ func ArchSystemdProfile() SystemProfile {
 		DnsmasqValidator:     "/usr/bin/dnsmasq",
 		DnsmasqValidatorArgs: []string{"--test"},
 		DnsmasqIncludeConfig: "/etc/dnsmasq.conf",
+		ManagedDnsmasqConfig: "/etc/dnsmasq.conf",
 		Systemctl:            "/usr/bin/systemctl",
 		Resolvectl:           "/usr/bin/resolvectl",
 		UpdateCATrust:        "/usr/bin/update-ca-trust",
@@ -60,6 +62,7 @@ func DebianSystemdProfile() SystemProfile {
 		DnsmasqValidator:     "/usr/share/dnsmasq/systemd-helper",
 		DnsmasqValidatorArgs: []string{"checkconfig"},
 		DnsmasqIncludeConfig: "/etc/default/dnsmasq",
+		ManagedDnsmasqConfig: "/etc/dnsmasq.d/docklane.conf",
 		Systemctl:            "/usr/bin/systemctl",
 		Resolvectl:           "/usr/bin/resolvectl",
 		UpdateCATrust:        "/usr/sbin/update-ca-certificates",
@@ -97,6 +100,13 @@ func NewSystemBackend(profile SystemProfile) (*SystemBackend, error) {
 			profile.DnsmasqIncludeConfig {
 		return nil, errors.New(
 			"dnsmasq include config path must be absolute and canonical",
+		)
+	}
+	if !filepath.IsAbs(profile.ManagedDnsmasqConfig) ||
+		filepath.Clean(profile.ManagedDnsmasqConfig) !=
+			profile.ManagedDnsmasqConfig {
+		return nil, errors.New(
+			"managed dnsmasq config path must be absolute and canonical",
 		)
 	}
 	return &SystemBackend{profile: profile}, nil

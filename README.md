@@ -203,9 +203,11 @@ The Arch and Debian host-integration profiles are transactional and selected
 automatically (or explicitly with `--host-profile`). Their reviewed artifacts
 include the dnsmasq wildcard rule, platform-native trust anchor, and an exact
 systemd-resolved route-only domain drop-in (customizable with
-`--managed-resolver-config`). Debian uses `update-ca-certificates` and binds
-dnsmasq explicitly to `127.0.0.1`; Arch uses p11-kit. Apply snapshots dnsmasq
-and systemd-resolved state, validates effective dnsmasq configuration,
+`--managed-resolver-config`). Debian uses `update-ca-certificates` and manages
+`/etc/dnsmasq.d/docklane.conf`; Arch uses p11-kit and manages the
+package-default `/etc/dnsmasq.conf`. Both bind dnsmasq explicitly to
+`127.0.0.1`. Apply snapshots dnsmasq and systemd-resolved state, validates
+effective dnsmasq configuration,
 refreshes the selected trust store, activates both services,
 flushes caches, then verifies apex/wildcard loopback DNS and the installed CA.
 Preflight also inventories `/etc/resolv.conf`; when applications bypass the
@@ -235,6 +237,13 @@ that inverse through the installed journal and resumes with the same token
 after interruption. Adopted resources are untouched. Non-empty controller data
 is retained after its Docklane ownership marker is released, and the rolled
 back manifest remains as a private audit tombstone.
+
+The complete clean-machine lifecycle is validated on disposable Debian 12 and
+Arch Linux cloud-image VMs. Each harness proves a reviewed install, local DNS
+and trusted TLS, an HTTPS route to an application with no published host port,
+and reviewed uninstall with host configuration restored. The compact Arch
+harness is cloud-init provisioned with 2 vCPU, 2 GiB RAM, and a 12 GiB disk;
+the remaining lifecycle gate is injected-failure recovery.
 
 `docklane doctor` checks controller, reconciliation, provider, and Docker
 discovery health. Supplying a route ID, name, or full hostname also checks the
