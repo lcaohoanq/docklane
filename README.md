@@ -10,6 +10,13 @@ Project documentation:
 - [Legacy installation manifest schema v1](./docs/install-manifest-v1.md)
 - [Implementation plan and task tracker](./docs/plans.md)
 
+## License
+
+Copyright 2026 lcaohoanq.
+
+Docklane is licensed under the
+[Apache License 2.0](./LICENSE).
+
 The Phase 1 prototype provides:
 
 - discovery of running Docker and Compose containers;

@@ -486,7 +486,7 @@ Goal: make Docklane pleasant, predictable, and distributable.
 - [ ] Add CI for Go, Svelte, integration tests, and packaging.
 - [ ] Document supported Linux resolver/trust-store combinations.
 - [ ] Write upgrade, backup, restore, and uninstall guides.
-- [ ] Choose and add a project license.
+- [X] License the project under Apache License 2.0.
 - [ ] Tag the first alpha release.
 
 Acceptance criteria:
