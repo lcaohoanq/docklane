@@ -105,8 +105,9 @@ checksums.txt
 Run `make release-repro-check VERSION=v0.1.0-alpha.1` to build both
 architectures twice and require byte-for-byte identical archives and checksum
 manifests. Each archive contains the versioned `docklane` binary, `LICENSE`,
-and `README.md`. The `Release build` GitHub workflow performs the same proof
-and uploads 14-day workflow artifacts; it does not create a GitHub Release.
+and `README.md`. The `Release build` GitHub workflow pins Go 1.26.5, performs
+the same proof, and uploads 14-day workflow artifacts; it does not create a
+GitHub Release.
 
 ## Run Docklane
 
