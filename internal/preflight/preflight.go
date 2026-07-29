@@ -1652,14 +1652,19 @@ func dnsmasqIncludesDirectory(content string, directory string) bool {
 	expected := filepath.Clean(directory)
 	for _, raw := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
-		if !strings.HasPrefix(line, "conf-dir=") {
+		value := ""
+		switch {
+		case strings.HasPrefix(line, "conf-dir="):
+			value = strings.TrimPrefix(line, "conf-dir=")
+		case strings.HasPrefix(line, "CONFIG_DIR="):
+			value = strings.Trim(
+				strings.TrimPrefix(line, "CONFIG_DIR="),
+				`"'`,
+			)
+		default:
 			continue
 		}
-		value := strings.TrimSpace(strings.SplitN(
-			strings.TrimPrefix(line, "conf-dir="),
-			",",
-			2,
-		)[0])
+		value = strings.TrimSpace(strings.SplitN(value, ",", 2)[0])
 		if filepath.Clean(value) == expected {
 			return true
 		}

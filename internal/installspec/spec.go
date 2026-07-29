@@ -18,6 +18,8 @@ type Config struct {
 	TrustAnchorPath string
 	TraefikImage    string
 	DocklaneImage   string
+	PlatformProfile string
+	TrustProfile    string
 }
 
 func Build(config Config) (domain.InstallationSpecification, error) {
@@ -28,6 +30,14 @@ func Build(config Config) (domain.InstallationSpecification, error) {
 	resolverConfig := config.ResolverConfig
 	if resolverConfig == "" {
 		resolverConfig = "/etc/systemd/resolved.conf.d/docklane.conf"
+	}
+	platformProfile := config.PlatformProfile
+	trustProfile := config.TrustProfile
+	if platformProfile == "" {
+		platformProfile = "arch-systemd"
+	}
+	if trustProfile == "" {
+		trustProfile = "p11-kit"
 	}
 	spec := domain.InstallationSpecification{
 		SchemaVersion:  domain.InstallationSpecificationSchemaVersion,
@@ -52,9 +62,10 @@ func Build(config Config) (domain.InstallationSpecification, error) {
 			ResolverConfig:       filepath.Clean(resolverConfig),
 		},
 		Host: domain.InstallationHostIntegration{
+			PlatformProfile: platformProfile,
 			DNSService:      "dnsmasq",
 			ResolverService: "systemd-resolved",
-			TrustProfile:    "p11-kit",
+			TrustProfile:    trustProfile,
 			ResolverProfile: "systemd-resolved",
 		},
 		PKI: domain.InstallationPKI{

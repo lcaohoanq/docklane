@@ -40,6 +40,7 @@ type InstallationPaths struct {
 }
 
 type InstallationHostIntegration struct {
+	PlatformProfile string `json:"platformProfile,omitempty"`
 	DNSService      string `json:"dnsService"`
 	ResolverService string `json:"resolverService"`
 	TrustProfile    string `json:"trustProfile"`
@@ -136,12 +137,22 @@ func (spec InstallationSpecification) Validate() error {
 			return fmt.Errorf("%s path must be absolute and canonical", label)
 		}
 	}
-	if !dockerNamePattern.MatchString(spec.Host.DNSService) ||
+	validPlatformProfile := spec.Host.PlatformProfile == "" ||
+		spec.Host.PlatformProfile == "arch-systemd" ||
+		spec.Host.PlatformProfile == "debian-systemd"
+	validTrustProfile := spec.Host.TrustProfile == "p11-kit" ||
+		spec.Host.TrustProfile == "debian-ca-certificates"
+	if !validPlatformProfile ||
+		!validTrustProfile ||
+		!dockerNamePattern.MatchString(spec.Host.DNSService) ||
 		!dockerNamePattern.MatchString(spec.Host.ResolverService) ||
 		spec.Host.DNSService == spec.Host.ResolverService ||
-		spec.Host.TrustProfile != "p11-kit" ||
 		spec.Host.ResolverProfile != "systemd-resolved" {
 		return fmt.Errorf("invalid managed host integration profile")
+	}
+	if (spec.Host.PlatformProfile == "debian-systemd") !=
+		(spec.Host.TrustProfile == "debian-ca-certificates") {
+		return fmt.Errorf("managed platform and trust profiles do not match")
 	}
 	if spec.Paths.StateDirectory == string(filepath.Separator) ||
 		!pathWithin(spec.Paths.StateDirectory, spec.Paths.DataDirectory) ||

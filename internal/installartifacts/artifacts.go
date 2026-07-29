@@ -19,6 +19,15 @@ func Build(
 		"# Managed by Docklane installation manifest\naddress=/.%s/127.0.0.1\n",
 		specification.BaseDomain,
 	)
+	if specification.Host.PlatformProfile == "debian-systemd" {
+		dnsmasq = fmt.Sprintf(
+			"# Managed by Docklane installation manifest\n"+
+				"bind-interfaces\n"+
+				"listen-address=127.0.0.1\n"+
+				"address=/.%s/127.0.0.1\n",
+			specification.BaseDomain,
+		)
+	}
 	dynamic := fmt.Sprintf(
 		"http:\n"+
 			"  routers:\n"+

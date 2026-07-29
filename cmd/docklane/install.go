@@ -32,8 +32,8 @@ func install(args []string) error {
 	)
 	managedTrustAnchor := flags.String(
 		"managed-trust-anchor",
-		"/etc/ca-certificates/trust-source/anchors/docklane-local-root-ca.crt",
-		"clean-install system trust-anchor target",
+		"",
+		"clean-install system trust-anchor target (host-profile default when omitted)",
 	)
 	managedResolverConfig := flags.String(
 		"managed-resolver-config",
@@ -74,6 +74,13 @@ func install(args []string) error {
 		return errors.New(
 			"installation requires --token from a fresh docklane install --dry-run",
 		)
+	}
+	profile, err := installhost.ResolveSystemProfile(*options.hostProfile)
+	if err != nil {
+		return err
+	}
+	if *managedTrustAnchor == "" {
+		*managedTrustAnchor = profile.ManagedTrustAnchor
 	}
 	manifestStore, err := installmanifest.NewStore(*options.manifestPath)
 	if err != nil {
@@ -121,6 +128,8 @@ func install(args []string) error {
 		TrustAnchorPath: *managedTrustAnchor,
 		TraefikImage:    *traefikImage,
 		DocklaneImage:   *docklaneImage,
+		PlatformProfile: profile.Name,
+		TrustProfile:    profile.TrustProfile,
 	})
 	if err != nil {
 		return err
@@ -179,9 +188,14 @@ func newManagedInstallRunner(
 	manifestStore *installmanifest.Store,
 	specification domain.InstallationSpecification,
 ) (*installmanaged.Runner, error) {
-	hostBackend, err := installhost.NewSystemBackend(
-		installhost.ArchSystemdProfile(),
+	profile, err := installhost.ProfileForSpecification(
+		specification.Host.PlatformProfile,
+		specification.Host.TrustProfile,
 	)
+	if err != nil {
+		return nil, err
+	}
+	hostBackend, err := installhost.NewSystemBackend(profile)
 	if err != nil {
 		return nil, err
 	}

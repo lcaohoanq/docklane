@@ -108,9 +108,14 @@ func newUninstallRunner(
 	if manifest.ManagedSpecification == nil {
 		return installuninstall.New(store, nil, nil)
 	}
-	hostBackend, err := installhost.NewSystemBackend(
-		installhost.ArchSystemdProfile(),
+	profile, err := installhost.ProfileForSpecification(
+		manifest.ManagedSpecification.Host.PlatformProfile,
+		manifest.ManagedSpecification.Host.TrustProfile,
 	)
+	if err != nil {
+		return nil, err
+	}
+	hostBackend, err := installhost.NewSystemBackend(profile)
 	if err != nil {
 		return nil, err
 	}

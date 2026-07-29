@@ -9,6 +9,7 @@ import (
 
 	"docklane.local/docklane/internal/docker"
 	"docklane.local/docklane/internal/domain"
+	"docklane.local/docklane/internal/installhost"
 	preflightcheck "docklane.local/docklane/internal/preflight"
 )
 
@@ -22,6 +23,7 @@ type preflightOptions struct {
 	dnsmasqService  *string
 	trustAnchorPath *string
 	runtimeDataPath *string
+	hostProfile     *string
 }
 
 func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
@@ -48,8 +50,8 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 	)
 	options.dnsmasqConfig = flags.String(
 		"dnsmasq-config",
-		"/etc/dnsmasq.conf",
-		"primary dnsmasq configuration",
+		"",
+		"dnsmasq include configuration (host-profile default when omitted)",
 	)
 	options.dnsmasqDir = flags.String(
 		"dnsmasq-dir",
@@ -63,8 +65,13 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 	)
 	options.trustAnchorPath = flags.String(
 		"trust-anchor",
-		"/etc/ca-certificates/trust-source/anchors/traefik-lab-root-ca.crt",
-		"local root CA trust-anchor path",
+		"",
+		"local root CA trust-anchor path (host-profile default when omitted)",
+	)
+	options.hostProfile = flags.String(
+		"host-profile",
+		installhost.HostProfileAuto,
+		"host integration profile: auto, arch-systemd, or debian-systemd",
 	)
 	options.runtimeDataPath = flags.String(
 		"runtime-data",
@@ -77,6 +84,16 @@ func bindPreflightFlags(flags *flag.FlagSet) preflightOptions {
 func (options preflightOptions) run(
 	ctx context.Context,
 ) (domain.PreflightReport, error) {
+	profile, err := installhost.ResolveSystemProfile(*options.hostProfile)
+	if err != nil {
+		return domain.PreflightReport{}, err
+	}
+	if *options.trustAnchorPath == "" {
+		*options.trustAnchorPath = profile.PreflightTrustAnchor
+	}
+	if *options.dnsmasqConfig == "" {
+		*options.dnsmasqConfig = profile.DnsmasqIncludeConfig
+	}
 	dockerClient := docker.NewClient(*options.dockerSocket)
 	runner, err := preflightcheck.New(
 		preflightcheck.Config{

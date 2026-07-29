@@ -535,16 +535,20 @@ Host integration composes around the reversible file transaction:
 ```text
 snapshot services
   → validate dnsmasq
-  → refresh p11-kit trust and verify the CA
+  → refresh the selected system trust store and verify the CA
   → start/restart dnsmasq
   → start/restart systemd-resolved
   → flush resolver caches
   → verify apex and wildcard DNS resolve only to 127.0.0.1
 ```
 
-The managed specification pins the `p11-kit` and `systemd-resolved` profiles,
-both service names, and the exact resolver drop-in target. The drop-in routes
-only `~docker.home.arpa` to loopback dnsmasq. Rollback first compares current
+The managed specification pins a platform profile, its trust-store profile,
+the `systemd-resolved` profile, both service names, and the exact resolver
+drop-in target. `arch-systemd` uses p11-kit; `debian-systemd` uses
+`update-ca-certificates` and `/etc/ssl/certs/ca-certificates.crt`. Debian's
+dnsmasq artifact also binds explicitly to `127.0.0.1` so it can coexist with
+systemd-resolved's `127.0.0.53` stub. The drop-in routes only
+`~docker.home.arpa` to loopback dnsmasq. Rollback first compares current
 service state with the recorded post-apply state; drift stops rollback before
 files change. It then restores the file transaction, refreshes trust, validates
 the restored dnsmasq configuration, and restores resolver then dnsmasq to their

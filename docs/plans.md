@@ -41,7 +41,8 @@ The immediate priority is to validate the new machine-level lifecycle outside
 the development host. Implementation proceeds in this order:
 
 1. **Disposable-VM lifecycle gate**
-   - provision a clean supported Arch Linux VM;
+   - provision a clean supported Linux VM (Debian 12 is the current harness;
+     Arch remains a required final profile check);
    - capture a before-state inventory;
    - run reviewed preflight, managed install, route, diagnostics, and
      token-gated uninstall;
@@ -340,6 +341,10 @@ safe and repeatable.
   failure-injection, configuration-drift, and retry coverage.
 - [X] Pin the Arch p11-kit/systemd-resolved host profile and render an exact
   route-only resolver drop-in as a reviewed managed artifact.
+- [X] Add automatic Arch/Debian host-profile selection. The Debian profile
+  uses `update-ca-certificates`, the Debian trust bundle and anchor directory,
+  the package service-helper validator, and an explicit loopback-only dnsmasq
+  binding compatible with systemd-resolved.
 - [X] Add transactional dnsmasq validation, trust refresh/verification,
   service-state restoration, resolver cache flush, DNS verification, drift
   refusal, and failure rollback.
@@ -385,7 +390,8 @@ safe and repeatable.
   host, and Docker stages with immutable topology and same-token command resume.
 - [ ] Add upgrade and schema migration flow.
 - [ ] Exercise clean install, interruption recovery, rollback, and uninstall in
-  a disposable VM before managed host rollout. This is the current priority.
+  disposable Debian and Arch VMs before managed host rollout. Debian preflight
+  and the complete dry-run plan are verified; mutation awaits a clean snapshot.
 
 Acceptance criteria:
 

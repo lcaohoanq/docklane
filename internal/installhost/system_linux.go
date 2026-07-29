@@ -19,20 +19,53 @@ import (
 )
 
 type SystemProfile struct {
-	DnsmasqBinary string
-	Systemctl     string
-	Resolvectl    string
-	UpdateCATrust string
-	TrustBundle   string
+	Name                 string
+	TrustProfile         string
+	DnsmasqBinary        string
+	DnsmasqValidator     string
+	DnsmasqValidatorArgs []string
+	DnsmasqIncludeConfig string
+	Systemctl            string
+	Resolvectl           string
+	UpdateCATrust        string
+	UpdateCATrustArgs    []string
+	TrustBundle          string
+	ManagedTrustAnchor   string
+	PreflightTrustAnchor string
 }
 
 func ArchSystemdProfile() SystemProfile {
 	return SystemProfile{
-		DnsmasqBinary: "/usr/bin/dnsmasq",
-		Systemctl:     "/usr/bin/systemctl",
-		Resolvectl:    "/usr/bin/resolvectl",
-		UpdateCATrust: "/usr/bin/update-ca-trust",
-		TrustBundle:   "/etc/ca-certificates/extracted/tls-ca-bundle.pem",
+		Name:                 HostProfileArchSystemd,
+		TrustProfile:         TrustProfileP11Kit,
+		DnsmasqBinary:        "/usr/bin/dnsmasq",
+		DnsmasqValidator:     "/usr/bin/dnsmasq",
+		DnsmasqValidatorArgs: []string{"--test"},
+		DnsmasqIncludeConfig: "/etc/dnsmasq.conf",
+		Systemctl:            "/usr/bin/systemctl",
+		Resolvectl:           "/usr/bin/resolvectl",
+		UpdateCATrust:        "/usr/bin/update-ca-trust",
+		UpdateCATrustArgs:    []string{"extract"},
+		TrustBundle:          "/etc/ca-certificates/extracted/tls-ca-bundle.pem",
+		ManagedTrustAnchor:   "/etc/ca-certificates/trust-source/anchors/docklane-local-root-ca.crt",
+		PreflightTrustAnchor: "/etc/ca-certificates/trust-source/anchors/traefik-lab-root-ca.crt",
+	}
+}
+
+func DebianSystemdProfile() SystemProfile {
+	return SystemProfile{
+		Name:                 HostProfileDebianSystemd,
+		TrustProfile:         TrustProfileDebianCA,
+		DnsmasqBinary:        "/usr/sbin/dnsmasq",
+		DnsmasqValidator:     "/usr/share/dnsmasq/systemd-helper",
+		DnsmasqValidatorArgs: []string{"checkconfig"},
+		DnsmasqIncludeConfig: "/etc/default/dnsmasq",
+		Systemctl:            "/usr/bin/systemctl",
+		Resolvectl:           "/usr/bin/resolvectl",
+		UpdateCATrust:        "/usr/sbin/update-ca-certificates",
+		TrustBundle:          "/etc/ssl/certs/ca-certificates.crt",
+		ManagedTrustAnchor:   "/usr/local/share/ca-certificates/docklane-local-root-ca.crt",
+		PreflightTrustAnchor: "/usr/local/share/ca-certificates/docklane-local-root-ca.crt",
 	}
 }
 
@@ -41,11 +74,15 @@ type SystemBackend struct {
 }
 
 func NewSystemBackend(profile SystemProfile) (*SystemBackend, error) {
+	if profile.Name == "" || !SupportedTrustProfile(profile.TrustProfile) {
+		return nil, errors.New("system host profile name and trust profile are required")
+	}
 	for label, path := range map[string]string{
-		"dnsmasq":         profile.DnsmasqBinary,
-		"systemctl":       profile.Systemctl,
-		"resolvectl":      profile.Resolvectl,
-		"update-ca-trust": profile.UpdateCATrust,
+		"dnsmasq":           profile.DnsmasqBinary,
+		"dnsmasq validator": profile.DnsmasqValidator,
+		"systemctl":         profile.Systemctl,
+		"resolvectl":        profile.Resolvectl,
+		"update-ca-trust":   profile.UpdateCATrust,
 	} {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 			return nil, fmt.Errorf("%s executable path must be absolute and canonical", label)
@@ -54,6 +91,13 @@ func NewSystemBackend(profile SystemProfile) (*SystemBackend, error) {
 	if !filepath.IsAbs(profile.TrustBundle) ||
 		filepath.Clean(profile.TrustBundle) != profile.TrustBundle {
 		return nil, errors.New("trust bundle path must be absolute and canonical")
+	}
+	if !filepath.IsAbs(profile.DnsmasqIncludeConfig) ||
+		filepath.Clean(profile.DnsmasqIncludeConfig) !=
+			profile.DnsmasqIncludeConfig {
+		return nil, errors.New(
+			"dnsmasq include config path must be absolute and canonical",
+		)
 	}
 	return &SystemBackend{profile: profile}, nil
 }
@@ -86,17 +130,25 @@ func (backend *SystemBackend) ServiceState(
 func (backend *SystemBackend) ValidateDNSConfiguration(
 	ctx context.Context,
 ) error {
-	return backend.run(ctx, backend.profile.DnsmasqBinary, "--test")
+	return backend.run(
+		ctx,
+		backend.profile.DnsmasqValidator,
+		backend.profile.DnsmasqValidatorArgs...,
+	)
 }
 
 func (backend *SystemBackend) RefreshTrustStore(
 	ctx context.Context,
 	profile string,
 ) error {
-	if profile != TrustProfileP11Kit {
+	if profile != backend.profile.TrustProfile {
 		return fmt.Errorf("unsupported trust profile %q", profile)
 	}
-	return backend.run(ctx, backend.profile.UpdateCATrust, "extract")
+	return backend.run(
+		ctx,
+		backend.profile.UpdateCATrust,
+		backend.profile.UpdateCATrustArgs...,
+	)
 }
 
 func (backend *SystemBackend) StartService(

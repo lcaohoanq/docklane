@@ -89,6 +89,32 @@ func TestBuildRendersDeterministicSafeArtifacts(t *testing.T) {
 	}
 }
 
+func TestBuildRendersDebianDnsmasqLoopbackBinding(t *testing.T) {
+	specification := managedSpecification(t)
+	specification.Host.PlatformProfile = "debian-systemd"
+	specification.Host.TrustProfile = "debian-ca-certificates"
+	specification.PKI.TrustAnchorPath =
+		"/usr/local/share/ca-certificates/docklane-local-root-ca.crt"
+	artifacts, err := Build(specification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.ID != "dnsmasq-domain" {
+			continue
+		}
+		want := "# Managed by Docklane installation manifest\n" +
+			"bind-interfaces\n" +
+			"listen-address=127.0.0.1\n" +
+			"address=/.docker.home.arpa/127.0.0.1\n"
+		if artifact.Content != want {
+			t.Fatalf("dnsmasq content = %q, want %q", artifact.Content, want)
+		}
+		return
+	}
+	t.Fatal("dnsmasq artifact is missing")
+}
+
 func TestGeneratePKICoversApexAndWildcardSANs(t *testing.T) {
 	specification := managedSpecification(t)
 	now := time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC)

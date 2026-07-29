@@ -586,6 +586,7 @@ func TestDnsmasqParsers(t *testing.T) {
 	content := `
 # conf-dir=/wrong
 conf-dir=/etc/dnsmasq.d,.bak
+CONFIG_DIR="/etc/dnsmasq.d,.dpkg-dist,.dpkg-old"
 address=/.docker.home.arpa/127.0.0.1
 address=/docker.home.arpa/127.0.0.2
 address=/unrelated.test/docker.home.arpa/127.0.0.3
@@ -593,6 +594,12 @@ address=/.other.test/192.0.2.1
 `
 	if !dnsmasqIncludesDirectory(content, "/etc/dnsmasq.d") {
 		t.Fatal("include directory not detected")
+	}
+	if !dnsmasqIncludesDirectory(
+		"CONFIG_DIR=/etc/dnsmasq.d,.dpkg-old\n",
+		"/etc/dnsmasq.d",
+	) {
+		t.Fatal("Debian include directory not detected")
 	}
 	addresses := dnsmasqAddresses(content, "docker.home.arpa")
 	if strings.Join(addresses, ",") != "127.0.0.1,127.0.0.2,127.0.0.3" {

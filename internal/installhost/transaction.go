@@ -15,8 +15,14 @@ import (
 
 const (
 	TrustProfileP11Kit     = "p11-kit"
+	TrustProfileDebianCA   = "debian-ca-certificates"
 	ResolverProfileSystemd = "systemd-resolved"
 )
+
+func SupportedTrustProfile(profile string) bool {
+	return profile == TrustProfileP11Kit ||
+		profile == TrustProfileDebianCA
+}
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var servicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]{0,254}$`)
@@ -183,7 +189,7 @@ func (contract Contract) Validate() error {
 	if contract.DNSService == contract.ResolverService {
 		return errors.New("DNS and resolver services must be distinct")
 	}
-	if contract.TrustProfile != TrustProfileP11Kit {
+	if !SupportedTrustProfile(contract.TrustProfile) {
 		return fmt.Errorf("unsupported trust profile %q", contract.TrustProfile)
 	}
 	if contract.ResolverProfile != ResolverProfileSystemd {

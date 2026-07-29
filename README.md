@@ -199,11 +199,14 @@ in reverse dependency order. Rollback compares current objects with their
 post-create snapshots and refuses deletion after configuration or ownership
 drift; volatile running/health changes do not prevent cleanup.
 
-The Arch Linux host-integration profile is also transactional. Its reviewed
-artifacts include the dnsmasq wildcard rule, p11-kit trust anchor, and an exact
+The Arch and Debian host-integration profiles are transactional and selected
+automatically (or explicitly with `--host-profile`). Their reviewed artifacts
+include the dnsmasq wildcard rule, platform-native trust anchor, and an exact
 systemd-resolved route-only domain drop-in (customizable with
-`--managed-resolver-config`). Apply snapshots dnsmasq and systemd-resolved
-state, validates dnsmasq, refreshes p11-kit trust, activates both services,
+`--managed-resolver-config`). Debian uses `update-ca-certificates` and binds
+dnsmasq explicitly to `127.0.0.1`; Arch uses p11-kit. Apply snapshots dnsmasq
+and systemd-resolved state, validates effective dnsmasq configuration,
+refreshes the selected trust store, activates both services,
 flushes caches, then verifies apex/wildcard loopback DNS and the installed CA.
 Rollback refuses service drift, restores files first, refreshes trust, and
 returns both services to their exact prior active/inactive states. Managed

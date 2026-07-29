@@ -94,7 +94,10 @@ inspected-state fingerprint, and rolls back in reverse dependency order. This
 identity is necessary because Docker named volume creation is idempotent and
 does not provide an atomic create-if-absent operation.
 
-The Arch host workflow pins p11-kit and systemd-resolved capabilities.
+The host workflow records its platform, trust-store, and resolver profiles.
+`arch-systemd` pins p11-kit, while `debian-systemd` pins
+`update-ca-certificates`, Debian's consolidated CA bundle, and the Debian
+dnsmasq service-helper validation contract. Both use systemd-resolved.
 Preflight records whether dnsmasq and systemd-resolved were active, and that
 reviewed state is fingerprinted into their restore contracts. Apply validates
 and activates staged configuration, refreshes and verifies the trust anchor,
