@@ -1,4 +1,4 @@
-.PHONY: build ci docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
+.PHONY: aur-check build ci docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
 
 GOCACHE := $(CURDIR)/.gocache
 PNPM_STORE := $(CURDIR)/.pnpm-store
@@ -31,7 +31,10 @@ test: web
 format-check:
 	test -z "$$(gofmt -l cmd internal)"
 
-ci: format-check test build
+aur-check:
+	./ops/check-aur-docklane-bin.sh
+
+ci: format-check test build aur-check
 	git diff --exit-code -- internal/webui/dist
 
 release: web

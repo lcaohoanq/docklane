@@ -11,11 +11,15 @@ on:
       - "cmd/**"
       - "internal/**"
       - "ops/build-release.sh"
+      - "ops/bump-aur-docklane-bin.sh"
+      - "ops/check-aur-docklane-bin.sh"
       - "ops/check-release-reproducibility.sh"
+      - "ops/publish-aur-docklane-bin.sh"
       - "ops/render-release-notes.sh"
       - "ops/prepare-runtime-image-context.sh"
       - "ops/release.Dockerfile"
       - "ops/runtime-image.Dockerfile"
+      - "packaging/aur/**"
       - "docs-site/src/content/docs/docs/releases/**"
       - "web/**"
       - "go.mod"
@@ -254,3 +258,68 @@ jobs:
             REVISION=${{ github.sha }}
           provenance: mode=max
           sbom: true
+
+  publish-aur:
+    name: Publish AUR docklane-bin
+    if: github.ref_type == 'tag'
+    needs:
+      - build
+      - publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out packaging sources
+        uses: actions/checkout@v6
+
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: docklane-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Bump docklane-bin packaging metadata
+        run: |
+          ./ops/bump-aur-docklane-bin.sh \
+            "${{ needs.build.outputs.version }}" \
+            dist/checksums.txt
+
+      - name: Configure AUR SSH
+        id: aur_ssh
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$AUR_SSH_PRIVATE_KEY" ]]; then
+            echo "AUR_SSH_PRIVATE_KEY is not configured; skipping AUR publish"
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          umask 077
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" >"$HOME/.ssh/aur_ed25519"
+          if ! grep -q "BEGIN OPENSSH PRIVATE KEY\|BEGIN .* PRIVATE KEY" "$HOME/.ssh/aur_ed25519"; then
+            echo "AUR_SSH_PRIVATE_KEY does not look like a private key" >&2
+            exit 1
+          fi
+          chmod 600 "$HOME/.ssh/aur_ed25519"
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org >>"$HOME/.ssh/known_hosts"
+          {
+            echo "Host aur.archlinux.org"
+            echo "  User aur"
+            echo "  IdentityFile $HOME/.ssh/aur_ed25519"
+            echo "  IdentitiesOnly yes"
+          } >"$HOME/.ssh/config"
+          chmod 600 "$HOME/.ssh/config"
+          ssh -o BatchMode=yes aur@aur.archlinux.org help >/dev/null
+          echo "skip=false" >>"$GITHUB_OUTPUT"
+
+      - name: Publish packaging to the AUR
+        if: steps.aur_ssh.outputs.skip != 'true'
+        env:
+          AUR_COMMIT_NAME: lcaohoanq
+          AUR_COMMIT_EMAIL: hoangclw@gmail.com
+        run: ./ops/publish-aur-docklane-bin.sh packaging/aur/docklane-bin
