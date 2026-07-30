@@ -1,4 +1,4 @@
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
+allowBuilds:
+  esbuild: true
+  sharp: true
 storeDir: ../.pnpm-store
