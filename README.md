@@ -86,6 +86,25 @@ The binary is written to `bin/docklane`.
 and type checks, Go tests and vet, the final binary build, and verification
 that the committed embedded UI matches a clean rebuild.
 
+## Development
+
+Start the Go controller with Air live reload and the Svelte UI with Vite HMR:
+
+```sh
+make setup
+make dev
+```
+
+Open <http://127.0.0.1:5173>. Vite proxies `/api` requests to the controller
+on <http://127.0.0.1:4646>. Saving a Go file under `cmd/` or `internal/`
+rebuilds and restarts the controller; saving a Svelte, CSS, or TypeScript file
+updates the browser through Vite HMR. Press `Ctrl+C` once to stop both
+processes.
+
+The Air version is pinned as a Go tool, so no global `air` installation is
+required. To run either side independently, use `make dev-api` or
+`make dev-web`.
+
 ## Build release artifacts
 
 Build the Linux release candidates and their SHA-256 manifest with:

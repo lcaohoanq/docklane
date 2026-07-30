@@ -1,10 +1,21 @@
-.PHONY: build ci docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
+.PHONY: build ci dev dev-api dev-web docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
 
 GOCACHE := $(CURDIR)/.gocache
 PNPM_STORE := $(CURDIR)/.pnpm-store
 
 setup:
+	go mod download
 	pnpm --dir web install --store-dir $(PNPM_STORE)
+
+dev:
+	./ops/dev.sh
+
+dev-api:
+	mkdir -p data .tmp/air
+	go tool air
+
+dev-web:
+	pnpm --dir web run dev
 
 docs-setup:
 	pnpm --dir docs-site install --store-dir $(PNPM_STORE)
