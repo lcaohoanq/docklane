@@ -1,6 +1,8 @@
-.PHONY: build ci dev dev-api dev-web docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
+.PHONY: build ci dev dev-api dev-web docs docs-check docs-setup format-check lint release release-repro-check runtime-image-context setup test web
 
 GOCACHE := $(CURDIR)/.gocache
+GOLANGCI_LINT_CACHE := $(CURDIR)/.tmp/golangci-lint
+LINT_BASE ?= HEAD~
 PNPM_STORE := $(CURDIR)/.pnpm-store
 
 setup:
@@ -36,13 +38,16 @@ build: web
 
 test: web
 	pnpm --dir web run check
-	GOCACHE=$(GOCACHE) go test ./...
+	GOCACHE=$(GOCACHE) go tool gotestsum --format pkgname -- ./...
 	GOCACHE=$(GOCACHE) go vet ./...
 
 format-check:
 	test -z "$$(gofmt -l cmd internal)"
 
-ci: format-check test build
+lint:
+	GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) go tool golangci-lint run --new-from-rev=$(LINT_BASE) ./...
+
+ci: format-check lint test build
 	git diff --exit-code -- internal/webui/dist
 
 release: web

@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -45,5 +47,20 @@ jobs:
       - name: Install locked web dependencies
         run: pnpm --dir web install --frozen-lockfile
 
+      - name: Select lint comparison
+        id: lint-base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "revision=$PR_BASE_SHA" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" == "push" && "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            echo "revision=$PUSH_BEFORE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "revision=HEAD~" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run repository gate
-        run: make ci
+        run: make ci LINT_BASE=${{ steps.lint-base.outputs.revision }}

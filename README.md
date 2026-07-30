@@ -82,9 +82,15 @@ make build
 
 The binary is written to `bin/docklane`.
 
-`make ci` reproduces the pull-request gate locally: formatting, Svelte build
-and type checks, Go tests and vet, the final binary build, and verification
+`make ci` reproduces the pull-request gate locally: formatting,
+`golangci-lint` static analysis (`staticcheck`, `errcheck`, `revive`, and
+supporting correctness linters), Go tests reported through `gotestsum`, Go
+vet, Svelte build and type checks, the final binary build, and verification
 that the committed embedded UI matches a clean rebuild.
+
+The lint gate compares against `HEAD~` locally and the pull request base in
+GitHub Actions. Existing lint debt remains visible without blocking adoption,
+while new or changed Go code must pass the configured linters.
 
 ## Development
 
