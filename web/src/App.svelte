@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import logoUrl from "../../brand/logo-mark.svg";
 
   type Container = {
     id: string;
@@ -101,6 +102,7 @@
   let routeReadiness: Record<number, RouteReadiness> = {};
   const readinessPolling = new Map<number, number>();
   let mounted = true;
+  let theme: "light" | "dark" = "dark";
   let diagnosticRoute: Route | null = null;
   let diagnosticReport: DiagnosticReport | null = null;
   let diagnosticLoading = false;
@@ -585,8 +587,20 @@
     if (diagnosticRoute) diagnose(diagnosticRoute);
   }
 
+  function applyTheme(next: "light" | "dark") {
+    theme = next;
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("docklane-theme", next);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", next === "dark" ? "#0a100d" : "#f4f7f5");
+  }
+
   onMount(() => {
     mounted = true;
+    theme =
+      document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    applyTheme(theme);
     refresh();
     const timer = window.setInterval(() => refresh(false), 5000);
     return () => {
@@ -601,6 +615,24 @@
 </svelte:head>
 
 <main>
+  <nav class="product-nav" aria-label="Product">
+    <a class="brand" href="/" aria-label="Docklane home">
+      <img src={logoUrl} alt="" />
+      <span>Docklane</span>
+    </a>
+    <div class="product-nav-meta">
+      <span class="local-only">Local controller</span>
+      <button
+        class="theme-toggle"
+        type="button"
+        aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+        title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+        onclick={() => applyTheme(theme === "dark" ? "light" : "dark")}
+      >
+        {theme === "dark" ? "☀" : "☾"}
+      </button>
+    </div>
+  </nav>
   <header>
     <div>
       <p class="eyebrow">LOCAL CONTAINER GATEWAY</p>
@@ -610,7 +642,7 @@
         the route.
       </p>
     </div>
-    <button onclick={() => refresh()}>Refresh Docker</button>
+    <button class="refresh-action" onclick={() => refresh()}>Refresh Docker</button>
   </header>
 
   {#if notice}

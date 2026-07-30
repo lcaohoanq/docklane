@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" role="img" aria-labelledby="title description">
+  <title id="title">Docklane interface preview</title>
+  <desc id="description">A preview showing ready routes, discovered containers, and route diagnostics.</desc>
+  <rect width="1400" height="820" rx="22" fill="#0D1410"/>
+  <rect x="1" y="1" width="1398" height="818" rx="21" fill="none" stroke="#2B3830" stroke-width="2"/>
+  <g font-family="Inter, sans-serif">
+    <g transform="translate(62 52)">
+      <rect width="42" height="42" rx="11" fill="#72E3A6"/>
+      <path d="M12 8v26h9c9 0 15-5 15-13S30 8 21 8h-9Zm8 8h2c4 0 7 2 7 5s-3 5-7 5h-2V16Z" fill="#0A100D"/>
+      <text x="58" y="31" fill="#EAF2EC" font-size="27" font-weight="750">Docklane</text>
+      <text x="1190" y="30" text-anchor="end" fill="#98A79D" font-family="monospace" font-size="14">docker.home.arpa</text>
+    </g>
+    <text x="62" y="160" fill="#72E3A6" font-family="monospace" font-size="13" font-weight="800" letter-spacing="2">LOCAL CONTAINER GATEWAY</text>
+    <text x="62" y="220" fill="#EAF2EC" font-size="47" font-weight="750" letter-spacing="-2">Routes</text>
+    <text x="62" y="252" fill="#98A79D" font-size="17">3 saved · reconciles every 5s</text>
+    <g transform="translate(62 292)">
+      <rect width="1276" height="226" rx="16" fill="#141C17" stroke="#2B3830"/>
+      <g transform="translate(28 30)">
+        <circle cx="8" cy="18" r="7" fill="#72E3A6"/>
+        <text x="34" y="16" fill="#EAF2EC" font-family="monospace" font-size="17" font-weight="700">excalidraw.docker.home.arpa</text>
+        <text x="34" y="40" fill="#718078" font-family="monospace" font-size="12">ready · excalidraw-1</text>
+        <text x="820" y="24" fill="#98A79D" font-family="monospace" font-size="14">http · :80</text>
+        <rect x="1030" width="142" height="38" rx="9" fill="#193D29" stroke="#315B43"/>
+        <text x="1101" y="24" text-anchor="middle" fill="#A9EDC6" font-size="13" font-weight="700">Diagnose</text>
+      </g>
+      <path d="M0 94h1276" stroke="#2B3830"/>
+      <g transform="translate(28 122)">
+        <circle cx="8" cy="18" r="7" fill="#72E3A6"/>
+        <text x="34" y="16" fill="#EAF2EC" font-family="monospace" font-size="17" font-weight="700">whoami.docker.home.arpa</text>
+        <text x="34" y="40" fill="#718078" font-family="monospace" font-size="12">ready · whoami-1</text>
+        <text x="820" y="24" fill="#98A79D" font-family="monospace" font-size="14">http · :80</text>
+        <rect x="1030" width="142" height="38" rx="9" fill="#193D29" stroke="#315B43"/>
+        <text x="1101" y="24" text-anchor="middle" fill="#A9EDC6" font-size="13" font-weight="700">Diagnose</text>
+      </g>
+    </g>
+    <g transform="translate(62 560)">
+      <rect width="1276" height="198" rx="16" fill="#111914" stroke="#315B43"/>
+      <text x="28" y="40" fill="#72E3A6" font-family="monospace" font-size="12" font-weight="800" letter-spacing="2">ROUTE DIAGNOSTICS</text>
+      <text x="28" y="78" fill="#EAF2EC" font-size="25" font-weight="700">excalidraw.docker.home.arpa</text>
+      <g transform="translate(28 108)">
+        <rect width="374" height="58" rx="10" fill="#141C17" stroke="#2B3830"/>
+        <circle cx="28" cy="29" r="8" fill="#72E3A6"/>
+        <text x="50" y="25" fill="#EAF2EC" font-size="14" font-weight="700">Controller checks passed</text>
+        <text x="50" y="44" fill="#718078" font-size="11">DNS · TLS · Traefik · upstream</text>
+      </g>
+      <g transform="translate(422 108)">
+        <rect width="374" height="58" rx="10" fill="#141C17" stroke="#2B3830"/>
+        <circle cx="28" cy="29" r="8" fill="#72E3A6"/>
+        <text x="50" y="25" fill="#EAF2EC" font-size="14" font-weight="700">Browser HTTPS passed</text>
+        <text x="50" y="44" fill="#718078" font-size="11">Trusted certificate · 200 OK</text>
+      </g>
+    </g>
+  </g>
+</svg>

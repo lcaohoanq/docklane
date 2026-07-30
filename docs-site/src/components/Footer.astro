@@ -1,0 +1,79 @@
+---
+import Default from "@astrojs/starlight/components/Footer.astro";
+
+const measurementId = import.meta.env.PUBLIC_GA_MEASUREMENT_ID ?? "";
+---
+
+<Default {...Astro.props} />
+
+{
+  measurementId && (
+    <aside
+      class="analytics-consent"
+      id="analytics-consent"
+      aria-labelledby="analytics-consent-title"
+      hidden
+    >
+      <div>
+        <strong id="analytics-consent-title">Help improve Docklane docs</strong>
+        <p>
+          We use Google Analytics only after you agree. Read our{" "}
+          <a href="/docklane/privacy/">privacy notice</a>.
+        </p>
+      </div>
+      <div class="analytics-actions">
+        <button type="button" data-consent="declined">Decline</button>
+        <button type="button" class="primary" data-consent="accepted">
+          Accept
+        </button>
+      </div>
+    </aside>
+  )
+}
+
+<script is:inline define:vars={{ measurementId }}>
+  (() => {
+    if (!measurementId || !/^G-[A-Z0-9]+$/.test(measurementId)) return;
+
+    const key = "docklane-analytics-consent";
+    const banner = document.getElementById("analytics-consent");
+
+    const loadAnalytics = () => {
+      if (document.querySelector('script[data-docklane-analytics]')) return;
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () {
+        window.dataLayer.push(arguments);
+      };
+      window.gtag("js", new Date());
+      window.gtag("config", measurementId, { anonymize_ip: true });
+
+      const script = document.createElement("script");
+      script.async = true;
+      script.dataset.docklaneAnalytics = "true";
+      script.src =
+        "https://www.googletagmanager.com/gtag/js?id=" +
+        encodeURIComponent(measurementId);
+      document.head.appendChild(script);
+    };
+
+    const consent = localStorage.getItem(key);
+    if (consent === "accepted") loadAnalytics();
+    if (!consent && banner) banner.hidden = false;
+
+    banner?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-consent]");
+      if (!button) return;
+      const choice = button.dataset.consent;
+      localStorage.setItem(key, choice);
+      banner.hidden = true;
+      if (choice === "accepted") loadAnalytics();
+    });
+
+    document
+      .getElementById("reset-analytics-consent")
+      ?.addEventListener("click", () => {
+        localStorage.removeItem(key);
+        if (banner) banner.hidden = false;
+      });
+  })();
+</script>

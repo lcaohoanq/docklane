@@ -3,7 +3,8 @@
 Last updated: 2026-07-29
 
 This file is the project task tracker. Architecture and design rationale live
-in [architecture.md](./architecture.md).
+in the
+[architecture documentation](../docs-site/src/content/docs/docs/architecture/system-overview.md).
 
 ## Status legend
 

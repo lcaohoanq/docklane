@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 286 64" role="img" aria-labelledby="title">
+  <title id="title">Docklane</title>
+  <g>
+    <rect width="64" height="64" rx="16" fill="#72E3A6"/>
+    <path d="M18 14v36h13c12 0 21-7 21-18S43 14 31 14H18Zm10 10h3c6 0 11 3 11 8s-5 8-11 8h-3V24Z" fill="#0A100D"/>
+    <path d="M13 24h15M13 40h15" stroke="#0A100D" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="80" y="43" fill="#EAF2EC" font-family="Space Grotesk, Inter, sans-serif" font-size="36" font-weight="700" letter-spacing="-1.4">Docklane</text>
+</svg>

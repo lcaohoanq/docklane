@@ -16,6 +16,9 @@
 
 # JavaScript dependencies and local package cache
 /web/node_modules/
+/docs-site/node_modules/
+/docs-site/dist/
+/docs-site/.astro/
 /.pnpm-store/
 
 # Editor and operating-system files

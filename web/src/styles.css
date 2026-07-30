@@ -1,9 +1,7 @@
 :root {
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  color: #eaf2ec;
-  background: #0d1210;
+  font-family: var(--dl-font-body);
+  color: var(--dl-text);
+  background: var(--dl-surface);
   font-synthesis: none;
 }
 
@@ -17,7 +15,10 @@ body {
   min-height: 100vh;
   background:
     radial-gradient(circle at 80% 0%, rgba(91, 216, 151, 0.12), transparent 30rem),
-    #0d1210;
+    var(--dl-surface);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
 button {
@@ -43,7 +44,62 @@ button:disabled {
 main {
   width: min(1120px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 5rem 0;
+  padding: 1.5rem 0 5rem;
+}
+
+.product-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: clamp(4rem, 8vw, 7rem);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--dl-text);
+  font-family: var(--dl-font-display);
+  font-size: 1.15rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.product-nav-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.local-only {
+  border: 1px solid var(--dl-border);
+  border-radius: 999px;
+  padding: 0.35rem 0.55rem;
+  color: var(--dl-text-muted);
+  font-family: var(--dl-font-mono);
+  font-size: 0.68rem;
+}
+
+button.theme-toggle {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-color: var(--dl-border);
+  border-radius: 50%;
+  padding: 0;
+  color: var(--dl-text);
+  background: var(--dl-surface-raised);
+}
+
+button.theme-toggle:hover {
+  background: var(--dl-surface-muted);
 }
 
 header {
@@ -68,6 +124,13 @@ h1 {
   font-size: clamp(2.5rem, 7vw, 5.5rem);
   line-height: 0.98;
   letter-spacing: -0.055em;
+  font-family: var(--dl-font-display);
+}
+
+h2,
+h3 {
+  font-family: var(--dl-font-display);
+  letter-spacing: -0.025em;
 }
 
 .lede {
@@ -165,6 +228,14 @@ button.secondary {
   border-color: #35423a;
   color: #dfe9e2;
   background: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--dl-lane-bright) 65%, transparent);
+  outline-offset: 3px;
 }
 
 button.ghost {
@@ -704,9 +775,135 @@ form > code {
   color: #ff9b9b;
 }
 
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 80% 0%, rgba(22, 134, 74, 0.1), transparent 30rem),
+    var(--dl-surface);
+}
+
+:root[data-theme="light"] button {
+  border-color: var(--dl-lane-strong);
+  color: #fff;
+  background: var(--dl-lane);
+}
+
+:root[data-theme="light"] button:hover {
+  background: var(--dl-lane-strong);
+}
+
+:root[data-theme="light"] button.secondary,
+:root[data-theme="light"] button.ghost {
+  border-color: var(--dl-border);
+  color: var(--dl-text);
+  background: transparent;
+}
+
+:root[data-theme="light"] button.ghost:hover {
+  color: var(--dl-text);
+  background: var(--dl-surface-muted);
+}
+
+:root[data-theme="light"] button.danger,
+:root[data-theme="light"] .error,
+:root[data-theme="light"] .field-hint.error,
+:root[data-theme="light"] .diagnostic-error,
+:root[data-theme="light"] .history-error {
+  color: var(--dl-coral);
+}
+
+:root[data-theme="light"] .eyebrow,
+:root[data-theme="light"] .perspective-label,
+:root[data-theme="light"] .route-name a:hover {
+  color: var(--dl-lane);
+}
+
+:root[data-theme="light"] .lede,
+:root[data-theme="light"] .section-title span,
+:root[data-theme="light"] article p,
+:root[data-theme="light"] .route-editor p:not(.eyebrow),
+:root[data-theme="light"] .field-hint,
+:root[data-theme="light"] .route-name small,
+:root[data-theme="light"] .route-row code,
+:root[data-theme="light"] .diagnostics-header p:not(.eyebrow),
+:root[data-theme="light"] .perspective small,
+:root[data-theme="light"] .diagnostic-summary,
+:root[data-theme="light"] .history-heading small,
+:root[data-theme="light"] .history-empty,
+:root[data-theme="light"] .history-legend,
+:root[data-theme="light"] .diagnostic-check p,
+:root[data-theme="light"] .empty,
+:root[data-theme="light"] .system-action {
+  color: var(--dl-text-muted);
+}
+
+:root[data-theme="light"] article,
+:root[data-theme="light"] .route-editor,
+:root[data-theme="light"] .diagnostics,
+:root[data-theme="light"] .perspective,
+:root[data-theme="light"] .health-history,
+:root[data-theme="light"] .diagnostic-group,
+:root[data-theme="light"] .empty,
+:root[data-theme="light"] .route-list {
+  border-color: var(--dl-border);
+  background: var(--dl-surface);
+  box-shadow: var(--dl-shadow-sm);
+}
+
+:root[data-theme="light"] .route-row + .route-row,
+:root[data-theme="light"] .diagnostics-header,
+:root[data-theme="light"] .diagnostic-check + .diagnostic-check {
+  border-color: var(--dl-border);
+}
+
+:root[data-theme="light"] .diagnostic-group h3,
+:root[data-theme="light"] .meta span,
+:root[data-theme="light"] .domain-input {
+  color: var(--dl-text-muted);
+  background: var(--dl-surface-muted);
+}
+
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] form > code {
+  border-color: var(--dl-border);
+  color: var(--dl-text);
+  background: var(--dl-surface-raised);
+}
+
+:root[data-theme="light"] .route-name a,
+:root[data-theme="light"] .diagnostic-check strong,
+:root[data-theme="light"] .perspective strong,
+:root[data-theme="light"] article h3 {
+  color: var(--dl-text);
+}
+
+:root[data-theme="light"] .notice {
+  border-color: #9dd6b3;
+  color: var(--dl-lane-strong);
+  background: var(--dl-lane-soft);
+}
+
+:root[data-theme="light"] .notice.error,
+:root[data-theme="light"] .diagnostic-error {
+  border-color: #efb3b5;
+  color: var(--dl-coral);
+  background: var(--dl-coral-soft);
+}
+
+:root[data-theme="light"] .status-pill.pass,
+:root[data-theme="light"] .check-mark,
+:root[data-theme="light"] .status-pill.warn,
+:root[data-theme="light"] .status-pill.fail {
+  filter: saturate(0.9) contrast(1.05);
+}
+
 @media (max-width: 720px) {
   main {
-    padding-top: 2rem;
+    padding-top: 1rem;
+  }
+
+  .product-nav {
+    margin-bottom: 3.5rem;
   }
 
   header {
@@ -760,5 +957,16 @@ form > code {
 
   .field-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

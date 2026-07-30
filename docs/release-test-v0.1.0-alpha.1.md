@@ -3,7 +3,9 @@
 Date: 2026-07-29
 
 This is the release-candidate acceptance record for the first Docklane alpha.
-It follows `docs/first-alpha.md` using only a release archive on the target
+It follows the
+[`v0.1.0-alpha.1` installation guide](https://github.com/lcaohoanq/docklane/blob/v0.1.0-alpha.1/docs/first-alpha.md)
+using only a release archive on the target
 machine.
 
 ## Environment

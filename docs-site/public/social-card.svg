@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="75%" cy="15%" r="70%">
+      <stop offset="0" stop-color="#1e6640"/>
+      <stop offset="1" stop-color="#0a100d"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(90 88) scale(1.55)">
+    <rect width="64" height="64" rx="16" fill="#72E3A6"/>
+    <path d="M18 14v36h13c12 0 21-7 21-18S43 14 31 14H18Zm10 10h3c6 0 11 3 11 8s-5 8-11 8h-3V24Z" fill="#0A100D"/>
+    <path d="M13 24h15M13 40h15" stroke="#0A100D" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="90" y="300" fill="#f4f7f5" font-family="Space Grotesk, Inter, sans-serif" font-size="92" font-weight="700" letter-spacing="-4">Docklane</text>
+  <text x="94" y="380" fill="#a9b9af" font-family="Inter, sans-serif" font-size="38">Your containers deserve names, not port numbers.</text>
+  <path d="M94 470H370M410 470H686M726 470H1002" stroke="#72E3A6" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="390" cy="470" r="13" fill="#f2c66d"/>
+  <circle cx="706" cy="470" r="13" fill="#72E3A6"/>
+  <text x="94" y="535" fill="#72E3A6" font-family="monospace" font-size="28">excalidraw.docker.home.arpa</text>
+</svg>

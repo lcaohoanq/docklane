@@ -4,9 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101713" />
+    <link rel="icon" href="/favicon.svg" />
     <title>Docklane</title>
-    <script type="module" crossorigin src="/assets/index-D7xAcgTd.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-FvJB1TgW.css">
+    <script>
+      (() => {
+        const stored = localStorage.getItem("docklane-theme");
+        const theme =
+          stored === "light" || stored === "dark"
+            ? stored
+            : matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-b7513YTT.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Bx6fEamX.css">
   </head>
   <body>
     <div id="app"></div>

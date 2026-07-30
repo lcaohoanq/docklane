@@ -12,9 +12,11 @@ on:
       - "internal/**"
       - "ops/build-release.sh"
       - "ops/check-release-reproducibility.sh"
+      - "ops/render-release-notes.sh"
       - "ops/prepare-runtime-image-context.sh"
       - "ops/release.Dockerfile"
       - "ops/runtime-image.Dockerfile"
+      - "docs-site/src/content/docs/docs/releases/**"
       - "web/**"
       - "go.mod"
       - "go.sum"
@@ -170,7 +172,11 @@ jobs:
         run: |
           test "$GITHUB_REF_TYPE" = "tag"
           test "$GITHUB_REF_NAME" = "$VERSION"
-          test -f "docs/releases/${VERSION}.md"
+          release_notes="docs-site/src/content/docs/docs/releases/${VERSION}.md"
+          rendered_notes="$RUNNER_TEMP/${VERSION}-release-notes.md"
+          test -f "$release_notes"
+          ./ops/render-release-notes.sh "$release_notes" > "$rendered_notes"
+          grep -Fx "# Docklane ${VERSION}" "$rendered_notes"
           gh release create "$VERSION" \
             dist/checksums.txt \
             "dist/docklane_${VERSION#v}_linux_amd64.tar.gz" \
@@ -179,7 +185,7 @@ jobs:
             --verify-tag \
             --prerelease \
             --title "Docklane ${VERSION}" \
-            --notes-file "docs/releases/${VERSION}.md"
+            --notes-file "$rendered_notes"
 
   publish-container:
     name: Publish multi-platform Docker image

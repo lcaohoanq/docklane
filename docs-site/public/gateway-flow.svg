@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" role="img" aria-labelledby="title description">
+  <title id="title">Docklane request flow</title>
+  <desc id="description">A browser request resolves through local DNS, enters Traefik, and reaches a Docker container through a route managed by Docklane.</desc>
+  <rect width="1200" height="500" fill="#0A100D"/>
+  <g font-family="Inter, sans-serif">
+    <text x="70" y="82" fill="#72E3A6" font-family="monospace" font-size="18" font-weight="700" letter-spacing="2">ONE NAME · ONE GATEWAY · NO HOST PORTS</text>
+    <g transform="translate(70 150)">
+      <rect width="220" height="170" rx="20" fill="#141C17" stroke="#2B3830" stroke-width="2"/>
+      <circle cx="42" cy="45" r="12" fill="#72E3A6"/>
+      <text x="70" y="51" fill="#EAF2EC" font-size="25" font-weight="700">Browser</text>
+      <text x="28" y="105" fill="#98A79D" font-family="monospace" font-size="15">excalidraw.</text>
+      <text x="28" y="132" fill="#98A79D" font-family="monospace" font-size="15">docker.home.arpa</text>
+    </g>
+    <g transform="translate(490 150)">
+      <rect width="220" height="170" rx="20" fill="#193D29" stroke="#72E3A6" stroke-width="2"/>
+      <path d="M42 33v38h14c13 0 22-8 22-19S69 33 56 33H42Zm11 10h3c6 0 11 4 11 9s-5 9-11 9h-3V43Z" fill="#72E3A6"/>
+      <text x="92" y="59" fill="#EAF2EC" font-size="25" font-weight="700">Docklane</text>
+      <text x="28" y="112" fill="#A9EDC6" font-family="monospace" font-size="15">route → :3000</text>
+      <text x="28" y="139" fill="#98A79D" font-size="15">Traefik provider</text>
+    </g>
+    <g transform="translate(910 150)">
+      <rect width="220" height="170" rx="20" fill="#141C17" stroke="#2B3830" stroke-width="2"/>
+      <rect x="30" y="31" width="32" height="32" rx="6" fill="#72E3A6"/>
+      <text x="78" y="55" fill="#EAF2EC" font-size="25" font-weight="700">Container</text>
+      <text x="28" y="108" fill="#98A79D" font-family="monospace" font-size="15">excalidraw</text>
+      <text x="28" y="137" fill="#98A79D" font-family="monospace" font-size="15">http://…:3000</text>
+    </g>
+    <path d="M290 235H475" stroke="#72E3A6" stroke-width="5" stroke-linecap="round"/>
+    <path d="m457 222 18 13-18 13" fill="none" stroke="#72E3A6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="332" y="215" fill="#98A79D" font-family="monospace" font-size="14">HTTPS :443</text>
+    <path d="M710 235H895" stroke="#72E3A6" stroke-width="5" stroke-linecap="round"/>
+    <path d="m877 222 18 13-18 13" fill="none" stroke="#72E3A6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="753" y="215" fill="#98A79D" font-family="monospace" font-size="14">proxy network</text>
+    <text x="70" y="410" fill="#98A79D" font-size="18">Local DNS resolves to one Traefik gateway. Docklane keeps the route attached as containers are recreated.</text>
+  </g>
+</svg>

@@ -5,13 +5,11 @@ stable HTTPS names such as `excalidraw.docker.home.arpa`.
 
 Project documentation:
 
-- [First-alpha installation guide](./docs/first-alpha.md)
+- [Documentation](https://lcaohoanq.github.io/docklane/docs/)
+- [Quick start](https://lcaohoanq.github.io/docklane/docs/getting-started/quick-start/)
+- [Architecture](https://lcaohoanq.github.io/docklane/docs/architecture/system-overview/)
+- [Release notes](https://lcaohoanq.github.io/docklane/docs/releases/v0.1.0-alpha.2/)
 - [v0.1.0-alpha.1 clean-VM release test](./docs/release-test-v0.1.0-alpha.1.md)
-- [v0.1.0-alpha.2 release notes](./docs/releases/v0.1.0-alpha.2.md)
-- [v0.1.0-alpha.1 release notes](./docs/releases/v0.1.0-alpha.1.md)
-- [Architecture](./docs/architecture.md)
-- [Installation manifest schema v2](./docs/install-manifest-v2.md)
-- [Legacy installation manifest schema v1](./docs/install-manifest-v1.md)
 - [Implementation plan and task tracker](./docs/plans.md)
 
 ## License

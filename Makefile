@@ -1,10 +1,20 @@
-.PHONY: build ci format-check release release-repro-check runtime-image-context setup test web
+.PHONY: build ci docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
 
 GOCACHE := $(CURDIR)/.gocache
 PNPM_STORE := $(CURDIR)/.pnpm-store
 
 setup:
 	pnpm --dir web install --store-dir $(PNPM_STORE)
+
+docs-setup:
+	pnpm --dir docs-site install --store-dir $(PNPM_STORE)
+
+docs-check:
+	pnpm --dir docs-site run build
+	./ops/render-release-notes.sh docs-site/src/content/docs/docs/releases/v0.1.0-alpha.2.md | grep -Fx "# Docklane v0.1.0-alpha.2"
+
+docs:
+	pnpm --dir docs-site run dev
 
 web:
 	pnpm --dir web run build

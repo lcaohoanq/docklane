@@ -1,0 +1,32 @@
+---
+import Default from "@astrojs/starlight/components/Head.astro";
+import "@fontsource-variable/inter/wght.css";
+import "@fontsource-variable/space-grotesk/wght.css";
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Docklane",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Linux",
+  description:
+    "A local container gateway that gives Docker workloads stable HTTPS names.",
+  url: "https://lcaohoanq.github.io/docklane/",
+  softwareVersion: "0.1.0-alpha.2",
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  codeRepository: "https://github.com/lcaohoanq/docklane",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+---
+
+<Default {...Astro.props} />
+<meta name="theme-color" content="#0a100d" />
+<script
+  is:inline
+  type="application/ld+json"
+  set:html={JSON.stringify(structuredData)}
+/>

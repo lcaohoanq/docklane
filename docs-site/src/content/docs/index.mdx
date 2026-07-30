@@ -1,0 +1,126 @@
+---
+title: Docklane
+description: Stable local HTTPS names for Docker containers.
+template: splash
+hero:
+  tagline: Your containers deserve names, not port numbers.
+  image:
+    file: ../../assets/logo-mark.svg
+  actions:
+    - text: Get started
+      link: /docs/getting-started/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/lcaohoanq/docklane
+      icon: external
+      variant: minimal
+---
+
+<div class="landing-eyebrow">Local container gateway</div>
+
+Docklane discovers Docker workloads, assigns stable local domains, and gives
+Traefik one complete routing configuration to serve them over HTTPS.
+
+<div class="domain-demo"><span></span>excalidraw.docker.home.arpa</div>
+
+<section class="landing-section">
+  <header>
+    <div class="landing-eyebrow">Why Docklane</div>
+    <h2>One gateway for every local container.</h2>
+    <p>
+      Stop publishing and remembering a different host port for every
+      application. Keep traffic inside Docker until it reaches the shared
+      gateway.
+    </p>
+  </header>
+  <div class="feature-grid">
+    <article class="feature-card">
+      <strong>Stable names</strong>
+      <p>Routes identify Compose workloads, so they survive container recreation.</p>
+    </article>
+    <article class="feature-card">
+      <strong>HTTPS by default</strong>
+      <p>Local DNS and a machine-local CA provide trusted names under <code>docker.home.arpa</code>.</p>
+    </article>
+    <article class="feature-card">
+      <strong>Inspectable changes</strong>
+      <p>Plan, apply, diagnose, upgrade, and uninstall through one reversible control plane.</p>
+    </article>
+  </div>
+</section>
+
+<section class="landing-section">
+  <header>
+    <div class="landing-eyebrow">How it works</div>
+    <h2>From Docker service to local HTTPS in three steps.</h2>
+  </header>
+  <div class="steps-grid">
+    <article class="step-card">
+      <span class="step-number">1</span>
+      <strong>Discover</strong>
+      <p>Docklane reads running Docker and Compose workloads without changing their Compose files.</p>
+    </article>
+    <article class="step-card">
+      <span class="step-number">2</span>
+      <strong>Route</strong>
+      <p>Choose an internal port and assign a predictable local hostname.</p>
+    </article>
+    <article class="step-card">
+      <span class="step-number">3</span>
+      <strong>Verify</strong>
+      <p>Docklane checks DNS, TLS, Traefik, networking, and the upstream as separate layers.</p>
+    </article>
+  </div>
+</section>
+
+<section class="landing-section">
+  <header>
+    <div class="landing-eyebrow">Request path</div>
+    <h2>Only Traefik publishes host ports.</h2>
+    <p>
+      Application traffic stays on Docker networks. Docklane manages the
+      control plane and continuously reconciles the desired route.
+    </p>
+  </header>
+  <div class="flow-panel">
+    <img src="/docklane/gateway-flow.svg" alt="Browser traffic enters Traefik and reaches a container through a route managed by Docklane." />
+  </div>
+</section>
+
+<section class="landing-section">
+  <header>
+    <div class="landing-eyebrow">Operational clarity</div>
+    <h2>See the route. Diagnose every layer.</h2>
+    <p>
+      The UI and CLI use the same controller API, with readiness and diagnostic
+      state kept separate from configuration.
+    </p>
+  </header>
+  <div class="product-shot">
+    <img src="/docklane/product-preview.svg" alt="Docklane route list and diagnostic interface." />
+  </div>
+</section>
+
+<section class="landing-section">
+  <div class="safety-panel">
+    <span class="icon">!</span>
+    <div>
+      <strong>Alpha software with an explicit privilege boundary</strong>
+      <p>
+        Docker socket access is equivalent to root-level control. Install
+        Docklane only on a development machine or VM whose DNS, trust store,
+        Docker networks, and ports 80/443 it may manage.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="final-cta">
+  <h2>Give your next container a real name.</h2>
+  <p>
+    Start on a supported Linux development host, review the generated plan,
+    and keep a complete record of every resource Docklane manages.
+  </p>
+  <a href="/docklane/docs/getting-started/quick-start/">Read the quick start →</a>
+</section>
