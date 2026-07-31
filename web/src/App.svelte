@@ -482,10 +482,12 @@
   }
 
   function attentionRouteCount() {
-    return routes.filter((route) =>
-      ["error", "unresolved", "ambiguous"].includes(
-        readinessFor(route).state,
-      ),
+    return routes.filter(
+      (route) =>
+        readinessFor(route).state === "error" ||
+        ["unresolved", "ambiguous", "error"].includes(
+          route.observed?.state ?? "",
+        ),
     ).length;
   }
 
