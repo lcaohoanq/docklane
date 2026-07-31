@@ -82,9 +82,36 @@ make build
 
 The binary is written to `bin/docklane`.
 
-`make ci` reproduces the pull-request gate locally: formatting, Svelte build
-and type checks, Go tests and vet, the final binary build, and verification
+`make ci` reproduces the pull-request gate locally: formatting,
+`golangci-lint` static analysis (`staticcheck`, `errcheck`, `revive`, and
+supporting correctness linters), Go tests reported through `gotestsum`, Go
+vet, Svelte build and type checks, the final binary build, and verification
 that the committed embedded UI matches a clean rebuild.
+
+The lint gate compares against `HEAD~` locally and the pull request base in
+GitHub Actions. Existing lint debt remains visible without blocking adoption,
+while new or changed Go code must pass the configured linters.
+
+## Development
+
+Start the Go controller with Air live reload and the Svelte UI with Vite HMR:
+
+```sh
+make setup
+make dev
+```
+
+Open <http://127.0.0.1:5173>. Vite proxies `/api` requests to the controller
+on <http://127.0.0.1:4646>. The Air controller runs in the private control
+network, uses the persistent `data/docklane.db`, and retains the integrated
+Traefik runtime and proxy-network configuration. Saving a Go file under `cmd/`
+or `internal/` rebuilds and restarts the controller; saving a Svelte, CSS, or
+TypeScript file updates the browser through Vite HMR. Press `Ctrl+C` once to
+stop both development processes and restore the regular Compose controller.
+
+The Air version is pinned as a Go tool and runs in the development controller
+container, so no global `air` installation is required. Use `make dev-web` to
+run only Vite against an already-running integrated controller.
 
 ## Build release artifacts
 

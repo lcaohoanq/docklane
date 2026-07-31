@@ -1,0 +1,42 @@
+#:schema https://json.schemastore.org/any.json
+
+root = "/workspace"
+tmp_dir = "/air"
+
+[build]
+cmd = "go build -o /air/docklane ./cmd/docklane"
+entrypoint = [
+  "/air/docklane",
+  "serve",
+  "--listen=0.0.0.0:4646",
+  "--database=/data/docklane.db",
+  "--base-domain=docker.home.arpa",
+  "--docker-socket=/var/run/docker.sock",
+  "--proxy-network=proxy",
+  "--probe-socket=/run/docklane-probe/probe.sock",
+  "--traefik-api-url=https://dashboard.lab",
+  "--traefik-api-address=traefik:443",
+  "--traefik-api-username=admin",
+  "--traefik-api-password-file=/run/secrets/traefik-dashboard-password",
+  "--traefik-api-ca-file=/run/secrets/traefik-local-ca.crt",
+  "--manage-network-attachments",
+  "--reconcile-interval=5s",
+  "--health-history-interval=5m",
+  "--health-history-limit=288",
+]
+include_ext = ["go"]
+include_dir = ["cmd", "internal"]
+include_file = ["go.mod", "go.sum"]
+exclude_dir = ["internal/webui/dist"]
+exclude_regex = ["_test\\.go"]
+exclude_unchanged = true
+delay = 300
+stop_on_error = true
+send_interrupt = true
+kill_delay = "2s"
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true
