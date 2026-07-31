@@ -94,6 +94,7 @@
   let error = "";
   let notice = "";
   let selected: Container | null = null;
+  let selectedContainerId = "";
   let editing: Route | null = null;
   let routeName = "";
   let routePort = 80;
@@ -134,6 +135,16 @@
       const routesPayload = await routesResponse.json();
       containers = containersPayload.containers;
       routes = routesPayload.routes;
+      if (
+        selectedContainerId &&
+        !containers.some(
+          (container) =>
+            container.id === selectedContainerId &&
+            container.systemRole !== "reverse-proxy",
+        )
+      ) {
+        selectedContainerId = "";
+      }
       baseDomain = routesPayload.baseDomain;
       reconcileEverySeconds = Math.max(
         1,
@@ -237,6 +248,7 @@
   }
 
   function choose(container: Container) {
+    selectedContainerId = container.id;
     selected = container;
     editing = null;
     routeName = availableRouteName(
@@ -245,6 +257,16 @@
     routePort = recommendedPort(container.exposedPorts);
     routeScheme = recommendedScheme(routePort);
     notice = "";
+  }
+
+  function selectedDiscoveryContainer() {
+    return (
+      containers.find(
+        (container) =>
+          container.id === selectedContainerId &&
+          container.systemRole !== "reverse-proxy",
+      ) || null
+    );
   }
 
   function edit(route: Route) {
@@ -927,8 +949,31 @@
 
   <section aria-labelledby="containers-title">
     <div class="section-title">
-      <h2 id="containers-title">Containers</h2>
-      <span>{containers.length} discovered</span>
+      <div class="title-with-count">
+        <h2 id="containers-title">Containers</h2>
+        <span>{containers.length} discovered</span>
+      </div>
+      <div class="container-toolbar">
+        <span>
+          {#if selectedDiscoveryContainer()}
+            {selectedDiscoveryContainer()?.composeService ||
+              selectedDiscoveryContainer()?.name}
+            selected
+          {:else}
+            Select a workload to create a route
+          {/if}
+        </span>
+        <button
+          type="button"
+          disabled={!selectedDiscoveryContainer()}
+          onclick={() => {
+            const container = selectedDiscoveryContainer();
+            if (container) choose(container);
+          }}
+        >
+          Create route
+        </button>
+      </div>
     </div>
 
     {#if loading}
@@ -936,38 +981,60 @@
     {:else if containers.length === 0}
       <div class="empty">No running containers found.</div>
     {:else}
-      <div class="grid">
-        {#each containers as container}
-          <article>
-            <div class="status-dot" title={container.status}></div>
-            <div class="card-body">
-              <h3>{container.composeService || container.name}</h3>
-              <p>{container.image}</p>
-              <div class="meta">
-                {#if container.systemRole === "reverse-proxy"}
-                  <span class="system-badge">gateway</span>
-                {/if}
-                {#each container.exposedPorts as port}
-                  <span>:{port}</span>
-                {:else}
-                  <span>no declared HTTP port</span>
-                {/each}
-              </div>
-            </div>
-            {#if container.systemRole === "reverse-proxy"}
-              <span
-                class="system-action"
-                title="The active reverse proxy cannot route to itself. Its dashboard uses api@internal."
-              >
-                Managed system container
+      <div class="container-table-scroll">
+        <div class="container-table">
+          <div class="container-table-head" aria-hidden="true">
+            <span></span>
+            <span>Workload</span>
+            <span class="image-column">Image</span>
+            <span>Ports</span>
+            <span class="state-column">State</span>
+          </div>
+          {#each containers as container}
+            {@const managed = container.systemRole === "reverse-proxy"}
+            <label
+              class:managed
+              class:selected-row={selectedContainerId === container.id}
+              class="container-table-row"
+              title={managed
+                ? "The active reverse proxy is managed by Docklane and cannot route to itself."
+                : `Select ${container.composeService || container.name}`}
+            >
+              <span class="select-cell">
+                <input
+                  type="radio"
+                  name="route-container"
+                  value={container.id}
+                  bind:group={selectedContainerId}
+                  disabled={managed}
+                  aria-label={`Select ${container.composeService || container.name}`}
+                />
               </span>
-            {:else}
-              <button class="secondary" onclick={() => choose(container)}>
-                Create route
-              </button>
-            {/if}
-          </article>
-        {/each}
+              <span class="workload-cell">
+                <strong>{container.composeService || container.name}</strong>
+                <small>{container.name}</small>
+              </span>
+              <span class="image-cell image-column">
+                {container.image}
+              </span>
+              <span class="ports-cell">
+                {#each uniquePorts(container.exposedPorts) as port}
+                  <code>:{port}</code>
+                {:else}
+                  <small>None declared</small>
+                {/each}
+              </span>
+              <span class="container-state state-column">
+                <i class="status-dot" aria-hidden="true"></i>
+                {#if managed}
+                  <span class="system-badge">gateway</span>
+                {:else}
+                  <span>{container.status}</span>
+                {/if}
+              </span>
+            </label>
+          {/each}
+        </div>
       </div>
     {/if}
   </section>

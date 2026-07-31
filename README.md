@@ -102,14 +102,16 @@ make dev
 ```
 
 Open <http://127.0.0.1:5173>. Vite proxies `/api` requests to the controller
-on <http://127.0.0.1:4646>. Saving a Go file under `cmd/` or `internal/`
-rebuilds and restarts the controller; saving a Svelte, CSS, or TypeScript file
-updates the browser through Vite HMR. Press `Ctrl+C` once to stop both
-processes.
+on <http://127.0.0.1:4646>. The Air controller runs in the private control
+network, uses the persistent `data/docklane.db`, and retains the integrated
+Traefik runtime and proxy-network configuration. Saving a Go file under `cmd/`
+or `internal/` rebuilds and restarts the controller; saving a Svelte, CSS, or
+TypeScript file updates the browser through Vite HMR. Press `Ctrl+C` once to
+stop both development processes and restore the regular Compose controller.
 
-The Air version is pinned as a Go tool, so no global `air` installation is
-required. To run either side independently, use `make dev-api` or
-`make dev-web`.
+The Air version is pinned as a Go tool and runs in the development controller
+container, so no global `air` installation is required. Use `make dev-web` to
+run only Vite against an already-running integrated controller.
 
 ## Build release artifacts
 
