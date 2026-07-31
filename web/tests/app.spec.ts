@@ -111,5 +111,6 @@ test("creates routes from a mobile container card", async ({ page }) => {
       .map((button) => button.getBoundingClientRect().height),
   }));
   expect(layout.overflow).toBe(0);
+  expect(layout.targets.length).toBeGreaterThan(0);
   expect(Math.min(...layout.targets)).toBeGreaterThanOrEqual(44);
 });
