@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import logoUrl from "../../brand/logo-mark.svg";
+
+  type ActiveTab = "routes" | "containers";
 
   type Container = {
     id: string;
@@ -93,8 +95,10 @@
   let loading = true;
   let error = "";
   let notice = "";
+  let activeTab: ActiveTab = "routes";
+  let routeSearch = "";
+  let containerSearch = "";
   let selected: Container | null = null;
-  let selectedContainerId = "";
   let editing: Route | null = null;
   let routeName = "";
   let routePort = 80;
@@ -112,6 +116,16 @@
   let historyRetention = 288;
   let historyIntervalMs = 300000;
   let historyError = "";
+  let initialEditorState = "";
+  let deleteCandidate: Route | null = null;
+  let discardEditorOpen = false;
+  let openRouteMenuId: number | null = null;
+  let pendingRouteIds = new Set<number>();
+  let highlightedRouteId: number | null = null;
+  let commandCopied = false;
+  let drawerFirstInput: HTMLInputElement;
+  let deleteCancelButton: HTMLButtonElement;
+  let discardCancelButton: HTMLButtonElement;
   let browserProbe: BrowserProbe = {
     status: "idle",
     summary: "Browser probe has not run",
@@ -136,15 +150,11 @@
       containers = containersPayload.containers;
       routes = routesPayload.routes;
       if (
-        selectedContainerId &&
-        !containers.some(
-          (container) =>
-            container.id === selectedContainerId &&
-            container.systemRole !== "reverse-proxy",
-        )
-      ) {
-        selectedContainerId = "";
-      }
+        selected &&
+        !editing &&
+        !containers.some((container) => container.id === selected?.id)
+      )
+        closeEditor(true);
       baseDomain = routesPayload.baseDomain;
       reconcileEverySeconds = Math.max(
         1,
@@ -248,7 +258,7 @@
   }
 
   function choose(container: Container) {
-    selectedContainerId = container.id;
+    activeTab = "containers";
     selected = container;
     editing = null;
     routeName = availableRouteName(
@@ -257,19 +267,47 @@
     routePort = recommendedPort(container.exposedPorts);
     routeScheme = recommendedScheme(routePort);
     notice = "";
+    commandCopied = false;
+    initialEditorState = editorState();
+    window.setTimeout(() => drawerFirstInput?.focus(), 0);
   }
 
-  function selectedDiscoveryContainer() {
-    return (
-      containers.find(
-        (container) =>
-          container.id === selectedContainerId &&
-          container.systemRole !== "reverse-proxy",
-      ) || null
+  function normalizedSearch(value: string) {
+    return value.trim().toLowerCase();
+  }
+
+  function filteredRoutes() {
+    const query = normalizedSearch(routeSearch);
+    if (!query) return routes;
+    return routes.filter((route) =>
+      [
+        route.name,
+        `${route.name}.${baseDomain}`,
+        route.scheme,
+        String(route.port),
+        route.observed?.containerName || "",
+        route.observed?.state || "",
+      ].some((value) => value.toLowerCase().includes(query)),
+    );
+  }
+
+  function filteredContainers() {
+    const query = normalizedSearch(containerSearch);
+    if (!query) return containers;
+    return containers.filter((container) =>
+      [
+        container.name,
+        container.image,
+        container.status,
+        container.composeProject || "",
+        container.composeService || "",
+        ...container.exposedPorts.map(String),
+      ].some((value) => value.toLowerCase().includes(query)),
     );
   }
 
   function edit(route: Route) {
+    activeTab = "routes";
     editing = route;
     selected =
       containers.find((container) => matches(route.selector, container)) || null;
@@ -277,11 +315,37 @@
     routePort = route.port;
     routeScheme = route.scheme;
     notice = "";
+    commandCopied = false;
+    initialEditorState = editorState();
+    window.setTimeout(() => drawerFirstInput?.focus(), 0);
   }
 
-  function closeEditor() {
+  function editorState() {
+    return JSON.stringify({
+      name: routeName,
+      port: Number(routePort),
+      scheme: routeScheme,
+    });
+  }
+
+  function closeEditor(force = false) {
+    if (!force && initialEditorState && editorState() !== initialEditorState) {
+      void requestDiscard();
+      return;
+    }
     selected = null;
     editing = null;
+    initialEditorState = "";
+    discardEditorOpen = false;
+    commandCopied = false;
+  }
+
+  function showTab(tab: ActiveTab) {
+    if (activeTab === tab) return;
+    closeEditor();
+    closeDiagnostics();
+    openRouteMenuId = null;
+    activeTab = tab;
   }
 
   function matches(selector: Selector, container: Container) {
@@ -388,6 +452,76 @@
     return `docklane route add ${routeName} --container ${selected.id.slice(0, 12)} --port ${routePort} --scheme ${routeScheme}`;
   }
 
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(commandFor());
+      commandCopied = true;
+      window.setTimeout(() => (commandCopied = false), 1800);
+    } catch {
+      error = "Clipboard access was unavailable";
+    }
+  }
+
+  function setRoutePending(routeId: number, pending: boolean) {
+    const next = new Set(pendingRouteIds);
+    if (pending) next.add(routeId);
+    else next.delete(routeId);
+    pendingRouteIds = next;
+  }
+
+  function readyRouteCount() {
+    return routes.filter((route) => readinessFor(route).ready).length;
+  }
+
+  function publishingRouteCount() {
+    return routes.filter((route) =>
+      ["reconciling", "publishing", "verifying"].includes(
+        readinessFor(route).state,
+      ),
+    ).length;
+  }
+
+  function attentionRouteCount() {
+    return routes.filter((route) =>
+      ["error", "unresolved", "ambiguous"].includes(
+        readinessFor(route).state,
+      ),
+    ).length;
+  }
+
+  function handleModalKeydown(event: KeyboardEvent) {
+    if (event.key !== "Tab") return;
+    const modal = event.currentTarget as HTMLElement;
+    const focusable = Array.from(
+      modal.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]',
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  async function requestDelete(route: Route) {
+    openRouteMenuId = null;
+    deleteCandidate = route;
+    await tick();
+    deleteCancelButton?.focus();
+  }
+
+  async function requestDiscard() {
+    discardEditorOpen = true;
+    await tick();
+    discardCancelButton?.focus();
+  }
+
   function writableRoute(route: Route, enabled = route.enabled) {
     return {
       revision: route.revision,
@@ -427,9 +561,12 @@
       const payload = await response.json();
       if (!response.ok)
         throw new Error(payload.error || `Save failed (${response.status})`);
+      highlightedRouteId = payload.id || routeId || null;
       notice = `${routeId ? "Updated" : "Created"} ${routeName}.${baseDomain} · publishing route…`;
-      closeEditor();
+      closeEditor(true);
+      activeTab = "routes";
       await refresh(false);
+      window.setTimeout(() => (highlightedRouteId = null), 3200);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Route save failed";
     } finally {
@@ -439,38 +576,54 @@
 
   async function toggle(route: Route) {
     error = "";
-    const response = await fetch(`/api/v1/routes/${route.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(writableRoute(route, !route.enabled)),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      error = payload.error || `Update failed (${response.status})`;
-      return;
+    openRouteMenuId = null;
+    setRoutePending(route.id, true);
+    try {
+      const response = await fetch(`/api/v1/routes/${route.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(writableRoute(route, !route.enabled)),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        error = payload.error || `Update failed (${response.status})`;
+        return;
+      }
+      notice = `${route.enabled ? "Disabled" : "Enabled"} ${route.name}`;
+      await refresh(false);
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : "Route update failed";
+    } finally {
+      setRoutePending(route.id, false);
     }
-    notice = `${route.enabled ? "Disabled" : "Enabled"} ${route.name}`;
-    await refresh(false);
   }
 
   async function remove(route: Route) {
-    if (!confirm(`Delete the route ${route.name}.${baseDomain}?`)) return;
     error = "";
-    const response = await fetch(`/api/v1/routes/${route.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      const payload = await response.json();
-      error = payload.error || `Delete failed (${response.status})`;
-      return;
+    setRoutePending(route.id, true);
+    try {
+      const response = await fetch(`/api/v1/routes/${route.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = await response.json();
+        error = payload.error || `Delete failed (${response.status})`;
+        return;
+      }
+      if (editing?.id === route.id) closeEditor(true);
+      if (diagnosticRoute?.id === route.id) closeDiagnostics();
+      notice = `Deleted ${route.name}.${baseDomain}`;
+      deleteCandidate = null;
+      await refresh(false);
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : "Route deletion failed";
+    } finally {
+      setRoutePending(route.id, false);
     }
-    if (editing?.id === route.id) closeEditor();
-    if (diagnosticRoute?.id === route.id) closeDiagnostics();
-    notice = `Deleted ${route.name}.${baseDomain}`;
-    await refresh(false);
   }
 
   async function diagnose(route: Route) {
+    activeTab = "routes";
     diagnosticRoute = route;
     diagnosticReport = null;
     diagnosticError = "";
@@ -636,12 +789,42 @@
   <title>Docklane · Local container gateway</title>
 </svelte:head>
 
+<svelte:body class:modal-open={!!selected || !!editing || !!deleteCandidate || discardEditorOpen} />
+
 <main>
-  <nav class="product-nav" aria-label="Product">
-    <a class="brand" href="/" aria-label="Docklane home">
+  <nav class="product-nav" aria-label="Primary navigation">
+    <a
+      class="brand"
+      href="/"
+      aria-label="Docklane routes"
+      onclick={(event) => {
+        event.preventDefault();
+        showTab("routes");
+      }}
+    >
       <img src={logoUrl} alt="" />
       <span>Docklane</span>
     </a>
+    <div class="product-tabs">
+      <button
+        type="button"
+        class:active={activeTab === "routes"}
+        aria-current={activeTab === "routes" ? "page" : undefined}
+        onclick={() => showTab("routes")}
+      >
+        Routes
+        <span>{routes.length}</span>
+      </button>
+      <button
+        type="button"
+        class:active={activeTab === "containers"}
+        aria-current={activeTab === "containers" ? "page" : undefined}
+        onclick={() => showTab("containers")}
+      >
+        Containers
+        <span>{containers.length}</span>
+      </button>
+    </div>
     <div class="product-nav-meta">
       <span class="local-only">Local controller</span>
       <button
@@ -651,143 +834,123 @@
         title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
         onclick={() => applyTheme(theme === "dark" ? "light" : "dark")}
       >
-        {theme === "dark" ? "☀" : "☾"}
+        {#if theme === "dark"}
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.5"></circle>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+          </svg>
+        {:else}
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 15.2A8.3 8.3 0 0 1 8.8 4a8.3 8.3 0 1 0 11.2 11.2Z"></path>
+          </svg>
+        {/if}
       </button>
     </div>
   </nav>
-  <header>
-    <div>
-      <p class="eyebrow">LOCAL CONTAINER GATEWAY</p>
-      <h1>Your containers deserve names, not port numbers.</h1>
-      <p class="lede">
-        Discover HTTP services, assign a local domain, and let Traefik handle
-        the route.
-      </p>
-    </div>
-    <button class="refresh-action" onclick={() => refresh()}>Refresh Docker</button>
-  </header>
 
   {#if notice}
-    <div class="notice">{notice}</div>
+    <div class="toast success" role="status" aria-live="polite">
+      <span>{notice}</span>
+      <button type="button" aria-label="Dismiss notification" onclick={() => (notice = "")}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
   {/if}
   {#if error}
-    <div class="notice error">{error}</div>
+    <div class="toast error" role="alert" aria-live="assertive">
+      <span>{error}</span>
+      <button type="button" aria-label="Dismiss error" onclick={() => (error = "")}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
   {/if}
 
-  {#if selected || editing}
-    <section class="route-editor" aria-labelledby="route-editor-title">
+  {#if activeTab === "routes"}
+  {#if !diagnosticRoute}
+  <section aria-labelledby="routes-title">
+    <header class="page-header">
       <div>
-        <p class="eyebrow">{editing ? "EDIT ROUTE" : "NEW ROUTE"}</p>
-        <h2 id="route-editor-title">
-          {editing?.name || selected?.composeService || selected?.name}
-        </h2>
-        <p>
-          Configure the workload's internal listener. No application host port
-          is required.
-        </p>
+        <p class="eyebrow">LOCAL ROUTING</p>
+        <h1 id="routes-title">Routes</h1>
+        <p>Stable HTTPS names for local container workloads.</p>
       </div>
-      <form
-        onsubmit={(event) => {
-          event.preventDefault();
-          saveRoute();
-        }}
-      >
-        <label>
-          Local name
-          <div class="domain-input">
-            <input
-              bind:value={routeName}
-              required
-              pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
-            />
-            <span>.{baseDomain}</span>
-          </div>
-          {#if nameConflict()}
-            <small class="field-hint error">
-              This hostname already belongs to route #{nameConflict()?.id}.
-              Choose another local name.
-            </small>
-          {:else if !editing}
-            <small class="field-hint">
-              Available hostname selected automatically.
-            </small>
+      <button class="primary-action" type="button" onclick={() => showTab("containers")}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        New route
+      </button>
+    </header>
+
+    <div class="route-summary" aria-label="Route status summary">
+      <div><strong>{routes.length}</strong><span>Total routes</span></div>
+      <div><i class="summary-dot ready"></i><strong>{readyRouteCount()}</strong><span>Ready</span></div>
+      <div><i class="summary-dot publishing"></i><strong>{publishingRouteCount()}</strong><span>Publishing</span></div>
+      <div><i class="summary-dot attention"></i><strong>{attentionRouteCount()}</strong><span>Needs attention</span></div>
+    </div>
+
+    <div class="list-toolbar">
+      <div class="title-with-count">
+        <h2>All routes</h2>
+        <span>
+          {#if routeSearch}
+            {filteredRoutes().length} of {routes.length}
+          {:else}
+            syncs every {reconcileEverySeconds}s
+          {/if}
+        </span>
+      </div>
+      <div class="panel-toolbar">
+        <label class="search-field">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
+          <input
+            type="search"
+            bind:value={routeSearch}
+            placeholder="Search routes"
+            aria-label="Search routes"
+          />
+          {#if routeSearch}
+            <button class="clear-search" type="button" aria-label="Clear route search" onclick={() => (routeSearch = "")}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>
+            </button>
           {/if}
         </label>
-        <div class="field-row">
-          <label>
-            Container port
-            <input
-              type="number"
-              min="1"
-              max="65535"
-              list="declared-container-ports"
-              bind:value={routePort}
-              onchange={() => {
-                if (!editing) routeScheme = recommendedScheme(Number(routePort));
-              }}
-              required
-            />
-            {#if selected}
-              <datalist id="declared-container-ports">
-                {#each uniquePorts(selected.exposedPorts) as port}
-                  <option value={port}></option>
-                {/each}
-              </datalist>
-              <small
-                class:error={routePort === 0 || invalidSelectedPort()}
-                class="field-hint"
-              >
-                {portRecommendation()}
-              </small>
-            {/if}
-          </label>
-          <label>
-            Upstream scheme
-            <select bind:value={routeScheme}>
-              <option value="http">HTTP</option>
-              <option value="https">HTTPS</option>
-            </select>
-          </label>
-        </div>
-        <div class="form-actions">
-          <button
-            type="submit"
-            disabled={saving ||
-              !!nameConflict() ||
-              routePort < 1 ||
-              invalidSelectedPort()}
-          >
-            {saving ? "Saving…" : editing ? "Save changes" : "Create route"}
-          </button>
-          <button type="button" class="secondary" onclick={closeEditor}>
-            Cancel
-          </button>
-        </div>
-        <code>{commandFor()}</code>
-      </form>
-    </section>
-  {/if}
-
-  <section aria-labelledby="routes-title">
-    <div class="section-title">
-      <h2 id="routes-title">Routes</h2>
-      <span>{routes.length} saved · reconciles every {reconcileEverySeconds}s</span>
+        <button class="icon-button secondary" type="button" aria-label="Refresh routes" title="Refresh routes" onclick={() => refresh()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"></path><path d="M6.1 9A7 7 0 0 1 18.7 7.3L20 11M4 13l1.3 3.7A7 7 0 0 0 17.9 15"></path></svg>
+        </button>
+      </div>
     </div>
     {#if routes.length === 0}
-      <div class="empty compact">No routes yet. Choose a container below.</div>
+      <div class="empty">
+        <span class="empty-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h8"></path></svg>
+        </span>
+        <h3>No routes yet</h3>
+        <p>Choose a running container and give it a stable local hostname.</p>
+        <button type="button" onclick={() => showTab("containers")}>Browse containers</button>
+      </div>
+    {:else if filteredRoutes().length === 0}
+      <div class="empty compact">
+        No routes match “{routeSearch}”.
+      </div>
     {:else}
       <div class="route-list">
-        {#each routes as route}
+        <div class="route-list-head" aria-hidden="true">
+          <span>Status</span><span>Hostname</span><span>Workload</span><span>Upstream</span><span></span>
+        </div>
+        {#each filteredRoutes() as route}
           {@const availability = readinessFor(route)}
-          <div class="route-row">
-            <span
-              class={`route-state ${availability.state}`}
-              title={availability.message}
-            ></span>
+          <div class:highlighted={highlightedRouteId === route.id} class="route-row">
+            <div class="route-status-cell">
+              <span
+                class={`route-state ${availability.state}`}
+                title={availability.message}
+              ></span>
+              <span class="mobile-label">{availability.state}</span>
+            </div>
             <div class="route-name">
               {#if availability.ready}
-                <a href={`https://${route.name}.${baseDomain}`} target="_blank">
+                <a href={`https://${route.name}.${baseDomain}`} target="_blank" rel="noreferrer">
                   {route.name}.{baseDomain}
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8"></path><path d="M18 13v5H6V6h5"></path></svg>
                 </a>
               {:else}
                 <span
@@ -799,35 +962,60 @@
               {/if}
               <small>
                 {availability.state}
-                {#if route.observed?.containerName}
-                  · {route.observed.containerName}
-                {/if}
                 {#if !availability.ready}
                   · {availability.message}
                 {/if}
               </small>
             </div>
-            <code>{route.scheme} · :{route.port}</code>
+            <div class="route-workload">
+              <strong>{route.selector.composeService || route.observed?.containerName || "Container"}</strong>
+              <small>{route.selector.composeProject || route.observed?.containerName || "Direct selector"}</small>
+            </div>
+            <code class="route-upstream">{route.scheme}://:{route.port}</code>
             <div class="route-actions">
               <button class="ghost small" onclick={() => diagnose(route)}>
                 Diagnose
               </button>
-              <button class="ghost small" onclick={() => edit(route)}>Edit</button>
-              <button class="ghost small" onclick={() => toggle(route)}>
-                {route.enabled ? "Disable" : "Enable"}
+              <button
+                class="icon-button ghost small"
+                type="button"
+                aria-label={`More actions for ${route.name}`}
+                aria-expanded={openRouteMenuId === route.id}
+                onclick={() => (openRouteMenuId = openRouteMenuId === route.id ? null : route.id)}
+                disabled={pendingRouteIds.has(route.id)}
+              >
+                {#if pendingRouteIds.has(route.id)}
+                  <span class="spinner"></span>
+                {:else}
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg>
+                {/if}
               </button>
-              <button class="ghost danger small" onclick={() => remove(route)}>
-                Delete
-              </button>
+              {#if openRouteMenuId === route.id}
+                <div class="action-menu">
+                  <button type="button" onclick={() => { openRouteMenuId = null; edit(route); }}>Edit route</button>
+                  <button type="button" onclick={() => toggle(route)}>
+                    {route.enabled ? "Disable route" : "Enable route"}
+                  </button>
+                  <span></span>
+                  <button class="danger" type="button" onclick={() => requestDelete(route)}>
+                    Delete route
+                  </button>
+                </div>
+              {/if}
             </div>
           </div>
         {/each}
       </div>
     {/if}
   </section>
+  {/if}
 
   {#if diagnosticRoute}
     <section class="diagnostics" aria-labelledby="diagnostics-title">
+      <button class="back-link" type="button" onclick={closeDiagnostics}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+        Back to routes
+      </button>
       <div class="diagnostics-header">
         <div>
           <p class="eyebrow">ROUTE DIAGNOSTICS</p>
@@ -848,7 +1036,6 @@
             {diagnosticLoading ? "Checking…" : "Refresh checks"}
           </button>
           <button class="ghost small" onclick={copyDiagnostics}>Copy JSON</button>
-          <button class="ghost small" onclick={closeDiagnostics}>Close</button>
         </div>
       </div>
 
@@ -947,32 +1134,45 @@
     </section>
   {/if}
 
+  {:else if activeTab === "containers"}
   <section aria-labelledby="containers-title">
-    <div class="section-title">
-      <div class="title-with-count">
-        <h2 id="containers-title">Containers</h2>
-        <span>{containers.length} discovered</span>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">DOCKER DISCOVERY</p>
+        <h1 id="containers-title">Containers</h1>
+        <p>Running workloads available to the local gateway.</p>
       </div>
-      <div class="container-toolbar">
+      <button class="secondary" type="button" onclick={() => refresh()}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"></path><path d="M6.1 9A7 7 0 0 1 18.7 7.3L20 11M4 13l1.3 3.7A7 7 0 0 0 17.9 15"></path></svg>
+        Refresh Docker
+      </button>
+    </header>
+    <div class="list-toolbar">
+      <div class="title-with-count">
+        <h2>Running workloads</h2>
         <span>
-          {#if selectedDiscoveryContainer()}
-            {selectedDiscoveryContainer()?.composeService ||
-              selectedDiscoveryContainer()?.name}
-            selected
+          {#if containerSearch}
+            {filteredContainers().length} of {containers.length}
           {:else}
-            Select a workload to create a route
+            {containers.length} discovered
           {/if}
         </span>
-        <button
-          type="button"
-          disabled={!selectedDiscoveryContainer()}
-          onclick={() => {
-            const container = selectedDiscoveryContainer();
-            if (container) choose(container);
-          }}
-        >
-          Create route
-        </button>
+      </div>
+      <div class="container-toolbar">
+        <label class="search-field">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
+          <input
+            type="search"
+            bind:value={containerSearch}
+            placeholder="Search containers"
+            aria-label="Search containers"
+          />
+          {#if containerSearch}
+            <button class="clear-search" type="button" aria-label="Clear container search" onclick={() => (containerSearch = "")}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>
+            </button>
+          {/if}
+        </label>
       </div>
     </div>
 
@@ -980,36 +1180,29 @@
       <div class="empty">Inspecting Docker…</div>
     {:else if containers.length === 0}
       <div class="empty">No running containers found.</div>
+    {:else if filteredContainers().length === 0}
+      <div class="empty compact">
+        No containers match “{containerSearch}”.
+      </div>
     {:else}
       <div class="container-table-scroll">
         <div class="container-table">
           <div class="container-table-head" aria-hidden="true">
-            <span></span>
             <span>Workload</span>
             <span class="image-column">Image</span>
             <span>Ports</span>
             <span class="state-column">State</span>
+            <span></span>
           </div>
-          {#each containers as container}
+          {#each filteredContainers() as container}
             {@const managed = container.systemRole === "reverse-proxy"}
-            <label
+            <div
               class:managed
-              class:selected-row={selectedContainerId === container.id}
               class="container-table-row"
               title={managed
                 ? "The active reverse proxy is managed by Docklane and cannot route to itself."
-                : `Select ${container.composeService || container.name}`}
+                : undefined}
             >
-              <span class="select-cell">
-                <input
-                  type="radio"
-                  name="route-container"
-                  value={container.id}
-                  bind:group={selectedContainerId}
-                  disabled={managed}
-                  aria-label={`Select ${container.composeService || container.name}`}
-                />
-              </span>
               <span class="workload-cell">
                 <strong>{container.composeService || container.name}</strong>
                 <small>{container.name}</small>
@@ -1032,10 +1225,208 @@
                   <span>{container.status}</span>
                 {/if}
               </span>
-            </label>
+              <span class="container-action">
+                {#if managed}
+                  <span class="managed-note">System workload</span>
+                {:else}
+                  <button class="secondary small" type="button" onclick={() => choose(container)}>
+                    Create route
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                  </button>
+                {/if}
+              </span>
+            </div>
           {/each}
         </div>
       </div>
     {/if}
   </section>
+  {/if}
 </main>
+
+{#if selected || editing}
+  <div class="drawer-layer">
+    <button class="drawer-backdrop" type="button" aria-label="Close route editor" onclick={() => closeEditor()}></button>
+    <div
+      class="route-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="route-editor-title"
+      tabindex="-1"
+      onkeydown={(event) => {
+        if (event.key === "Escape") closeEditor();
+        handleModalKeydown(event);
+      }}
+    >
+      <div class="drawer-header">
+        <div>
+          <p class="eyebrow">{editing ? "EDIT ROUTE" : "NEW ROUTE"}</p>
+          <h2 id="route-editor-title">
+            {editing ? `${editing.name}.${baseDomain}` : selected?.composeService || selected?.name}
+          </h2>
+        </div>
+        <button class="icon-button ghost" type="button" aria-label="Close route editor" onclick={() => closeEditor()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+        </button>
+      </div>
+
+      <div class="drawer-workload">
+        <span>WORKLOAD</span>
+        <strong>{selected?.composeService || selected?.name || editing?.selector.composeService || "Container"}</strong>
+        <small>
+          {#if selected?.composeProject}
+            {selected.composeProject} / {selected.name}
+          {:else if selected}
+            {selected.name}
+          {:else}
+            Stored route selector
+          {/if}
+        </small>
+      </div>
+
+      <form
+        class="drawer-form"
+        onsubmit={(event) => {
+          event.preventDefault();
+          saveRoute();
+        }}
+      >
+        <label>
+          Local hostname
+          <div class="domain-input">
+            <input
+              bind:this={drawerFirstInput}
+              bind:value={routeName}
+              required
+              pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+              aria-describedby="route-name-hint"
+            />
+            <span>.{baseDomain}</span>
+          </div>
+          {#if nameConflict()}
+            <small id="route-name-hint" class="field-hint error">
+              Already used by route #{nameConflict()?.id}. Choose another name.
+            </small>
+          {:else}
+            <small id="route-name-hint" class="field-hint">
+              Browser URL: https://{routeName || "name"}.{baseDomain}
+            </small>
+          {/if}
+        </label>
+
+        <div class="field-row">
+          <label>
+            Internal port
+            <input
+              type="number"
+              min="1"
+              max="65535"
+              list="declared-container-ports"
+              bind:value={routePort}
+              onchange={() => {
+                if (!editing) routeScheme = recommendedScheme(Number(routePort));
+              }}
+              required
+            />
+            {#if selected}
+              <datalist id="declared-container-ports">
+                {#each uniquePorts(selected.exposedPorts) as port}
+                  <option value={port}></option>
+                {/each}
+              </datalist>
+            {/if}
+          </label>
+          <label>
+            Protocol
+            <select bind:value={routeScheme}>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+            </select>
+          </label>
+        </div>
+        {#if selected}
+          <small class:error={routePort === 0 || invalidSelectedPort()} class="field-hint port-hint">
+            {portRecommendation()}
+          </small>
+        {:else}
+          <small class="field-hint port-hint">
+            This is the protocol and port Traefik uses inside Docker. Browser access remains HTTPS.
+          </small>
+        {/if}
+
+        <div class="command-preview">
+          <div>
+            <span>EQUIVALENT CLI</span>
+            <code>{commandFor()}</code>
+          </div>
+          <button class="icon-button ghost" type="button" aria-label="Copy CLI command" title="Copy CLI command" onclick={copyCommand}>
+            {#if commandCopied}
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>
+            {:else}
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+            {/if}
+          </button>
+        </div>
+
+        <div class="drawer-actions">
+          <button type="button" class="secondary" onclick={() => closeEditor()}>Cancel</button>
+          <button
+            type="submit"
+            disabled={saving || !!nameConflict() || routePort < 1 || invalidSelectedPort()}
+          >
+            {saving ? "Saving…" : editing ? "Save changes" : "Create route"}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+{#if deleteCandidate}
+  <div
+    class="modal-layer"
+    role="presentation"
+    onkeydown={(event) => {
+      if (event.key === "Escape") deleteCandidate = null;
+      handleModalKeydown(event);
+    }}
+  >
+    <button class="modal-backdrop" type="button" aria-label="Cancel deletion" onclick={() => (deleteCandidate = null)}></button>
+    <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description">
+      <span class="danger-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5M12 17h.01"></path><path d="M10.3 4.9 3.6 17a2 2 0 0 0 1.8 3h13.2a2 2 0 0 0 1.8-3L13.7 4.9a2 2 0 0 0-3.4 0Z"></path></svg>
+      </span>
+      <h2 id="delete-title">Delete route?</h2>
+      <p id="delete-description">
+        <strong>{deleteCandidate.name}.{baseDomain}</strong> will stop resolving through Docklane. The container is not changed.
+      </p>
+      <div class="confirm-actions">
+        <button bind:this={deleteCancelButton} class="secondary" type="button" onclick={() => (deleteCandidate = null)}>Cancel</button>
+        <button class="danger-solid" type="button" disabled={pendingRouteIds.has(deleteCandidate.id)} onclick={() => remove(deleteCandidate as Route)}>
+          {pendingRouteIds.has(deleteCandidate.id) ? "Deleting…" : "Delete route"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if discardEditorOpen}
+  <div
+    class="modal-layer"
+    role="presentation"
+    onkeydown={(event) => {
+      if (event.key === "Escape") discardEditorOpen = false;
+      handleModalKeydown(event);
+    }}
+  >
+    <button class="modal-backdrop" type="button" aria-label="Keep editing" onclick={() => (discardEditorOpen = false)}></button>
+    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title">
+      <h2 id="discard-title">Discard unsaved changes?</h2>
+      <p>Your route configuration has changed. Closing now will lose those edits.</p>
+      <div class="confirm-actions">
+        <button bind:this={discardCancelButton} class="secondary" type="button" onclick={() => (discardEditorOpen = false)}>Keep editing</button>
+        <button class="danger-solid" type="button" onclick={() => closeEditor(true)}>Discard changes</button>
+      </div>
+    </div>
+  </div>
+{/if}
