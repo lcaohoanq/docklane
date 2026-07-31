@@ -21,12 +21,12 @@ cleanup() {
 
   if [[ "$dev_stack_started" == true ]]; then
     echo "Stopping the development controller"
-    if ! "${dev_compose[@]}" down; then
+    if ! "${dev_compose[@]}" rm --stop --force docklane; then
       echo "Warning: could not fully stop the development controller" >&2
     fi
 
     echo "Restoring the integrated controller on http://127.0.0.1:4646"
-    if ! docker compose up -d; then
+    if ! docker compose up -d docklane; then
       echo "Error: could not restore the integrated controller" >&2
       status=1
     fi
