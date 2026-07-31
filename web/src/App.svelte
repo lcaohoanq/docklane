@@ -331,18 +331,19 @@
   function closeEditor(force = false) {
     if (!force && initialEditorState && editorState() !== initialEditorState) {
       void requestDiscard();
-      return;
+      return false;
     }
     selected = null;
     editing = null;
     initialEditorState = "";
     discardEditorOpen = false;
     commandCopied = false;
+    return true;
   }
 
   function showTab(tab: ActiveTab) {
     if (activeTab === tab) return;
-    closeEditor();
+    if (!closeEditor()) return;
     closeDiagnostics();
     openRouteMenuId = null;
     activeTab = tab;
