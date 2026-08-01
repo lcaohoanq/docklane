@@ -1,0 +1,27 @@
+services:
+  docklane:
+    build: !reset null
+    image: golang:1.26-alpine
+    working_dir: /workspace
+    entrypoint: []
+    command:
+      - go
+      - tool
+      - air
+      - -c
+      - /workspace/.air.docker.toml
+    restart: "no"
+    read_only: false
+    environment:
+      GOTOOLCHAIN: local
+      GOTMPDIR: /air
+    volumes:
+      - .:/workspace
+      - docklane-dev-air:/air
+      - docklane-dev-go-mod:/go/pkg/mod
+      - docklane-dev-go-build:/root/.cache/go-build
+
+volumes:
+  docklane-dev-air:
+  docklane-dev-go-mod:
+  docklane-dev-go-build:
