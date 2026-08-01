@@ -7,7 +7,24 @@ sidebar:
 
 This guide installs `v0.1.0-alpha.2` on a supported development host.
 
-## Download and verify
+## Install on Arch Linux from the AUR
+
+Install the release binary and its host dependencies with an AUR helper:
+
+```sh
+yay -S docklane-bin
+sudo systemctl enable --now docker systemd-resolved
+docklane version
+```
+
+The AUR package installs the `docklane` command and required packages. It does
+not apply Docklane's DNS, certificate, Traefik, or container configuration.
+Continue to [Review and install](#review-and-install) to complete setup.
+
+## Install from the release archive
+
+Use the portable release archive on Debian, or on Arch Linux when you do not
+want to use an AUR helper:
 
 ```sh
 set -euo pipefail
@@ -29,6 +46,7 @@ grep " ${ARCHIVE}$" checksums.txt | sha256sum --check --strict
 tar -xzf "${ARCHIVE}"
 cd "docklane_${RELEASE_VERSION}_linux_${ARCH}"
 ./docklane version
+sudo install -m 0755 docklane /usr/local/bin/docklane
 ```
 
 Never install an archive when its checksum fails.
@@ -36,12 +54,13 @@ Never install an archive when its checksum fails.
 ## Review and install
 
 ```sh
-sudo install -m 0755 docklane /usr/local/bin/docklane
-docklane preflight
-docklane install --dry-run
+sudo docklane preflight
+sudo docklane install --dry-run
 ```
 
-The dry run returns a plan token. Apply only the plan you just reviewed:
+Running the review commands with `sudo` gives Docklane access to the Docker
+socket without adding your account to the `docker` group. The dry run returns
+a plan token. Apply only the plan you just reviewed:
 
 ```sh
 sudo docklane install --token 'COPY_THE_REVIEWED_TOKEN'
