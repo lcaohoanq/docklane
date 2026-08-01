@@ -93,6 +93,7 @@
   let baseDomain = "docker.home.arpa";
   let reconcileEverySeconds = 5;
   let loading = true;
+  let loadError = "";
   let error = "";
   let notice = "";
   let activeTab: ActiveTab = "routes";
@@ -104,16 +105,17 @@
   let routePort = 80;
   let routeScheme = "http";
   let saving = false;
+  let editorAttempted = false;
+  let editorError = "";
   let routeReadiness: Record<number, RouteReadiness> = {};
   const readinessPolling = new Map<number, number>();
   let mounted = true;
-  let theme: "light" | "dark" = "dark";
+  let theme: "light" | "forest" = "forest";
   let diagnosticRoute: Route | null = null;
   let diagnosticReport: DiagnosticReport | null = null;
   let diagnosticLoading = false;
   let diagnosticError = "";
   let diagnosticHistory: HealthSnapshot[] = [];
-  let historyRetention = 288;
   let historyIntervalMs = 300000;
   let historyError = "";
   let initialEditorState = "";
@@ -135,7 +137,10 @@
   ];
 
   async function refresh(showLoading = true) {
-    if (showLoading) loading = true;
+    if (showLoading) {
+      loading = true;
+      loadError = "";
+    }
     try {
       const [containersResponse, routesResponse] = await Promise.all([
         fetch("/api/v1/containers"),
@@ -167,9 +172,12 @@
         ),
       );
       for (const route of routes) void ensureReadiness(route);
-      if (!showLoading) error = "";
+      loadError = "";
+      error = "";
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : "Refresh failed";
+      const message = cause instanceof Error ? cause.message : "Refresh failed";
+      loadError = message;
+      error = !showLoading || routes.length > 0 || containers.length > 0 ? message : "";
     } finally {
       if (showLoading) loading = false;
     }
@@ -267,6 +275,8 @@
     routePort = recommendedPort(container.exposedPorts);
     routeScheme = recommendedScheme(routePort);
     notice = "";
+    editorAttempted = false;
+    editorError = "";
     commandCopied = false;
     initialEditorState = editorState();
     window.setTimeout(() => drawerFirstInput?.focus(), 0);
@@ -315,6 +325,8 @@
     routePort = route.port;
     routeScheme = route.scheme;
     notice = "";
+    editorAttempted = false;
+    editorError = "";
     commandCopied = false;
     initialEditorState = editorState();
     window.setTimeout(() => drawerFirstInput?.focus(), 0);
@@ -338,6 +350,8 @@
     initialEditorState = "";
     discardEditorOpen = false;
     commandCopied = false;
+    editorAttempted = false;
+    editorError = "";
     return true;
   }
 
@@ -400,6 +414,16 @@
     return routes.find(
       (route) => route.name === routeName && route.id !== editing?.id,
     );
+  }
+
+  function routeNameIssue() {
+    if (!routeName) return "Enter a local hostname.";
+    if (routeName.length > 63) return "Use 63 characters or fewer.";
+    if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(routeName)) {
+      return "Use lowercase letters, numbers, and single hyphens.";
+    }
+    if (nameConflict()) return `Already used by route #${nameConflict()?.id}.`;
+    return "";
   }
 
   function portRecommendation() {
@@ -538,6 +562,13 @@
 
   async function saveRoute() {
     if (!selected && !editing) return;
+    editorAttempted = true;
+    editorError = "";
+    const nameIssue = routeNameIssue();
+    if (nameIssue || routePort < 1 || invalidSelectedPort()) {
+      if (nameIssue) drawerFirstInput?.focus();
+      return;
+    }
     saving = true;
     error = "";
     notice = "";
@@ -571,7 +602,7 @@
       await refresh(false);
       window.setTimeout(() => (highlightedRouteId = null), 3200);
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : "Route save failed";
+      editorError = cause instanceof Error ? cause.message : "Route save failed";
     } finally {
       saving = false;
     }
@@ -635,7 +666,7 @@
     diagnosticLoading = true;
     browserProbe = {
       status: "pending",
-      summary: "Connecting from this browser…",
+      summary: "Testing browser access…",
     };
     await Promise.allSettled([
       loadControllerDiagnostics(route).then(() => loadDiagnosticHistory(route)),
@@ -674,14 +705,12 @@
       });
       browserProbe = {
         status: "pass",
-        summary: "Browser accepted HTTPS and reached the route",
-        detail:
-          "This opaque probe verifies connection and certificate acceptance; application status remains controller-observed.",
+        summary: "Route opens in this browser",
       };
     } catch (cause) {
       browserProbe = {
         status: "fail",
-        summary: "Browser could not reach the HTTPS route",
+        summary: "This browser cannot open the route",
         detail:
           cause instanceof Error
             ? cause.message
@@ -704,7 +733,6 @@
           payload.error || `History loading failed (${response.status})`,
         );
       diagnosticHistory = payload.snapshots;
-      historyRetention = payload.retention;
       historyIntervalMs = payload.sampleIntervalMs;
     } catch (cause) {
       historyError =
@@ -720,6 +748,26 @@
       groups.set(check.layer, entries);
     }
     return Array.from(groups, ([layer, entries]) => ({ layer, entries }));
+  }
+
+  function actionableChecks() {
+    return diagnosticReport?.checks.filter((check) => check.status !== "pass") || [];
+  }
+
+  function statusLabel(status: BrowserProbe["status"] | DiagnosticStatus) {
+    if (status === "pending") return "Checking";
+    if (status === "idle") return "Not checked";
+    if (status === "pass") return "Working";
+    if (status === "warn") return "Attention";
+    return "Problem";
+  }
+
+  function controllerSummary() {
+    if (diagnosticLoading && !diagnosticReport) return "Checking the route…";
+    if (!diagnosticReport) return "Controller result unavailable";
+    if (diagnosticReport.status === "pass") return "Docklane can reach the container";
+    if (diagnosticReport.status === "warn") return "The route works, with warnings";
+    return "Docklane found a routing problem";
   }
 
   function chronologicalHistory() {
@@ -765,19 +813,18 @@
     if (diagnosticRoute) diagnose(diagnosticRoute);
   }
 
-  function applyTheme(next: "light" | "dark") {
+  function applyTheme(next: "light" | "forest") {
     theme = next;
     document.documentElement.dataset.theme = next;
     localStorage.setItem("docklane-theme", next);
     document
       .querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", next === "dark" ? "#0a100d" : "#f4f7f5");
+      ?.setAttribute("content", next === "forest" ? "#171212" : "#ffffff");
   }
 
   onMount(() => {
     mounted = true;
-    theme =
-      document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    theme = document.documentElement.dataset.theme === "light" ? "light" : "forest";
     applyTheme(theme);
     refresh();
     const timer = window.setInterval(() => refresh(false), 5000);
@@ -811,6 +858,7 @@
     <div class="product-tabs">
       <button
         type="button"
+        class="btn btn-sm"
         class:active={activeTab === "routes"}
         aria-current={activeTab === "routes" ? "page" : undefined}
         onclick={() => showTab("routes")}
@@ -820,6 +868,7 @@
       </button>
       <button
         type="button"
+        class="btn btn-sm"
         class:active={activeTab === "containers"}
         aria-current={activeTab === "containers" ? "page" : undefined}
         onclick={() => showTab("containers")}
@@ -829,15 +878,24 @@
       </button>
     </div>
     <div class="product-nav-meta">
-      <span class="local-only">Local controller</span>
-      <button
-        class="theme-toggle"
-        type="button"
-        aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-        title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-        onclick={() => applyTheme(theme === "dark" ? "light" : "dark")}
+      <a
+        class="local-only controller-docs"
+        href="https://lcaohoanq.github.io/docklane/docs/getting-started/quick-start/"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Open Docklane quick start documentation"
       >
-        {#if theme === "dark"}
+        Local controller
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8"></path><path d="M18 13v5H6V6h5"></path></svg>
+      </a>
+      <button
+        class="btn btn-circle btn-ghost theme-toggle"
+        type="button"
+        aria-label={`Switch to ${theme === "forest" ? "light" : "dark"} theme`}
+        title={`Switch to ${theme === "forest" ? "light" : "dark"} theme`}
+        onclick={() => applyTheme(theme === "forest" ? "light" : "forest")}
+      >
+        {#if theme === "forest"}
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="3.5"></circle>
             <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
@@ -852,20 +910,20 @@
   </nav>
 
   {#if notice}
-    <div class="toast success" role="status" aria-live="polite">
+    <div class="toast toast-top toast-center" role="status" aria-live="polite"><div class="alert alert-success">
       <span>{notice}</span>
-      <button type="button" aria-label="Dismiss notification" onclick={() => (notice = "")}>
+      <button class="btn btn-circle btn-ghost btn-sm" type="button" aria-label="Dismiss notification" onclick={() => (notice = "")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
       </button>
-    </div>
+    </div></div>
   {/if}
   {#if error}
-    <div class="toast error" role="alert" aria-live="assertive">
+    <div class="toast toast-top toast-center" role="alert" aria-live="assertive"><div class="alert alert-error">
       <span>{error}</span>
-      <button type="button" aria-label="Dismiss error" onclick={() => (error = "")}>
+      <button class="btn btn-circle btn-ghost btn-sm" type="button" aria-label="Dismiss error" onclick={() => (error = "")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
       </button>
-    </div>
+    </div></div>
   {/if}
 
   {#if activeTab === "routes"}
@@ -877,7 +935,7 @@
         <h1 id="routes-title">Routes</h1>
         <p>Stable HTTPS names for local container workloads.</p>
       </div>
-      <button class="primary-action" type="button" onclick={() => showTab("containers")}>
+      <button class="btn btn-primary primary-action" type="button" onclick={() => showTab("containers")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
         New route
       </button>
@@ -902,7 +960,7 @@
         </span>
       </div>
       <div class="panel-toolbar">
-        <label class="search-field">
+        <label class="input search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
           <input
             type="search"
@@ -911,31 +969,42 @@
             aria-label="Search routes"
           />
           {#if routeSearch}
-            <button class="clear-search" type="button" aria-label="Clear route search" onclick={() => (routeSearch = "")}>
+            <button class="btn btn-circle btn-ghost btn-xs clear-search" type="button" aria-label="Clear route search" onclick={() => (routeSearch = "")}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>
             </button>
           {/if}
         </label>
-        <button class="icon-button secondary" type="button" aria-label="Refresh routes" title="Refresh routes" onclick={() => refresh()}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"></path><path d="M6.1 9A7 7 0 0 1 18.7 7.3L20 11M4 13l1.3 3.7A7 7 0 0 0 17.9 15"></path></svg>
+        <button class="btn btn-square btn-outline icon-button secondary" type="button" aria-label="Refresh routes" title="Refresh routes" onclick={() => refresh()} disabled={loading} aria-busy={loading}>
+          {#if loading}<span class="loading loading-spinner loading-sm"></span>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"></path><path d="M6.1 9A7 7 0 0 1 18.7 7.3L20 11M4 13l1.3 3.7A7 7 0 0 0 17.9 15"></path></svg>{/if}
         </button>
       </div>
     </div>
-    {#if routes.length === 0}
-      <div class="empty">
+    {#if loading && routes.length === 0}
+      <div class="state-panel card bg-base-100" role="status">
+        <span class="loading loading-spinner loading-md" aria-hidden="true"></span>
+        <div><h3>Loading routes</h3><p>Checking the local controller…</p></div>
+      </div>
+    {:else if loadError && routes.length === 0}
+      <div class="state-panel state-error card bg-base-100" role="alert">
+        <span class="state-icon">!</span>
+        <div><h3>Routes are unavailable</h3><p>{loadError}</p></div>
+        <button class="btn btn-outline btn-sm" type="button" onclick={() => refresh()}>Try again</button>
+      </div>
+    {:else if routes.length === 0}
+      <div class="empty card bg-base-200">
         <span class="empty-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h8"></path></svg>
         </span>
         <h3>No routes yet</h3>
         <p>Choose a running container and give it a stable local hostname.</p>
-        <button type="button" onclick={() => showTab("containers")}>Browse containers</button>
+        <button class="btn btn-primary" type="button" onclick={() => showTab("containers")}>Browse containers</button>
       </div>
     {:else if filteredRoutes().length === 0}
       <div class="empty compact">
         No routes match “{routeSearch}”.
       </div>
     {:else}
-      <div class="route-list">
+      <div class="route-list card bg-base-100">
         <div class="route-list-head" aria-hidden="true">
           <span>Status</span><span>Hostname</span><span>Workload</span><span>Upstream</span><span></span>
         </div>
@@ -976,11 +1045,8 @@
             </div>
             <code class="route-upstream">{route.scheme}://:{route.port}</code>
             <div class="route-actions">
-              <button class="ghost small" onclick={() => diagnose(route)}>
-                Diagnose
-              </button>
               <button
-                class="icon-button ghost small"
+                class="btn btn-square btn-ghost btn-sm icon-button ghost small"
                 type="button"
                 aria-label={`More actions for ${route.name}`}
                 aria-expanded={openRouteMenuId === route.id}
@@ -994,13 +1060,14 @@
                 {/if}
               </button>
               {#if openRouteMenuId === route.id}
-                <div class="action-menu">
-                  <button type="button" onclick={() => { openRouteMenuId = null; edit(route); }}>Edit route</button>
-                  <button type="button" onclick={() => toggle(route)}>
+                <div class="menu action-menu">
+                  <button class="btn btn-ghost btn-sm" type="button" onclick={() => { openRouteMenuId = null; diagnose(route); }}>Diagnose route</button>
+                  <button class="btn btn-ghost btn-sm" type="button" onclick={() => { openRouteMenuId = null; edit(route); }}>Edit route</button>
+                  <button class="btn btn-ghost btn-sm" type="button" onclick={() => toggle(route)}>
                     {route.enabled ? "Disable route" : "Enable route"}
                   </button>
                   <span></span>
-                  <button class="danger" type="button" onclick={() => requestDelete(route)}>
+                  <button class="btn btn-ghost btn-sm danger" type="button" onclick={() => requestDelete(route)}>
                     Delete route
                   </button>
                 </div>
@@ -1014,125 +1081,138 @@
   {/if}
 
   {#if diagnosticRoute}
-    <section class="diagnostics" aria-labelledby="diagnostics-title">
-      <button class="back-link" type="button" onclick={closeDiagnostics}>
+    <section class="diagnostics card bg-base-100" aria-labelledby="diagnostics-title">
+      <button class="btn btn-ghost btn-sm back-link" type="button" onclick={closeDiagnostics}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
         Back to routes
       </button>
       <div class="diagnostics-header">
         <div>
-          <p class="eyebrow">ROUTE DIAGNOSTICS</p>
+          <p class="eyebrow">DIAGNOSTICS</p>
           <h2 id="diagnostics-title">
             {diagnosticRoute.name}.{baseDomain}
           </h2>
-          <p>
-            Controller and browser checks are separate because they use
-            different DNS, network, and certificate trust contexts.
-          </p>
+          <p>See whether the route works here and where it needs attention.</p>
         </div>
         <div class="diagnostics-actions">
           <button
-            class="secondary small"
+            class="btn btn-outline btn-sm secondary small"
             onclick={refreshDiagnostics}
             disabled={diagnosticLoading}
           >
             {diagnosticLoading ? "Checking…" : "Refresh checks"}
           </button>
-          <button class="ghost small" onclick={copyDiagnostics}>Copy JSON</button>
+          <button class="btn btn-ghost btn-sm ghost small" onclick={copyDiagnostics}>Copy report</button>
         </div>
       </div>
 
       {#if diagnosticError}
-        <div class="diagnostic-error">{diagnosticError}</div>
+        <div class="alert alert-error diagnostic-error" role="alert">
+          <span>{diagnosticError}</span>
+        </div>
       {/if}
 
-      <div class="perspective browser-perspective">
-        <div>
-          <span class="perspective-label">Browser perspective</span>
+      <div class="diagnostic-overview">
+        <article class="diagnostic-result">
+          <div class="diagnostic-result-heading">
+            <span class="perspective-label">This browser</span>
+            <span class={`status-pill ${browserProbe.status}`}>
+              {statusLabel(browserProbe.status)}
+            </span>
+          </div>
           <strong>{browserProbe.summary}</strong>
-          {#if browserProbe.detail}<small>{browserProbe.detail}</small>{/if}
-        </div>
-        <span class={`status-pill ${browserProbe.status}`}>
-          {browserProbe.status}
-        </span>
+          {#if browserProbe.status === "fail" && browserProbe.detail}
+            <small>{browserProbe.detail}</small>
+          {/if}
+        </article>
+
+        <article class="diagnostic-result">
+          <div class="diagnostic-result-heading">
+            <span class="perspective-label">Docklane</span>
+            <span class={`status-pill ${diagnosticReport?.status || (diagnosticLoading ? "pending" : "fail")}`}>
+              {diagnosticReport
+                ? statusLabel(diagnosticReport.status)
+                : diagnosticLoading
+                  ? "Checking"
+                  : "Unavailable"}
+            </span>
+          </div>
+          <strong>{controllerSummary()}</strong>
+          {#if diagnosticReport}
+            <small>Checked at {new Date(diagnosticReport.generatedAt).toLocaleTimeString()}</small>
+          {/if}
+        </article>
       </div>
 
       {#if diagnosticReport}
-        <div class="diagnostic-summary">
-          <span class={`status-pill ${diagnosticReport.status}`}>
-            {diagnosticReport.status}
-          </span>
-          <span>
-            Controller perspective ·
-            {new Date(diagnosticReport.generatedAt).toLocaleTimeString()}
-          </span>
-        </div>
-        <div class="health-history">
-          <div class="history-heading">
+        {#if actionableChecks().length > 0}
+          <section class="diagnostic-attention" aria-labelledby="attention-title">
             <div>
-              <span class="perspective-label">Controller health history</span>
-              <strong>
-                {diagnosticHistory.length} recent snapshot{diagnosticHistory.length ===
-                1
-                  ? ""
-                  : "s"}
-              </strong>
+              <p class="eyebrow">NEEDS ATTENTION</p>
+              <h3 id="attention-title">{actionableChecks().length} item{actionableChecks().length === 1 ? "" : "s"} to check</h3>
             </div>
-            <small>
-              Every {intervalLabel(historyIntervalMs)} · retains
-              {historyRetention} per route
-            </small>
-          </div>
-          {#if historyError}
-            <p class="history-error">{historyError}</p>
-          {:else if diagnosticHistory.length > 0}
-            <div class="history-timeline" aria-label="Recent controller health">
-              {#each chronologicalHistory() as snapshot}
-                <span
-                  class={`history-point ${snapshot.status}`}
-                  title={`${new Date(snapshot.recordedAt).toLocaleString()} · ${snapshot.status}`}
-                  aria-label={`${snapshot.status} at ${new Date(snapshot.recordedAt).toLocaleString()}`}
-                ></span>
-              {/each}
-            </div>
-            <div class="history-legend">
-              <span><i class="pass"></i>{historyCount("pass")} pass</span>
-              <span><i class="warn"></i>{historyCount("warn")} warning</span>
-              <span><i class="fail"></i>{historyCount("fail")} fail</span>
-            </div>
-          {:else}
-            <p class="history-empty">
-              The first snapshot will appear after this diagnostic completes.
-            </p>
-          {/if}
-        </div>
-        <div class="diagnostic-groups">
-          {#each groupedChecks(diagnosticReport.checks) as group}
-            <div class="diagnostic-group">
-              <h3>{group.layer}</h3>
-              {#each group.entries as check}
-                <div class="diagnostic-check">
-                  <span class={`check-mark ${check.status}`}>
-                    {check.status === "pass"
-                      ? "✓"
-                      : check.status === "warn"
-                        ? "!"
-                        : "×"}
-                  </span>
+            <div class="attention-list">
+              {#each actionableChecks() as check}
+                <div class="attention-item">
+                  <span class={`check-mark ${check.status}`}>{check.status === "warn" ? "!" : "×"}</span>
                   <div>
                     <strong>{check.summary}</strong>
-                    {#if check.detail}<p>{check.detail}</p>{/if}
-                    {#if check.suggestion}
-                      <p class="repair">Repair: {check.suggestion}</p>
-                    {/if}
+                    {#if check.suggestion}<p>{check.suggestion}</p>{:else if check.detail}<p>{check.detail}</p>{/if}
                   </div>
                 </div>
               {/each}
             </div>
-          {/each}
-        </div>
-      {:else if diagnosticLoading}
-        <div class="empty compact">Inspecting route layers…</div>
+          </section>
+        {/if}
+
+        <details class="technical-details">
+          <summary>
+            <span>Technical details</span>
+            <small>{diagnosticReport.checks.length} checks</small>
+          </summary>
+          <div class="health-history">
+            <div class="history-heading">
+              <div>
+                <span class="perspective-label">Recent checks</span>
+                <strong>{diagnosticHistory.length} saved result{diagnosticHistory.length === 1 ? "" : "s"}</strong>
+              </div>
+              <small>Runs every {intervalLabel(historyIntervalMs)}</small>
+            </div>
+            {#if historyError}
+              <p class="history-error">{historyError}</p>
+            {:else if diagnosticHistory.length > 0}
+              <div class="history-timeline" aria-label="Recent controller health">
+                {#each chronologicalHistory() as snapshot}
+                  <span class={`history-point ${snapshot.status}`} title={`${new Date(snapshot.recordedAt).toLocaleString()} · ${snapshot.status}`} aria-label={`${snapshot.status} at ${new Date(snapshot.recordedAt).toLocaleString()}`}></span>
+                {/each}
+              </div>
+              <div class="history-legend">
+                <span><i class="pass"></i>{historyCount("pass")} working</span>
+                <span><i class="warn"></i>{historyCount("warn")} warning</span>
+                <span><i class="fail"></i>{historyCount("fail")} problem</span>
+              </div>
+            {:else}
+              <p class="history-empty">No saved results yet.</p>
+            {/if}
+          </div>
+          <div class="diagnostic-groups">
+            {#each groupedChecks(diagnosticReport.checks) as group}
+              <div class="diagnostic-group">
+                <h3>{group.layer}</h3>
+                {#each group.entries as check}
+                  <div class="diagnostic-check">
+                    <span class={`check-mark ${check.status}`}>{check.status === "pass" ? "✓" : check.status === "warn" ? "!" : "×"}</span>
+                    <div>
+                      <strong>{check.summary}</strong>
+                      {#if check.detail}<p>{check.detail}</p>{/if}
+                      {#if check.suggestion}<p class="repair">Try: {check.suggestion}</p>{/if}
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/each}
+          </div>
+        </details>
       {/if}
     </section>
   {/if}
@@ -1145,9 +1225,9 @@
         <h1 id="containers-title">Containers</h1>
         <p>Running workloads available to the local gateway.</p>
       </div>
-      <button class="secondary" type="button" onclick={() => refresh()}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"></path><path d="M6.1 9A7 7 0 0 1 18.7 7.3L20 11M4 13l1.3 3.7A7 7 0 0 0 17.9 15"></path></svg>
-        Refresh Docker
+      <button class="btn btn-outline secondary" type="button" onclick={() => refresh()} disabled={loading} aria-busy={loading}>
+        {#if loading}<span class="loading loading-spinner loading-sm"></span>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"></path><path d="M6.1 9A7 7 0 0 1 18.7 7.3L20 11M4 13l1.3 3.7A7 7 0 0 0 17.9 15"></path></svg>{/if}
+        {loading ? "Refreshing…" : "Refresh Docker"}
       </button>
     </header>
     <div class="list-toolbar">
@@ -1162,7 +1242,7 @@
         </span>
       </div>
       <div class="container-toolbar">
-        <label class="search-field">
+        <label class="input search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
           <input
             type="search"
@@ -1171,7 +1251,7 @@
             aria-label="Search containers"
           />
           {#if containerSearch}
-            <button class="clear-search" type="button" aria-label="Clear container search" onclick={() => (containerSearch = "")}>
+            <button class="btn btn-circle btn-ghost btn-xs clear-search" type="button" aria-label="Clear container search" onclick={() => (containerSearch = "")}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>
             </button>
           {/if}
@@ -1179,16 +1259,30 @@
       </div>
     </div>
 
-    {#if loading}
-      <div class="empty">Inspecting Docker…</div>
+    {#if loading && containers.length === 0}
+      <div class="state-panel card bg-base-100" role="status">
+        <span class="loading loading-spinner loading-md" aria-hidden="true"></span>
+        <div><h3>Finding containers</h3><p>Inspecting running Docker workloads…</p></div>
+      </div>
+    {:else if loadError && containers.length === 0}
+      <div class="state-panel state-error card bg-base-100" role="alert">
+        <span class="state-icon">!</span>
+        <div><h3>Containers are unavailable</h3><p>{loadError}</p></div>
+        <button class="btn btn-outline btn-sm" type="button" onclick={() => refresh()}>Try again</button>
+      </div>
     {:else if containers.length === 0}
-      <div class="empty">No running containers found.</div>
+      <div class="empty card bg-base-200">
+        <span class="empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h8"></path></svg></span>
+        <h3>No running containers</h3>
+        <p>Start a workload, then refresh Docker to create a route.</p>
+        <button class="btn btn-outline btn-sm" type="button" onclick={() => refresh()}>Refresh Docker</button>
+      </div>
     {:else if filteredContainers().length === 0}
       <div class="empty compact">
         No containers match “{containerSearch}”.
       </div>
     {:else}
-      <div class="container-table-scroll">
+      <div class="container-table-scroll card bg-base-100">
         <div class="container-table">
           <div class="container-table-head" aria-hidden="true">
             <span>Workload</span>
@@ -1232,7 +1326,7 @@
                 {#if managed}
                   <span class="managed-note">System workload</span>
                 {:else}
-                  <button class="secondary small" type="button" onclick={() => choose(container)}>
+                  <button class="btn btn-outline btn-sm secondary small" type="button" onclick={() => choose(container)}>
                     Create route
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
                   </button>
@@ -1268,7 +1362,7 @@
             {editing ? `${editing.name}.${baseDomain}` : selected?.composeService || selected?.name}
           </h2>
         </div>
-        <button class="icon-button ghost" type="button" aria-label="Close route editor" onclick={() => closeEditor()}>
+        <button class="btn btn-square btn-ghost icon-button ghost" type="button" aria-label="Close route editor" onclick={() => closeEditor()}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
         </button>
       </div>
@@ -1289,6 +1383,7 @@
 
       <form
         class="drawer-form"
+        novalidate
         onsubmit={(event) => {
           event.preventDefault();
           saveRoute();
@@ -1298,17 +1393,23 @@
           Local hostname
           <div class="domain-input">
             <input
+              class="input"
               bind:this={drawerFirstInput}
               bind:value={routeName}
               required
+              maxlength="63"
               pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              aria-invalid={routeNameIssue() ? "true" : undefined}
               aria-describedby="route-name-hint"
             />
             <span>.{baseDomain}</span>
           </div>
-          {#if nameConflict()}
+          {#if routeNameIssue() && (editorAttempted || routeName.length > 0)}
             <small id="route-name-hint" class="field-hint error">
-              Already used by route #{nameConflict()?.id}. Choose another name.
+              {routeNameIssue()}
             </small>
           {:else}
             <small id="route-name-hint" class="field-hint">
@@ -1321,6 +1422,7 @@
           <label>
             Internal port
             <input
+              class="input"
               type="number"
               min="1"
               max="65535"
@@ -1329,6 +1431,8 @@
               onchange={() => {
                 if (!editing) routeScheme = recommendedScheme(Number(routePort));
               }}
+              aria-invalid={routePort < 1 || invalidSelectedPort() ? "true" : undefined}
+              aria-describedby="route-port-hint"
               required
             />
             {#if selected}
@@ -1341,18 +1445,18 @@
           </label>
           <label>
             Protocol
-            <select bind:value={routeScheme}>
+            <select class="select" bind:value={routeScheme}>
               <option value="http">HTTP</option>
               <option value="https">HTTPS</option>
             </select>
           </label>
         </div>
         {#if selected}
-          <small class:error={routePort === 0 || invalidSelectedPort()} class="field-hint port-hint">
+          <small id="route-port-hint" class:error={routePort === 0 || invalidSelectedPort()} class="field-hint port-hint">
             {portRecommendation()}
           </small>
         {:else}
-          <small class="field-hint port-hint">
+          <small id="route-port-hint" class="field-hint port-hint">
             This is the protocol and port Traefik uses inside Docker. Browser access remains HTTPS.
           </small>
         {/if}
@@ -1362,7 +1466,7 @@
             <span>EQUIVALENT CLI</span>
             <code>{commandFor()}</code>
           </div>
-          <button class="icon-button ghost" type="button" aria-label="Copy CLI command" title="Copy CLI command" onclick={copyCommand}>
+          <button class="btn btn-square btn-ghost icon-button ghost" type="button" aria-label="Copy CLI command" title="Copy CLI command" onclick={copyCommand}>
             {#if commandCopied}
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>
             {:else}
@@ -1371,12 +1475,21 @@
           </button>
         </div>
 
+        {#if editorError}
+          <div class="alert alert-error editor-error" role="alert">
+            <span>{editorError}</span>
+          </div>
+        {/if}
+
         <div class="drawer-actions">
-          <button type="button" class="secondary" onclick={() => closeEditor()}>Cancel</button>
+          <button type="button" class="btn btn-outline secondary" onclick={() => closeEditor()}>Cancel</button>
           <button
+            class="btn btn-primary"
             type="submit"
             disabled={saving || !!nameConflict() || routePort < 1 || invalidSelectedPort()}
+            aria-busy={saving}
           >
+            {#if saving}<span class="loading loading-spinner loading-sm"></span>{/if}
             {saving ? "Saving…" : editing ? "Save changes" : "Create route"}
           </button>
         </div>
@@ -1387,7 +1500,7 @@
 
 {#if deleteCandidate}
   <div
-    class="modal-layer"
+    class="modal modal-open modal-layer"
     role="presentation"
     onkeydown={(event) => {
       if (event.key === "Escape") deleteCandidate = null;
@@ -1395,7 +1508,7 @@
     }}
   >
     <button class="modal-backdrop" type="button" aria-label="Cancel deletion" onclick={() => (deleteCandidate = null)}></button>
-    <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <div class="modal-box confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description">
       <span class="danger-icon">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5M12 17h.01"></path><path d="M10.3 4.9 3.6 17a2 2 0 0 0 1.8 3h13.2a2 2 0 0 0 1.8-3L13.7 4.9a2 2 0 0 0-3.4 0Z"></path></svg>
       </span>
@@ -1404,8 +1517,8 @@
         <strong>{deleteCandidate.name}.{baseDomain}</strong> will stop resolving through Docklane. The container is not changed.
       </p>
       <div class="confirm-actions">
-        <button bind:this={deleteCancelButton} class="secondary" type="button" onclick={() => (deleteCandidate = null)}>Cancel</button>
-        <button class="danger-solid" type="button" disabled={pendingRouteIds.has(deleteCandidate.id)} onclick={() => remove(deleteCandidate as Route)}>
+        <button bind:this={deleteCancelButton} class="btn btn-outline secondary" type="button" onclick={() => (deleteCandidate = null)}>Cancel</button>
+        <button class="btn btn-error danger-solid" type="button" disabled={pendingRouteIds.has(deleteCandidate.id)} onclick={() => remove(deleteCandidate as Route)}>
           {pendingRouteIds.has(deleteCandidate.id) ? "Deleting…" : "Delete route"}
         </button>
       </div>
@@ -1415,7 +1528,7 @@
 
 {#if discardEditorOpen}
   <div
-    class="modal-layer"
+    class="modal modal-open modal-layer"
     role="presentation"
     onkeydown={(event) => {
       if (event.key === "Escape") discardEditorOpen = false;
@@ -1423,12 +1536,12 @@
     }}
   >
     <button class="modal-backdrop" type="button" aria-label="Keep editing" onclick={() => (discardEditorOpen = false)}></button>
-    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title">
+    <div class="modal-box confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title">
       <h2 id="discard-title">Discard unsaved changes?</h2>
       <p>Your route configuration has changed. Closing now will lose those edits.</p>
       <div class="confirm-actions">
-        <button bind:this={discardCancelButton} class="secondary" type="button" onclick={() => (discardEditorOpen = false)}>Keep editing</button>
-        <button class="danger-solid" type="button" onclick={() => closeEditor(true)}>Discard changes</button>
+        <button bind:this={discardCancelButton} class="btn btn-outline secondary" type="button" onclick={() => (discardEditorOpen = false)}>Keep editing</button>
+        <button class="btn btn-error danger-solid" type="button" onclick={() => closeEditor(true)}>Discard changes</button>
       </div>
     </div>
   </div>
