@@ -14,8 +14,11 @@
     "@fontsource-variable/space-grotesk": "5.3.0",
     "@playwright/test": "^1.62.0",
     "@sveltejs/vite-plugin-svelte": "latest",
+    "@tailwindcss/vite": "^4.3.3",
+    "daisyui": "^5.7.9",
     "svelte": "latest",
     "svelte-check": "latest",
+    "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "vite": "latest"
   }
