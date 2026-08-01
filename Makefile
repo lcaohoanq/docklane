@@ -1,4 +1,4 @@
-.PHONY: build ci dev dev-api dev-web docs docs-check docs-setup format-check lint release release-repro-check runtime-image-context setup test web
+.PHONY: aur-check build ci docs docs-check docs-setup format-check release release-repro-check runtime-image-context setup test web
 
 GOCACHE := $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE := $(CURDIR)/.tmp/golangci-lint
@@ -43,6 +43,9 @@ test: web
 
 format-check:
 	test -z "$$(gofmt -l cmd internal)"
+
+aur-check:
+	./ops/check-aur-docklane-bin.sh
 
 lint:
 	GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) go tool golangci-lint run --new-from-rev=$(LINT_BASE) ./...
