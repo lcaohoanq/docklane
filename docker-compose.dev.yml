@@ -22,6 +22,8 @@ services:
       - docklane-dev-go-build:/root/.cache/go-build
 
 volumes:
+  probe-run:
+    external: true
   docklane-dev-air:
   docklane-dev-go-mod:
   docklane-dev-go-build:

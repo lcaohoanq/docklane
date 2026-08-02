@@ -28,9 +28,9 @@ services:
       - "127.0.0.1:4646:4646"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./data:/data
+      - ${DOCKLANE_DATA_DIR:-./data}:/data
       - probe-run:/run/docklane-probe
-      - ./data/traefik-dashboard-password:/run/secrets/traefik-dashboard-password:ro
+      - ${DOCKLANE_DATA_DIR:-./data}/traefik-dashboard-password:/run/secrets/traefik-dashboard-password:ro
       - ${DOCKLANE_TRAEFIK_CA_FILE:-/etc/ca-certificates/trust-source/anchors/traefik-lab-root-ca.crt}:/run/secrets/traefik-local-ca.crt:ro
     networks:
       - control

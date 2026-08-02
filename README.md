@@ -108,6 +108,9 @@ Traefik runtime and proxy-network configuration. Saving a Go file under `cmd/`
 or `internal/` rebuilds and restarts the controller; saving a Svelte, CSS, or
 TypeScript file updates the browser through Vite HMR. Press `Ctrl+C` once to
 stop both development processes and restore the regular Compose controller.
+This also works from a separate Git worktree: the development controller reuses
+the running integrated probe and data directory, then restores the exact
+Compose project and configuration files that owned the regular controller.
 
 The Air version is pinned as a Go tool and runs in the development controller
 container, so no global `air` installation is required. Use `make dev-web` to
