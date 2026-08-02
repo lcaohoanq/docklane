@@ -66,8 +66,9 @@ a plan token. Apply only the plan you just reviewed:
 sudo docklane install --token 'COPY_THE_REVIEWED_TOKEN'
 ```
 
-Open `http://127.0.0.1:4646`, choose a discovered workload, and assign its
-internal HTTP port a local name.
+Open `http://127.0.0.1:4646`, choose an eligible discovered workload, and
+assign its internal HTTP port a local name. System workloads and containers
+without declared TCP ports remain visible but do not offer route creation.
 
 ## Verify
 

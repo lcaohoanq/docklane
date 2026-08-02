@@ -3,6 +3,8 @@ services:
     build:
       context: .
     image: docklane:local
+    labels:
+      com.docklane.role: controller
     container_name: docklane
     restart: unless-stopped
     command:
@@ -49,6 +51,8 @@ services:
 
   probe:
     image: docklane:local
+    labels:
+      com.docklane.role: probe
     container_name: docklane-probe
     restart: unless-stopped
     command:

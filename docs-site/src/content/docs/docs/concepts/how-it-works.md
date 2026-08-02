@@ -13,6 +13,11 @@ The controller discovers Docker workloads, stores route intent in SQLite,
 reconciles that intent with current containers, and exposes one API used by the
 CLI and Svelte UI.
 
+Discovery and route eligibility are separate: inventory includes every running
+container, while the controller excludes Docklane system roles, explicit
+`com.docklane.route=false` opt-outs, and containers without declared TCP ports
+from route creation.
+
 Traefik polls a complete HTTP-provider document from Docklane. Docklane
 validates each candidate document and persists the last known good snapshot.
 

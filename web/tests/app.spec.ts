@@ -9,6 +9,7 @@ const containers = [
     composeProject: "budget",
     composeService: "app",
     exposedPorts: [3000],
+    routeEligibility: { eligible: true },
   },
   {
     id: "gateway123",
@@ -17,6 +18,36 @@ const containers = [
     status: "Up 10 minutes",
     systemRole: "reverse-proxy",
     exposedPorts: [4646],
+    routeEligibility: {
+      eligible: false,
+      code: "system-workload",
+      reason: "System workload",
+    },
+  },
+  {
+    id: "probe123",
+    name: "docklane-probe",
+    image: "docklane:local",
+    status: "Up 10 minutes (healthy)",
+    systemRole: "probe",
+    exposedPorts: [4646],
+    routeEligibility: {
+      eligible: false,
+      code: "system-workload",
+      reason: "System workload",
+    },
+  },
+  {
+    id: "buildkit123",
+    name: "buildx_buildkit_release0",
+    image: "moby/buildkit:buildx-stable-1",
+    status: "Up 10 minutes",
+    exposedPorts: [],
+    routeEligibility: {
+      eligible: false,
+      code: "no-tcp-ports",
+      reason: "No TCP ports declared",
+    },
   },
 ];
 
@@ -102,6 +133,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("opens on the operational Routes view", async ({ page }) => {
+  await expect(page).toHaveURL(/\/routes$/);
   await expect(page.getByRole("heading", { name: "Routes", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Home/ })).toHaveCount(0);
   await expect(page.getByLabel("Route status summary")).toContainText("Ready");
@@ -116,6 +148,22 @@ test("opens on the operational Routes view", async ({ page }) => {
   expect(searchIcon).not.toBeNull();
   expect(searchIcon!.width).toBeLessThanOrEqual(20);
   expect(searchIcon!.height).toBeLessThanOrEqual(20);
+});
+
+test("keeps the selected tab in the URL across refresh and browser history", async ({ page }) => {
+  await page.getByRole("button", { name: /Containers/ }).click();
+  await expect(page).toHaveURL(/\/containers$/);
+  await expect(page.getByRole("heading", { name: "Containers", exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page).toHaveURL(/\/containers$/);
+  await expect(page.getByRole("heading", { name: "Containers", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: /Routes/ }).click();
+  await expect(page).toHaveURL(/\/routes$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/containers$/);
+  await expect(page.getByRole("heading", { name: "Containers", exact: true })).toBeVisible();
 });
 
 test("shows a useful loading state while discovery is pending", async ({ page }) => {
@@ -221,6 +269,24 @@ test("shows route validation next to the invalid field", async ({ page }) => {
   await expect(hostname).toHaveAttribute("aria-invalid", "true");
   await expect(drawer.getByText("Use lowercase letters, numbers, and single hyphens.")).toBeVisible();
   await expect(hostname).toBeFocused();
+});
+
+test("only offers route creation for eligible containers", async ({ page }) => {
+  await page.getByRole("button", { name: /Containers/ }).click();
+
+  const groups = page.locator(".container-group");
+  await expect(groups).toHaveCount(2);
+  await expect(groups.first().getByRole("heading", { name: "Available for routing" })).toBeVisible();
+  await expect(groups.last().getByRole("heading", { name: "Read-only containers" })).toBeVisible();
+  await expect(groups.first().getByRole("button", { name: "Create route" })).toHaveCount(1);
+  await expect(groups.last().getByRole("button", { name: "Create route" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Create route" })).toHaveCount(1);
+  await expect(page.getByText("System workload", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("No TCP ports declared")).toBeVisible();
+  await expect(page.locator(".workload-cell").filter({ hasText: "docklane-probe" })).toBeVisible();
+  await expect(
+    page.locator(".workload-cell").filter({ hasText: "buildx_buildkit_release0" }),
+  ).toBeVisible();
 });
 
 test("keeps route actions usable at tablet width", async ({ page }) => {

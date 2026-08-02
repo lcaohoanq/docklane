@@ -18,22 +18,47 @@ import (
 )
 
 type Container struct {
-	ID             string              `json:"id"`
-	Name           string              `json:"name"`
-	Image          string              `json:"image"`
-	State          string              `json:"state"`
-	Status         string              `json:"status"`
-	SystemRole     string              `json:"systemRole,omitempty"`
-	ComposeProject string              `json:"composeProject,omitempty"`
-	ComposeService string              `json:"composeService,omitempty"`
-	ExposedPorts   []uint16            `json:"exposedPorts"`
-	PublishedPorts []uint16            `json:"publishedPorts,omitempty"`
-	Labels         map[string]string   `json:"-"`
-	Networks       []string            `json:"networks"`
-	NetworkAliases map[string][]string `json:"networkAliases,omitempty"`
+	ID               string              `json:"id"`
+	Name             string              `json:"name"`
+	Image            string              `json:"image"`
+	State            string              `json:"state"`
+	Status           string              `json:"status"`
+	SystemRole       string              `json:"systemRole,omitempty"`
+	ComposeProject   string              `json:"composeProject,omitempty"`
+	ComposeService   string              `json:"composeService,omitempty"`
+	ExposedPorts     []uint16            `json:"exposedPorts"`
+	PublishedPorts   []uint16            `json:"publishedPorts,omitempty"`
+	Labels           map[string]string   `json:"-"`
+	Networks         []string            `json:"networks"`
+	NetworkAliases   map[string][]string `json:"networkAliases,omitempty"`
+	RouteEligibility RouteEligibility    `json:"routeEligibility"`
 }
 
-const SystemRoleReverseProxy = "reverse-proxy"
+// RouteEligibility describes whether a discovered container can back an HTTP route.
+type RouteEligibility struct {
+	Eligible bool   `json:"eligible"`
+	Code     string `json:"code,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+const (
+	// SystemRoleReverseProxy identifies the active HTTP gateway container.
+	SystemRoleReverseProxy = "reverse-proxy"
+	// SystemRoleController identifies the Docklane control-plane container.
+	SystemRoleController = "controller"
+	// SystemRoleProbe identifies the restricted upstream probe container.
+	SystemRoleProbe = "probe"
+
+	// RouteEnabledLabel lets a container explicitly opt out of HTTP routing.
+	RouteEnabledLabel = "com.docklane.route"
+
+	// RouteEligibilitySystemWorkload marks an internal Docklane workload.
+	RouteEligibilitySystemWorkload = "system-workload"
+	// RouteEligibilityDisabled marks a container with routing explicitly disabled.
+	RouteEligibilityDisabled = "routing-disabled"
+	// RouteEligibilityNoTCPPorts marks a container without declared TCP ports.
+	RouteEligibilityNoTCPPorts = "no-tcp-ports"
+)
 
 type Discovery interface {
 	ListContainers(context.Context) ([]Container, error)
@@ -57,6 +82,7 @@ var (
 	ErrAmbiguous      = errors.New("route selector matches multiple running containers")
 	ErrPortNotExposed = errors.New("configured TCP port is not declared by the container")
 	ErrSystemTarget   = errors.New("system container cannot be used as an application route target")
+	ErrRouteDisabled  = errors.New("container routing is disabled by label")
 )
 
 func ResolveContainer(selector domain.ContainerSelector, containers []Container) (Container, error) {
@@ -106,7 +132,15 @@ func ValidateTCPPort(container Container, port uint16) error {
 }
 
 func ValidateApplicationTarget(container Container) error {
-	if container.SystemRole == SystemRoleReverseProxy {
+	if container.SystemRole != "" {
+		if container.SystemRole != SystemRoleReverseProxy {
+			return fmt.Errorf(
+				"%w: %s is a Docklane %s system workload",
+				ErrSystemTarget,
+				container.Name,
+				container.SystemRole,
+			)
+		}
 		return fmt.Errorf(
 			"%w: %s is the active reverse proxy and routing it to itself creates a loop; "+
 				"use a Traefik api@internal dashboard router instead",
@@ -114,7 +148,41 @@ func ValidateApplicationTarget(container Container) error {
 			container.Name,
 		)
 	}
+	if strings.EqualFold(
+		strings.TrimSpace(container.Labels[RouteEnabledLabel]),
+		"false",
+	) {
+		return fmt.Errorf(
+			"%w: %s sets %s=false",
+			ErrRouteDisabled,
+			container.Name,
+			RouteEnabledLabel,
+		)
+	}
 	return nil
+}
+
+// EvaluateRouteEligibility classifies a container without removing it from inventory.
+func EvaluateRouteEligibility(container Container) RouteEligibility {
+	if err := ValidateApplicationTarget(container); err != nil {
+		if errors.Is(err, ErrSystemTarget) {
+			return RouteEligibility{
+				Code:   RouteEligibilitySystemWorkload,
+				Reason: "System workload",
+			}
+		}
+		return RouteEligibility{
+			Code:   RouteEligibilityDisabled,
+			Reason: "Routing disabled",
+		}
+	}
+	if len(container.ExposedPorts) == 0 {
+		return RouteEligibility{
+			Code:   RouteEligibilityNoTCPPorts,
+			Reason: "No TCP ports declared",
+		}
+	}
+	return RouteEligibility{Eligible: true}
 }
 
 type Client struct {
@@ -152,13 +220,14 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 	}
 
 	var raw []struct {
-		ID     string            `json:"Id"`
-		Names  []string          `json:"Names"`
-		Image  string            `json:"Image"`
-		State  string            `json:"State"`
-		Status string            `json:"Status"`
-		Labels map[string]string `json:"Labels"`
-		Ports  []struct {
+		ID      string            `json:"Id"`
+		Names   []string          `json:"Names"`
+		Image   string            `json:"Image"`
+		Command string            `json:"Command"`
+		State   string            `json:"State"`
+		Status  string            `json:"Status"`
+		Labels  map[string]string `json:"Labels"`
+		Ports   []struct {
 			PrivatePort uint16 `json:"PrivatePort"`
 			PublicPort  uint16 `json:"PublicPort"`
 			Type        string `json:"Type"`
@@ -210,12 +279,17 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 		}
 		sort.Strings(networks)
 		containers = append(containers, Container{
-			ID:             item.ID,
-			Name:           name,
-			Image:          item.Image,
-			State:          item.State,
-			Status:         item.Status,
-			SystemRole:     detectSystemRole(item.Image, item.Labels, publishesGatewayPort),
+			ID:     item.ID,
+			Name:   name,
+			Image:  item.Image,
+			State:  item.State,
+			Status: item.Status,
+			SystemRole: detectSystemRole(
+				item.Image,
+				item.Labels,
+				publishesGatewayPort,
+				item.Command,
+			),
 			ComposeProject: item.Labels["com.docker.compose.project"],
 			ComposeService: item.Labels["com.docker.compose.service"],
 			ExposedPorts:   ports,
@@ -370,7 +444,25 @@ func (c *Client) DisconnectNetwork(ctx context.Context, network, containerID str
 	return fmt.Errorf("disconnect container from network %s: %s", network, message)
 }
 
-func detectSystemRole(image string, labels map[string]string, publishesGatewayPort bool) string {
+func detectSystemRole(
+	image string,
+	labels map[string]string,
+	publishesGatewayPort bool,
+	commands ...string,
+) string {
+	switch strings.ToLower(strings.TrimSpace(labels[InstallRoleLabel])) {
+	case "gateway":
+		return SystemRoleReverseProxy
+	case SystemRoleController:
+		return SystemRoleController
+	case SystemRoleProbe:
+		return SystemRoleProbe
+	}
+	if len(commands) > 0 {
+		if role := detectDocklaneCommandRole(commands[0]); role != "" {
+			return role
+		}
+	}
 	if !publishesGatewayPort {
 		return ""
 	}
@@ -384,6 +476,25 @@ func detectSystemRole(image string, labels map[string]string, publishesGatewayPo
 		return SystemRoleReverseProxy
 	}
 	return ""
+}
+
+func detectDocklaneCommandRole(command string) string {
+	fields := strings.Fields(command)
+	if len(fields) < 2 {
+		return ""
+	}
+	binary := strings.Trim(fields[0], `"'`)
+	if binary != "docklane" && !strings.HasSuffix(binary, "/docklane") {
+		return ""
+	}
+	switch strings.ToLower(strings.Trim(fields[1], `"'`)) {
+	case "serve":
+		return SystemRoleController
+	case "probe":
+		return SystemRoleProbe
+	default:
+		return ""
+	}
 }
 
 func (c *Client) WatchContainerEvents(ctx context.Context, notify func()) error {

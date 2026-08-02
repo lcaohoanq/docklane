@@ -59,6 +59,61 @@ func TestValidateTCPPort(t *testing.T) {
 	}
 }
 
+func TestEvaluateRouteEligibility(t *testing.T) {
+	tests := []struct {
+		name      string
+		container Container
+		eligible  bool
+		code      string
+	}{
+		{
+			name: "application",
+			container: Container{
+				Name: "web", ExposedPorts: []uint16{3000},
+			},
+			eligible: true,
+		},
+		{
+			name: "probe system workload despite inherited image port",
+			container: Container{
+				Name: "docklane-probe", SystemRole: SystemRoleProbe,
+				ExposedPorts: []uint16{4646},
+			},
+			code: RouteEligibilitySystemWorkload,
+		},
+		{
+			name: "no declared TCP port",
+			container: Container{
+				Name: "buildx_buildkit_release0",
+			},
+			code: RouteEligibilityNoTCPPorts,
+		},
+		{
+			name: "explicit opt out",
+			container: Container{
+				Name:         "postgres",
+				ExposedPorts: []uint16{5432},
+				Labels:       map[string]string{RouteEnabledLabel: "false"},
+			},
+			code: RouteEligibilityDisabled,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			eligibility := EvaluateRouteEligibility(test.container)
+			if eligibility.Eligible != test.eligible || eligibility.Code != test.code {
+				t.Fatalf(
+					"eligibility = %#v, want eligible=%t code=%q",
+					eligibility,
+					test.eligible,
+					test.code,
+				)
+			}
+		})
+	}
+}
+
 func TestWatchContainerEventsFiltersRouteAffectingActions(t *testing.T) {
 	client := &Client{http: &http.Client{Transport: roundTripFunc(
 		func(request *http.Request) (*http.Response, error) {
@@ -261,6 +316,36 @@ func containsString(values []string, expected string) bool {
 
 func TestDetectActiveTraefikGateway(t *testing.T) {
 	if role := detectSystemRole(
+		"docklane:local",
+		map[string]string{},
+		false,
+		`/usr/local/bin/docklane probe serve --socket=/run/docklane-probe/probe.sock`,
+	); role != SystemRoleProbe {
+		t.Fatalf("legacy probe role = %q, want %q", role, SystemRoleProbe)
+	}
+	if role := detectSystemRole(
+		"docklane:local",
+		map[string]string{},
+		false,
+		`/usr/local/bin/docklane serve --listen=0.0.0.0:4646`,
+	); role != SystemRoleController {
+		t.Fatalf("legacy controller role = %q, want %q", role, SystemRoleController)
+	}
+	if role := detectSystemRole(
+		"docklane:local",
+		map[string]string{InstallRoleLabel: "probe"},
+		false,
+	); role != SystemRoleProbe {
+		t.Fatalf("labeled probe role = %q, want %q", role, SystemRoleProbe)
+	}
+	if role := detectSystemRole(
+		"docklane:local",
+		map[string]string{InstallRoleLabel: "controller"},
+		false,
+	); role != SystemRoleController {
+		t.Fatalf("labeled controller role = %q, want %q", role, SystemRoleController)
+	}
+	if role := detectSystemRole(
 		"traefik:v3.7",
 		map[string]string{"org.opencontainers.image.title": "Traefik"},
 		true,
@@ -290,6 +375,21 @@ func TestValidateApplicationTargetRejectsReverseProxy(t *testing.T) {
 	})
 	if !errors.Is(err, ErrSystemTarget) {
 		t.Fatalf("target error = %v, want ErrSystemTarget", err)
+	}
+}
+
+func TestValidateApplicationTargetRejectsSystemRoleAndOptOut(t *testing.T) {
+	if err := ValidateApplicationTarget(Container{
+		Name:       "docklane-probe",
+		SystemRole: SystemRoleProbe,
+	}); !errors.Is(err, ErrSystemTarget) {
+		t.Fatalf("probe target error = %v, want ErrSystemTarget", err)
+	}
+	if err := ValidateApplicationTarget(Container{
+		Name:   "postgres",
+		Labels: map[string]string{RouteEnabledLabel: "FALSE"},
+	}); !errors.Is(err, ErrRouteDisabled) {
+		t.Fatalf("opt-out target error = %v, want ErrRouteDisabled", err)
 	}
 }
 

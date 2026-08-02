@@ -582,6 +582,11 @@ func (a *API) listContainers(
 			containers[index].NetworkAliases[a.config.ProxyNetwork] = networkAliases
 		}
 	}
+	for index := range containers {
+		containers[index].RouteEligibility = docker.EvaluateRouteEligibility(
+			containers[index],
+		)
+	}
 	return containers, nil
 }
 
@@ -727,7 +732,10 @@ func (a *API) validateApplicationTarget(ctx context.Context, route domain.Route)
 	if err != nil {
 		return nil
 	}
-	return docker.ValidateApplicationTarget(container)
+	if err := docker.ValidateApplicationTarget(container); err != nil {
+		return err
+	}
+	return docker.ValidateTCPPort(container, route.Port)
 }
 
 func (a *API) deleteRoute(response http.ResponseWriter, request *http.Request) {

@@ -236,7 +236,20 @@ existing name with a different target is refused.
 The route editor applies the same conservative UX: it proposes an unused local
 name, ranks conventional web listeners, lists every declared alternative, and
 disables creation while the hostname or selected port conflicts with current
-inventory.
+inventory. Container discovery still lists system and portless workloads, but
+route creation is unavailable for Docklane controller/probe/gateway containers
+and containers without a declared TCP port. An infrastructure workload with a
+declared non-HTTP port can opt out explicitly with the
+`com.docklane.route=false` Docker label. The API enforces the same eligibility
+rules as the UI. The containers view presents eligible workloads first and
+moves system, opted-out, and portless containers into a separate read-only
+table. `/routes` and `/containers` are stable browser paths, so refresh and
+browser history preserve the selected view.
+
+Application Compose files should use `expose` for an internal listener that is
+not already declared by the image. Unlike `ports`, `expose` gives Docklane the
+port metadata it needs without publishing a host port. The application must
+still listen on `0.0.0.0` inside the container.
 
 `docklane app disable ROUTE` disables by local name or route ID. Repeating it
 is also a no-op. Reconciliation removes the endpoint only when Docklane owns

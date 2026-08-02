@@ -9,10 +9,15 @@
     name: string;
     image: string;
     status: string;
-    systemRole?: "reverse-proxy";
+    systemRole?: "reverse-proxy" | "controller" | "probe";
     composeProject?: string;
     composeService?: string;
     exposedPorts: number[];
+    routeEligibility: {
+      eligible: boolean;
+      code?: "system-workload" | "routing-disabled" | "no-tcp-ports";
+      reason?: string;
+    };
   };
 
   type Selector = {
@@ -316,6 +321,29 @@
     );
   }
 
+  function containerGroups() {
+    const visible = filteredContainers();
+    return [
+      {
+        id: "routeable-containers",
+        title: "Available for routing",
+        description: "Running workloads with a declared internal TCP port.",
+        containers: visible.filter(
+          (container) => container.routeEligibility.eligible,
+        ),
+      },
+      {
+        id: "read-only-containers",
+        title: "Read-only containers",
+        description:
+          "System workloads and containers unavailable for HTTP routing.",
+        containers: visible.filter(
+          (container) => !container.routeEligibility.eligible,
+        ),
+      },
+    ];
+  }
+
   function edit(route: Route) {
     activeTab = "routes";
     editing = route;
@@ -355,12 +383,23 @@
     return true;
   }
 
-  function showTab(tab: ActiveTab) {
-    if (activeTab === tab) return;
+  function tabFromPath(pathname: string): ActiveTab {
+    return pathname === "/containers" ? "containers" : "routes";
+  }
+
+  function pathForTab(tab: ActiveTab) {
+    return tab === "containers" ? "/containers" : "/routes";
+  }
+
+  function showTab(tab: ActiveTab, updateHistory = true) {
     if (!closeEditor()) return;
     closeDiagnostics();
     openRouteMenuId = null;
     activeTab = tab;
+    const path = pathForTab(tab);
+    if (updateHistory && window.location.pathname !== path) {
+      window.history.pushState({}, "", path);
+    }
   }
 
   function matches(selector: Selector, container: Container) {
@@ -598,7 +637,7 @@
       highlightedRouteId = payload.id || routeId || null;
       notice = `${routeId ? "Updated" : "Created"} ${routeName}.${baseDomain} · publishing route…`;
       closeEditor(true);
-      activeTab = "routes";
+      showTab("routes");
       await refresh(false);
       window.setTimeout(() => (highlightedRouteId = null), 3200);
     } catch (cause) {
@@ -826,11 +865,26 @@
     mounted = true;
     theme = document.documentElement.dataset.theme === "light" ? "light" : "forest";
     applyTheme(theme);
+    activeTab = tabFromPath(window.location.pathname);
+    const canonicalPath = pathForTab(activeTab);
+    if (window.location.pathname !== canonicalPath) {
+      window.history.replaceState({}, "", canonicalPath);
+    }
+    const handlePopState = () => {
+      const requestedTab = tabFromPath(window.location.pathname);
+      if (requestedTab !== activeTab && !closeEditor()) {
+        window.history.pushState({}, "", pathForTab(activeTab));
+        return;
+      }
+      showTab(requestedTab, false);
+    };
+    window.addEventListener("popstate", handlePopState);
     refresh();
     const timer = window.setInterval(() => refresh(false), 5000);
     return () => {
       mounted = false;
       window.clearInterval(timer);
+      window.removeEventListener("popstate", handlePopState);
     };
   });
 </script>
@@ -845,7 +899,7 @@
   <nav class="product-nav" aria-label="Primary navigation">
     <a
       class="brand"
-      href="/"
+      href="/routes"
       aria-label="Docklane routes"
       onclick={(event) => {
         event.preventDefault();
@@ -1232,7 +1286,7 @@
     </header>
     <div class="list-toolbar">
       <div class="title-with-count">
-        <h2>Running workloads</h2>
+        <h2>Running containers</h2>
         <span>
           {#if containerSearch}
             {filteredContainers().length} of {containers.length}
@@ -1282,59 +1336,74 @@
         No containers match “{containerSearch}”.
       </div>
     {:else}
-      <div class="container-table-scroll card bg-base-100">
-        <div class="container-table">
-          <div class="container-table-head" aria-hidden="true">
-            <span>Workload</span>
-            <span class="image-column">Image</span>
-            <span>Ports</span>
-            <span class="state-column">State</span>
-            <span></span>
-          </div>
-          {#each filteredContainers() as container}
-            {@const managed = container.systemRole === "reverse-proxy"}
-            <div
-              class:managed
-              class="container-table-row"
-              title={managed
-                ? "The active reverse proxy is managed by Docklane and cannot route to itself."
-                : undefined}
-            >
-              <span class="workload-cell">
-                <strong>{container.composeService || container.name}</strong>
-                <small>{container.name}</small>
-              </span>
-              <span class="image-cell image-column">
-                {container.image}
-              </span>
-              <span class="ports-cell">
-                {#each uniquePorts(container.exposedPorts) as port}
-                  <code>:{port}</code>
-                {:else}
-                  <small>None declared</small>
-                {/each}
-              </span>
-              <span class="container-state state-column">
-                <i class="status-dot" aria-hidden="true"></i>
-                {#if managed}
-                  <span class="system-badge">gateway</span>
-                {:else}
-                  <span>{container.status}</span>
-                {/if}
-              </span>
-              <span class="container-action">
-                {#if managed}
-                  <span class="managed-note">System workload</span>
-                {:else}
-                  <button class="btn btn-outline btn-sm secondary small" type="button" onclick={() => choose(container)}>
-                    Create route
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
-                  </button>
-                {/if}
-              </span>
-            </div>
-          {/each}
-        </div>
+      <div class="container-groups">
+        {#each containerGroups() as group}
+          {#if group.containers.length > 0}
+            <section class="container-group" aria-labelledby={group.id}>
+              <header class="container-group-heading">
+                <div>
+                  <h3 id={group.id}>{group.title}</h3>
+                  <p>{group.description}</p>
+                </div>
+                <span>{group.containers.length}</span>
+              </header>
+              <div class="container-table-scroll card bg-base-100">
+                <div class="container-table">
+                  <div class="container-table-head" aria-hidden="true">
+                    <span>Workload</span>
+                    <span class="image-column">Image</span>
+                    <span>Ports</span>
+                    <span class="state-column">State</span>
+                    <span></span>
+                  </div>
+                  {#each group.containers as container}
+                    {@const managed = container.routeEligibility.code === "system-workload"}
+                    <div
+                      class:managed
+                      class="container-table-row"
+                      title={!container.routeEligibility.eligible
+                        ? container.routeEligibility.reason
+                        : undefined}
+                    >
+                      <span class="workload-cell">
+                        <strong>{container.composeService || container.name}</strong>
+                        <small>{container.name}</small>
+                      </span>
+                      <span class="image-cell image-column">
+                        {container.image}
+                      </span>
+                      <span class="ports-cell">
+                        {#each uniquePorts(container.exposedPorts) as port}
+                          <code>:{port}</code>
+                        {:else}
+                          <small>None declared</small>
+                        {/each}
+                      </span>
+                      <span class="container-state state-column">
+                        <i class="status-dot" aria-hidden="true"></i>
+                        {#if managed}
+                          <span class="system-badge">{container.systemRole === "reverse-proxy" ? "gateway" : container.systemRole || "system"}</span>
+                        {:else}
+                          <span>{container.status}</span>
+                        {/if}
+                      </span>
+                      <span class="container-action">
+                        {#if container.routeEligibility.eligible}
+                          <button class="btn btn-outline btn-sm secondary small" type="button" onclick={() => choose(container)}>
+                            Create route
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                          </button>
+                        {:else}
+                          <span class="managed-note">{container.routeEligibility.reason}</span>
+                        {/if}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            </section>
+          {/if}
+        {/each}
       </div>
     {/if}
   </section>

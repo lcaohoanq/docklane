@@ -210,6 +210,63 @@ func TestContainersIncludeConfiguredProxyNetworkAliases(t *testing.T) {
 	}
 }
 
+func TestContainersIncludeRouteEligibility(t *testing.T) {
+	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Errorf("close repository: %v", err)
+		}
+	})
+	discovery := fakeDiscovery{containers: []docker.Container{
+		{
+			ID:           "web123",
+			Name:         "web",
+			ExposedPorts: []uint16{3000},
+		},
+		{
+			ID:           "probe123",
+			Name:         "docklane-probe",
+			SystemRole:   docker.SystemRoleProbe,
+			ExposedPorts: []uint16{4646},
+		},
+		{
+			ID:   "buildkit123",
+			Name: "buildx_buildkit_release0",
+		},
+	}}
+	reconciler := reconcile.New(repository, discovery, time.Second)
+	handler := New(
+		config.Config{BaseDomain: "docker.home.arpa", ReconcileEvery: time.Second},
+		repository,
+		discovery,
+		reconciler,
+	)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/api/v1/containers", nil),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	var payload struct {
+		Containers []docker.Container `json:"containers"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Containers) != 3 ||
+		!payload.Containers[0].RouteEligibility.Eligible ||
+		payload.Containers[1].RouteEligibility.Code != docker.RouteEligibilitySystemWorkload ||
+		payload.Containers[2].RouteEligibility.Code != docker.RouteEligibilityNoTCPPorts {
+		t.Fatalf("containers = %#v", payload.Containers)
+	}
+}
+
 func TestCreateRouteAndRenderTraefikConfiguration(t *testing.T) {
 	repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
 	if err != nil {
@@ -1176,5 +1233,71 @@ func TestCreateRejectsActiveReverseProxyTarget(t *testing.T) {
 	)
 	if disableResponse.Code != http.StatusOK {
 		t.Fatalf("disable status = %d, want 200; body = %s", disableResponse.Code, disableResponse.Body)
+	}
+}
+
+func TestCreateRejectsIneligibleRunningTarget(t *testing.T) {
+	tests := []struct {
+		name      string
+		container docker.Container
+		port      uint16
+	}{
+		{
+			name: "system probe",
+			container: docker.Container{
+				ID: "probe123", Name: "docklane-probe",
+				SystemRole: docker.SystemRoleProbe, ExposedPorts: []uint16{4646},
+			},
+			port: 4646,
+		},
+		{
+			name: "no declared TCP ports",
+			container: docker.Container{
+				ID: "buildkit123", Name: "buildx_buildkit_release0",
+			},
+			port: 1234,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository, err := store.Open(filepath.Join(t.TempDir(), "docklane.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := repository.Close(); err != nil {
+					t.Errorf("close repository: %v", err)
+				}
+			})
+			discovery := fakeDiscovery{containers: []docker.Container{test.container}}
+			reconciler := reconcile.New(repository, discovery, time.Second)
+			handler := New(
+				config.Config{BaseDomain: "docker.home.arpa", ReconcileEvery: time.Second},
+				repository,
+				discovery,
+				reconciler,
+			)
+
+			body := bytes.NewBufferString(fmt.Sprintf(`{
+				"name": "candidate",
+				"selector": {"containerId": %q},
+				"port": %d,
+				"scheme": "http",
+				"enabled": true
+			}`, test.container.ID, test.port))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(
+				response,
+				httptest.NewRequest(http.MethodPost, "/api/v1/routes", body),
+			)
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf(
+					"create status = %d, want 422; body = %s",
+					response.Code,
+					response.Body,
+				)
+			}
+		})
 	}
 }

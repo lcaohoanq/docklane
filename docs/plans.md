@@ -122,6 +122,8 @@ certificates, or Docker networks.
 - [X] Display discovered containers and internal ports.
 - [X] Display saved routes.
 - [X] Create a route from a selected container.
+- [X] Keep complete container inventory while suppressing route actions for
+  system, opted-out, and portless workloads.
 - [X] Show the equivalent CLI command.
 - [X] Embed production UI assets in the Go binary.
 - [X] Pin TypeScript 5.9 for current `svelte-check` compatibility.
