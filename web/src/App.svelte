@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Toaster, toast } from "svelte-sonner";
   import AppNav from "./components/AppNav.svelte";
-  import AppNotifications from "./components/AppNotifications.svelte";
   import ContainersPage from "./components/ContainersPage.svelte";
   import RouteEditor from "./components/RouteEditor.svelte";
   import RoutesPage from "./components/RoutesPage.svelte";
@@ -16,13 +16,13 @@
   let reconcileEverySeconds = $state(5);
   let loading = $state(true);
   let loadError = $state("");
-  let error = $state("");
-  let notice = $state("");
+  let inventoryLoaded = $state(false);
   let activeTab = $state<ActiveTab>("routes");
   let theme = $state<Theme>("forest");
   let selected = $state<Container | null>(null);
   let editing = $state<Route | null>(null);
   let highlightedRouteId = $state<number | null>(null);
+  const refreshErrorToastId = "inventory-refresh-error";
 
   async function refresh(showLoading = true) {
     if (showLoading) {
@@ -37,11 +37,12 @@
       reconcileEverySeconds = Math.max(1, Math.round((inventory.reconcileIntervalMs || 5000) / 1000));
       if (selected && !editing && !containers.some((container) => container.id === selected?.id)) closeEditor();
       loadError = "";
-      error = "";
+      inventoryLoaded = true;
+      toast.dismiss(refreshErrorToastId);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Refresh failed";
       loadError = message;
-      error = !showLoading || routes.length > 0 || containers.length > 0 ? message : "";
+      if (inventoryLoaded) toast.error(message, { id: refreshErrorToastId });
     } finally {
       if (showLoading) loading = false;
     }
@@ -71,7 +72,7 @@
   }
 
   async function editorSaved(message: string, routeId: number | null) {
-    notice = message;
+    toast.success(message);
     highlightedRouteId = routeId;
     closeEditor();
     showTab("routes");
@@ -112,18 +113,18 @@
 
 <svelte:head><title>Docklane · Local container gateway</title></svelte:head>
 <svelte:body class:modal-open={!!selected || !!editing} />
+<Toaster position="top-right" closeButton theme={theme === "forest" ? "dark" : "light"} />
 
 <main>
   <AppNav {activeTab} routeCount={routes.length} containerCount={containers.length} {theme} onNavigate={showTab} onThemeChange={applyTheme} />
-  <AppNotifications {notice} {error} onDismissNotice={() => (notice = "")} onDismissError={() => (error = "")} />
 
   {#if activeTab === "routes"}
-    <RoutesPage {routes} {baseDomain} {reconcileEverySeconds} {loading} {loadError} {highlightedRouteId} onRefresh={refresh} onNewRoute={() => showTab("containers")} onEdit={edit} onNotice={(message) => (notice = message)} onError={(message) => (error = message)} />
+    <RoutesPage {routes} {baseDomain} {reconcileEverySeconds} {loading} {loadError} {highlightedRouteId} onRefresh={refresh} onNewRoute={() => showTab("containers")} onEdit={edit} onNotice={(message) => toast.success(message)} onError={(message) => toast.error(message)} />
   {:else}
     <ContainersPage {containers} {loading} {loadError} onRefresh={() => refresh()} onChoose={choose} />
   {/if}
 </main>
 
 {#if selected || editing}
-  <RouteEditor {selected} {editing} {routes} {baseDomain} onClose={closeEditor} onSaved={editorSaved} onError={(message) => (error = message)} />
+  <RouteEditor {selected} {editing} {routes} {baseDomain} onClose={closeEditor} onSaved={editorSaved} onError={(message) => toast.error(message)} />
 {/if}

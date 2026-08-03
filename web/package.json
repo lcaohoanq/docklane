@@ -18,6 +18,7 @@
     "daisyui": "^5.7.9",
     "svelte": "latest",
     "svelte-check": "latest",
+    "svelte-sonner": "^1.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "vite": "latest"

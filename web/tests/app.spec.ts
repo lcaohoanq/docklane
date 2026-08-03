@@ -195,6 +195,27 @@ test("offers retry when the controller is unavailable", async ({ page }) => {
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes are unavailable" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
+});
+
+test("deduplicates refresh failures after inventory has loaded", async ({ page }) => {
+  await expect(page.getByText("budget.docker.home.arpa", { exact: true })).toBeVisible();
+  await page.unroute("**/api/v1/**");
+  await page.route("**/api/v1/**", async (request) =>
+    request.fulfill({ status: 503, json: { error: "Controller unavailable" } }),
+  );
+
+  const refresh = page.getByRole("button", { name: "Refresh routes" });
+  await refresh.click();
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(1);
+  await expect(page.locator("[data-sonner-toast]")).toContainText("Controller unavailable");
+  const closeButton = await page.locator("[data-sonner-toast] [data-close-button]").boundingBox();
+  expect(closeButton).not.toBeNull();
+  expect(closeButton!.width).toBeLessThanOrEqual(24);
+  expect(closeButton!.height).toBeLessThanOrEqual(24);
+
+  await refresh.click();
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(1);
 });
 
 test("switches between DaisyUI light and forest themes and persists the choice", async ({
