@@ -158,18 +158,34 @@ test("opens on the operational Routes view", async ({ page }) => {
 });
 
 test("keeps the selected tab in the URL across refresh and browser history", async ({ page }) => {
+  const indicator = page.locator(".product-tab-indicator");
+  const routesPosition = await indicator.boundingBox();
+  expect(routesPosition).not.toBeNull();
+
   await page.getByRole("button", { name: /Containers/ }).click();
   await expect(page).toHaveURL(/\/containers$/);
+  await expect(indicator).toHaveAttribute("data-active-tab", "containers");
+  await expect
+    .poll(async () => (await indicator.boundingBox())?.x)
+    .toBeGreaterThan(routesPosition!.x);
   await expect(page.getByRole("heading", { name: "Containers", exact: true })).toBeVisible();
 
   await page.reload();
   await expect(page).toHaveURL(/\/containers$/);
   await expect(page.getByRole("heading", { name: "Containers", exact: true })).toBeVisible();
+  const containersPosition = await indicator.boundingBox();
+  expect(containersPosition).not.toBeNull();
 
   await page.getByRole("button", { name: /Routes/ }).click();
   await expect(page).toHaveURL(/\/routes$/);
+  await expect
+    .poll(async () => (await indicator.boundingBox())?.x)
+    .toBeLessThan(containersPosition!.x);
   await page.goBack();
   await expect(page).toHaveURL(/\/containers$/);
+  await expect
+    .poll(async () => (await indicator.boundingBox())?.x)
+    .toBeGreaterThan(routesPosition!.x);
   await expect(page.getByRole("heading", { name: "Containers", exact: true })).toBeVisible();
 });
 

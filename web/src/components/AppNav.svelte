@@ -1,6 +1,18 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import { Tween } from "svelte/motion";
+  import { MediaQuery } from "svelte/reactivity";
   import logoUrl from "../../../brand/logo-mark.svg";
   import type { ActiveTab, Theme } from "../lib/types";
+
+  const prefersReducedMotion = new MediaQuery("(prefers-reduced-motion: reduce)");
+  const indicatorLeft = new Tween(0, { duration: 220, easing: cubicOut });
+  const indicatorWidth = new Tween(0, { duration: 220, easing: cubicOut });
+
+  let routesTab: HTMLButtonElement;
+  let containersTab: HTMLButtonElement;
+  let indicatorReady = $state(false);
 
   let {
     activeTab,
@@ -17,6 +29,33 @@
     onNavigate: (tab: ActiveTab) => void;
     onThemeChange: (theme: Theme) => void;
   } = $props();
+
+  function moveIndicator(animate = true) {
+    const activeButton = activeTab === "routes" ? routesTab : containersTab;
+    if (!activeButton) return;
+
+    const duration = animate && !prefersReducedMotion.current ? 220 : 0;
+    void indicatorLeft.set(activeButton.offsetLeft, { duration, easing: cubicOut });
+    void indicatorWidth.set(activeButton.offsetWidth, { duration, easing: cubicOut });
+    indicatorReady = true;
+  }
+
+  $effect(() => {
+    const routeButton = routesTab;
+    const containerButton = containersTab;
+    if (!routeButton || !containerButton) return;
+
+    untrack(() => moveIndicator(false));
+    const observer = new ResizeObserver(() => untrack(() => moveIndicator(false)));
+    observer.observe(routeButton);
+    observer.observe(containerButton);
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    activeTab;
+    if (indicatorReady) moveIndicator(true);
+  });
 </script>
 
 <nav class="product-nav" aria-label="Primary navigation">
@@ -33,19 +72,31 @@
     <span>Docklane</span>
   </a>
   <div class="product-tabs">
+    <span
+      class="product-tab-indicator"
+      class:initialized={indicatorReady}
+      data-active-tab={activeTab}
+      aria-hidden="true"
+      style:left={`${indicatorLeft.current}px`}
+      style:width={`${indicatorWidth.current}px`}
+    ></span>
     <button
+      bind:this={routesTab}
       type="button"
       class="btn btn-sm"
       class:active={activeTab === "routes"}
       aria-current={activeTab === "routes" ? "page" : undefined}
-      onclick={() => onNavigate("routes")}>Routes <span>{routeCount}</span></button
+      onclick={() => onNavigate("routes")}
+      >Routes <span class="product-tab-count">{routeCount}</span></button
     >
     <button
+      bind:this={containersTab}
       type="button"
       class="btn btn-sm"
       class:active={activeTab === "containers"}
       aria-current={activeTab === "containers" ? "page" : undefined}
-      onclick={() => onNavigate("containers")}>Containers <span>{containerCount}</span></button
+      onclick={() => onNavigate("containers")}
+      >Containers <span class="product-tab-count">{containerCount}</span></button
     >
   </div>
   <div class="product-nav-meta">
