@@ -106,7 +106,12 @@ async function mockAPI(page: Page) {
           hostname: "budget.docker.home.arpa",
           generatedAt: new Date().toISOString(),
           checks: [
-            { id: "container", layer: "Container", status: "pass", summary: "Container is running" },
+            {
+              id: "container",
+              layer: "Container",
+              status: "pass",
+              summary: "Container is running",
+            },
             {
               id: "dns",
               layer: "Browser access",
@@ -139,7 +144,9 @@ test("opens on the operational Routes view", async ({ page }) => {
   await expect(page.getByLabel("Route status summary")).toContainText("Ready");
   await expect(page.getByText("budget.docker.home.arpa", { exact: true })).toBeVisible();
   await expect(page.locator(".mobile-label").first()).toBeHidden();
-  await expect(page.getByRole("link", { name: "Open Docklane quick start documentation" })).toHaveAttribute(
+  await expect(
+    page.getByRole("link", { name: "Open Docklane quick start documentation" }),
+  ).toHaveAttribute(
     "href",
     "https://lcaohoanq.github.io/docklane/docs/getting-started/quick-start/",
   );
@@ -175,7 +182,9 @@ test("shows a useful loading state while discovery is pending", async ({ page })
     const path = new URL(request.request().url()).pathname;
     if (path === "/api/v1/containers") return request.fulfill({ json: { containers } });
     if (path === "/api/v1/routes") {
-      return request.fulfill({ json: { routes, baseDomain: "docker.home.arpa", reconcileIntervalMs: 5000 } });
+      return request.fulfill({
+        json: { routes, baseDomain: "docker.home.arpa", reconcileIntervalMs: 5000 },
+      });
     }
     return request.fulfill({ status: 404, json: { error: "Not mocked" } });
   });
@@ -260,9 +269,7 @@ test("uses custom route actions and delete confirmation", async ({ page }) => {
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
 });
 
-test("keeps route diagnostics compact until technical details are requested", async ({
-  page,
-}) => {
+test("keeps route diagnostics compact until technical details are requested", async ({ page }) => {
   await page.getByRole("button", { name: "More actions for budget" }).click();
   await page.getByRole("button", { name: "Diagnose route" }).click();
 
@@ -288,7 +295,9 @@ test("shows route validation next to the invalid field", async ({ page }) => {
   await drawer.getByRole("button", { name: "Create route" }).click();
 
   await expect(hostname).toHaveAttribute("aria-invalid", "true");
-  await expect(drawer.getByText("Use lowercase letters, numbers, and single hyphens.")).toBeVisible();
+  await expect(
+    drawer.getByText("Use lowercase letters, numbers, and single hyphens."),
+  ).toBeVisible();
   await expect(hostname).toBeFocused();
 });
 
@@ -297,7 +306,9 @@ test("only offers route creation for eligible containers", async ({ page }) => {
 
   const groups = page.locator(".container-group");
   await expect(groups).toHaveCount(2);
-  await expect(groups.first().getByRole("heading", { name: "Available for routing" })).toBeVisible();
+  await expect(
+    groups.first().getByRole("heading", { name: "Available for routing" }),
+  ).toBeVisible();
   await expect(groups.last().getByRole("heading", { name: "Read-only containers" })).toBeVisible();
   await expect(groups.first().getByRole("button", { name: "Create route" })).toHaveCount(1);
   await expect(groups.last().getByRole("button", { name: "Create route" })).toHaveCount(0);

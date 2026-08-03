@@ -10,9 +10,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:5173",
     colorScheme: "dark",
-    launchOptions: existsSync(systemChromium)
-      ? { executablePath: systemChromium }
-      : undefined,
+    launchOptions: existsSync(systemChromium) ? { executablePath: systemChromium } : undefined,
   },
   webServer: {
     command: "pnpm run dev --host 127.0.0.1",

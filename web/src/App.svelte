@@ -34,8 +34,12 @@
       containers = inventory.containers;
       routes = inventory.routes;
       baseDomain = inventory.baseDomain;
-      reconcileEverySeconds = Math.max(1, Math.round((inventory.reconcileIntervalMs || 5000) / 1000));
-      if (selected && !editing && !containers.some((container) => container.id === selected?.id)) closeEditor();
+      reconcileEverySeconds = Math.max(
+        1,
+        Math.round((inventory.reconcileIntervalMs || 5000) / 1000),
+      );
+      if (selected && !editing && !containers.some((container) => container.id === selected?.id))
+        closeEditor();
       loadError = "";
       inventoryLoaded = true;
       toast.dismiss(refreshErrorToastId);
@@ -84,7 +88,9 @@
     theme = next;
     document.documentElement.dataset.theme = next;
     localStorage.setItem("docklane-theme", next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "forest" ? "#171212" : "#ffffff");
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", next === "forest" ? "#171212" : "#ffffff");
   }
 
   onMount(() => {
@@ -116,15 +122,48 @@
 <Toaster position="top-right" closeButton theme={theme === "forest" ? "dark" : "light"} />
 
 <main>
-  <AppNav {activeTab} routeCount={routes.length} containerCount={containers.length} {theme} onNavigate={showTab} onThemeChange={applyTheme} />
+  <AppNav
+    {activeTab}
+    routeCount={routes.length}
+    containerCount={containers.length}
+    {theme}
+    onNavigate={showTab}
+    onThemeChange={applyTheme}
+  />
 
   {#if activeTab === "routes"}
-    <RoutesPage {routes} {baseDomain} {reconcileEverySeconds} {loading} {loadError} {highlightedRouteId} onRefresh={refresh} onNewRoute={() => showTab("containers")} onEdit={edit} onNotice={(message) => toast.success(message)} onError={(message) => toast.error(message)} />
+    <RoutesPage
+      {routes}
+      {baseDomain}
+      {reconcileEverySeconds}
+      {loading}
+      {loadError}
+      {highlightedRouteId}
+      onRefresh={refresh}
+      onNewRoute={() => showTab("containers")}
+      onEdit={edit}
+      onNotice={(message) => toast.success(message)}
+      onError={(message) => toast.error(message)}
+    />
   {:else}
-    <ContainersPage {containers} {loading} {loadError} onRefresh={() => refresh()} onChoose={choose} />
+    <ContainersPage
+      {containers}
+      {loading}
+      {loadError}
+      onRefresh={() => refresh()}
+      onChoose={choose}
+    />
   {/if}
 </main>
 
 {#if selected || editing}
-  <RouteEditor {selected} {editing} {routes} {baseDomain} onClose={closeEditor} onSaved={editorSaved} onError={(message) => toast.error(message)} />
+  <RouteEditor
+    {selected}
+    {editing}
+    {routes}
+    {baseDomain}
+    onClose={closeEditor}
+    onSaved={editorSaved}
+    onError={(message) => toast.error(message)}
+  />
 {/if}

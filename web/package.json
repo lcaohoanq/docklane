@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "format": "prettier --write \"src/**/*.{svelte,ts,css}\" \"tests/**/*.ts\" \"*.{ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{svelte,ts,css}\" \"tests/**/*.ts\" \"*.{ts,json}\"",
     "test:ui": "playwright test"
   },
   "devDependencies": {
@@ -16,6 +18,8 @@
     "@sveltejs/vite-plugin-svelte": "latest",
     "@tailwindcss/vite": "^4.3.3",
     "daisyui": "^5.7.9",
+    "prettier": "3.9.6",
+    "prettier-plugin-svelte": "4.1.1",
     "svelte": "latest",
     "svelte-check": "latest",
     "svelte-sonner": "^1.1.1",

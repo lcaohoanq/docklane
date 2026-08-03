@@ -15,13 +15,20 @@ type RoutesPayload = {
 };
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-async function request<T>(url: string, init?: RequestInit, fallback = "Request failed"): Promise<T> {
+async function request<T>(
+  url: string,
+  init?: RequestInit,
+  fallback = "Request failed",
+): Promise<T> {
   const response = await fetch(url, init);
   let payload: unknown;
   try {
@@ -48,23 +55,35 @@ export async function loadInventory() {
 }
 
 export function loadRouteReadiness(routeId: number) {
-  return request<RouteReadiness>(`/api/v1/routes/${routeId}/readiness`, undefined, "Readiness check failed");
+  return request<RouteReadiness>(
+    `/api/v1/routes/${routeId}/readiness`,
+    undefined,
+    "Readiness check failed",
+  );
 }
 
 export function createRoute(route: WritableRoute) {
-  return request<Route>("/api/v1/routes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(route),
-  }, "Save failed");
+  return request<Route>(
+    "/api/v1/routes",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(route),
+    },
+    "Save failed",
+  );
 }
 
 export function updateRoute(routeId: number, route: WritableRoute) {
-  return request<Route>(`/api/v1/routes/${routeId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(route),
-  }, "Update failed");
+  return request<Route>(
+    `/api/v1/routes/${routeId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(route),
+    },
+    "Update failed",
+  );
 }
 
 export async function deleteRoute(routeId: number) {
@@ -82,7 +101,11 @@ export async function deleteRoute(routeId: number) {
 }
 
 export function loadDiagnostics(routeId: number) {
-  return request<DiagnosticReport>(`/api/v1/diagnostics/routes/${routeId}`, { cache: "no-store" }, "Diagnostics failed");
+  return request<DiagnosticReport>(
+    `/api/v1/diagnostics/routes/${routeId}`,
+    { cache: "no-store" },
+    "Diagnostics failed",
+  );
 }
 
 export function loadDiagnosticHistory(routeId: number) {

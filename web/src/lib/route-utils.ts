@@ -6,14 +6,23 @@ export function filterRoutes(routes: Route[], baseDomain: string, search: string
   const query = search.trim().toLowerCase();
   if (!query) return routes;
   return routes.filter((route) =>
-    [route.name, `${route.name}.${baseDomain}`, route.scheme, String(route.port), route.observed?.containerName || "", route.observed?.state || ""]
-      .some((value) => value.toLowerCase().includes(query)),
+    [
+      route.name,
+      `${route.name}.${baseDomain}`,
+      route.scheme,
+      String(route.port),
+      route.observed?.containerName || "",
+      route.observed?.state || "",
+    ].some((value) => value.toLowerCase().includes(query)),
   );
 }
 
 export function matchesSelector(selector: Selector, container: Container) {
   if (selector.containerId) return container.id.startsWith(selector.containerId);
-  return selector.composeProject === container.composeProject && selector.composeService === container.composeService;
+  return (
+    selector.composeProject === container.composeProject &&
+    selector.composeService === container.composeService
+  );
 }
 
 export function selectorFor(container: Container): Selector {
@@ -24,7 +33,12 @@ export function selectorFor(container: Container): Selector {
 }
 
 export function slug(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 63).replace(/-+$/g, "");
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 63)
+    .replace(/-+$/g, "");
 }
 
 export function availableRouteName(base: string, routes: Route[]) {
@@ -51,7 +65,8 @@ export function recommendedScheme(port: number) {
 export function routeNameIssue(name: string, routes: Route[], editingId?: number) {
   if (!name) return "Enter a local hostname.";
   if (name.length > 63) return "Use 63 characters or fewer.";
-  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(name)) return "Use lowercase letters, numbers, and single hyphens.";
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(name))
+    return "Use lowercase letters, numbers, and single hyphens.";
   const conflict = routes.find((route) => route.name === name && route.id !== editingId);
   return conflict ? `Already used by route #${conflict.id}.` : "";
 }
@@ -62,11 +77,20 @@ export function defaultReadiness(route: Route): RouteReadiness {
     revision: route.revision,
     state: route.enabled ? "reconciling" : "disabled",
     ready: false,
-    message: route.enabled ? "Checking whether Traefik has activated this route." : "Route is disabled and is not published to Traefik.",
+    message: route.enabled
+      ? "Checking whether Traefik has activated this route."
+      : "Route is disabled and is not published to Traefik.",
     checkedAt: new Date().toISOString(),
   };
 }
 
 export function writableRoute(route: Route, enabled = route.enabled) {
-  return { revision: route.revision, name: route.name, selector: route.selector, port: route.port, scheme: route.scheme, enabled };
+  return {
+    revision: route.revision,
+    name: route.name,
+    selector: route.selector,
+    port: route.port,
+    scheme: route.scheme,
+    enabled,
+  };
 }
